@@ -9,6 +9,7 @@ import com.test.engine.exception.BusinessException;
 import com.test.engine.repository.BattleRecordRepository;
 import com.test.engine.service.AuthService;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +39,7 @@ public class RecordController {
     }
 
     @GetMapping
+    @Transactional(readOnly = true)
     public List<Map<String, Object>> list(Authentication authentication) {
         Long userId = userId(authentication);
         return recordRepository.findByUserIdOrderByCreatedAtDesc(userId)
@@ -45,6 +47,7 @@ public class RecordController {
     }
 
     @GetMapping("/{id}")
+    @Transactional(readOnly = true)
     public Map<String, Object> detail(Authentication authentication, @PathVariable Long id) {
         BattleRecord record = recordRepository.findById(id)
                 .filter(r -> r.getUserId().equals(userId(authentication)))
@@ -69,7 +72,7 @@ public class RecordController {
         map.put("packId", record.getPackId());
         map.put("winner", record.getWinner());
         map.put("rounds", record.getRounds());
-        map.put("playerCharacterIds", record.getPlayerCharacterIds());
+        map.put("playerCharacterIds", new java.util.ArrayList<>(record.getPlayerCharacterIds()));
         map.put("totalDamageDealt", record.getTotalDamageDealt());
         map.put("maxSingleHit", record.getMaxSingleHit());
         map.put("avgDamagePerRound", record.getAvgDamagePerRound());
