@@ -40,6 +40,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/h2-console/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/packs/**").permitAll()
+                        // SPA pages and static assets (everything outside /api) are public;
+                        // the frontend router guards private views client-side.
+                        .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")).permitAll()
                         .anyRequest().authenticated())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
