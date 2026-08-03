@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -58,6 +62,15 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 backend/target/test-engine-0.1.0-SNAPSHOT.jar Administrator@$DEPLOY_HOST:"C:/Reverse_Web/test-engine-0.1.0-SNAPSHOT.jar"
+
+      - name: Verify jar integrity
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            powershell -NoProfile -Command "$ErrorActionPreference='Stop'; & 'C:\tools\jdk-21.0.12+8\bin\jar.exe' tf 'C:\Reverse_Web\test-engine-0.1.0-SNAPSHOT.jar' | Select-String 'TestApplication.class' | Out-Null; if (-not $?) { throw 'jar integrity check failed' }; Write-Host JAR_OK"
 
       - name: Start service
         uses: appleboy/ssh-action@v1.2.0
