@@ -3,6 +3,7 @@ package com.test.engine.utils;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 /**
  * TRPG style dice roller.
@@ -11,6 +12,7 @@ import java.util.regex.Pattern;
  * As a TEST-specific convention agreed with the design doc, a zero-count die
  * "0dY" rolls a uniform value in the inclusive range [0, Y].
  */
+@Component
 public class DiceRoller {
 
     private static final Pattern DICE_PATTERN = Pattern.compile("^\\s*(\\d+)\\s*[dD]\\s*(\\d+)\\s*$");
