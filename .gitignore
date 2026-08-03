@@ -35,3 +35,6 @@ logs/
 
 # Bundled frontend build output (produced by CI)
 backend/src/main/resources/static/
+
+# Local agent project standards (not for public repo)
+AGENTS.md

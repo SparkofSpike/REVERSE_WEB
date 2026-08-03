@@ -1,8 +1,9 @@
 name: deploy
 
 on:
-  push:
-    branches: [main]
+  # Deprecated: GitHub Actions auto-deploy is too slow for cross-border upload.
+  # Use local script instead: python ship.py  (see README / AGENTS.md)
+  workflow_dispatch:
 
 concurrency:
   group: deploy-${{ github.ref }}

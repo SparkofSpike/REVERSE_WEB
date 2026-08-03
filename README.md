@@ -60,10 +60,22 @@ npm run dev
 
 ## CI/CD
 
-Pushing to `main` triggers a GitHub Actions workflow that builds the backend
-and frontend, packages the frontend `dist` into the backend jar, uploads it
-to the deployment server and restarts the service. See
-`.github/workflows/deploy.yml`.
+Deployment is done from the local machine via `ship.py` (fast, domestic direct
+link; avoids slow cross-border GitHub Actions uploads):
+
+```bash
+python ship.py               # full deploy: build frontend+backend, upload, verify, restart
+python ship.py --upload-only # skip builds, upload existing jar only
+```
+
+The script builds the frontend, bundles `dist` into the backend jar, stops the
+service, uploads via scp, verifies SHA256 + jar integrity, then restarts and
+checks `http://111.229.241.95/` returns 200. Requirements: Node 20+, JDK 21,
+Maven, OpenSSH (key `~/.ssh/test_deploy`).
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) exists but is
+deprecated: cross-border 50MB scp uploads corrupt the jar and chunked upload
+takes ~40 minutes per deploy. It is kept as `workflow_dispatch` (manual) only.
 
 ## Git Conventions
 
