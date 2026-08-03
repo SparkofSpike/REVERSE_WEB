@@ -41,13 +41,14 @@ jobs:
           mvn -B package -DskipTests
 
       - name: Upload jar to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "backend/target/test-engine-0.1.0-SNAPSHOT.jar"
-          target: "C:/Reverse_Web"
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 backend/target/test-engine-0.1.0-SNAPSHOT.jar Administrator@$DEPLOY_HOST:"C:/Reverse_Web/test-engine-0.1.0-SNAPSHOT.jar"
 
       - name: Restart service
         uses: appleboy/ssh-action@v1.2.0
@@ -56,4 +57,4 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            powershell -NoProfile -Command "Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-Process -FilePath 'C:\tools\jdk-21.0.12+8\bin\java.exe' -ArgumentList '-jar','C:\Reverse_Web\test-engine-0.1.0-SNAPSHOT.jar','--server.port=80' -WorkingDirectory 'C:\Reverse_Web' -WindowStyle Hidden; Write-Host DEPLOYED"
+            powershell -NoProfile -Command "Stop-ScheduledTask -TaskName TestEngine -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName TestEngine; Write-Host RESTARTED"
