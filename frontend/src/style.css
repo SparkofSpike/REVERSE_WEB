@@ -1,0 +1,91 @@
+:root {
+  --bg: #0b0e14;
+  --bg-panel: #121720;
+  --bg-panel-2: #1a2130;
+  --border: #232c3d;
+  --text: #d7e0ee;
+  --text-dim: #8b96ab;
+  --accent: #4cc2ff;
+  --accent-dim: #2a7fb8;
+  --danger: #ff5d6c;
+  --ok: #5ddb8c;
+  --warn: #ffc857;
+  --hp: #ff5d6c;
+  --energy: #4cc2ff;
+  --shield: #ffc857;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.hp-bar,
+.energy-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: #1c2434;
+  overflow: hidden;
+  position: relative;
+}
+
+.hp-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #ff5d6c, #c22f44);
+  transition: width 0.4s ease;
+}
+
+.energy-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #4cc2ff, #2a7fb8);
+  transition: width 0.4s ease;
+}
+
+.shield-tag {
+  color: var(--shield);
+  font-size: 12px;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.accent {
+  color: var(--accent);
+}
+
+.danger {
+  color: var(--danger);
+}
+
+.ok {
+  color: var(--ok);
+}

@@ -1,0 +1,30 @@
+import http from './http'
+import type { ActionDecision, CombatView } from '@/types'
+
+export function createDummyBattle(packId: string, characterIds: string[]): Promise<CombatView> {
+  return http.post('/combat/dummy', { packId, characterIds }).then((r) => r.data)
+}
+
+export function getBattle(battleId: string): Promise<CombatView> {
+  return http.get(`/combat/${battleId}`).then((r) => r.data)
+}
+
+export function selectInitialPerk(battleId: string, perkId: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/initial-perk`, { perkId }).then((r) => r.data)
+}
+
+export function decide(battleId: string, decisions: ActionDecision[]): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/decide`, decisions).then((r) => r.data)
+}
+
+export function playCard(battleId: string, skillId: string, targetId?: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/card`, { skillId, targetId }).then((r) => r.data)
+}
+
+export function selectSpecialPerk(battleId: string, perkId: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/special-perk`, { perkId }).then((r) => r.data)
+}
+
+export function skipSpecialPerk(battleId: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/skip-perk`, {}).then((r) => r.data)
+}
