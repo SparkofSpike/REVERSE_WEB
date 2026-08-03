@@ -63,7 +63,7 @@ jobs:
           script: |
             powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Stop-ScheduledTask -TaskName TestEngine; Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; if (Test-Path 'C:\Reverse_Web\chunks') { Remove-Item 'C:\Reverse_Web\chunks' -Recurse -Force }; New-Item -ItemType Directory -Path 'C:\Reverse_Web\chunks' | Out-Null; Write-Host STOPPED_CHUNKS_READY"
 
-      - name: Upload jar chunks via scp (small files, reliable cross-border)
+      - name: Upload jar chunks via scp (single connection, reliable cross-border)
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -73,12 +73,7 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           cd backend/target
-          for f in part_*; do
-            echo "uploading $f"
-            scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 "$f" $DEPLOY_USER@$DEPLOY_HOST:"C:/Reverse_Web/chunks/$f" || exit 1
-          done
-          echo "uploading sha256.txt"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 sha256.txt $DEPLOY_USER@$DEPLOY_HOST:"C:/Reverse_Web/chunks/sha256.txt" || exit 1
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=15 part_* sha256.txt $DEPLOY_USER@$DEPLOY_HOST:"C:/Reverse_Web/chunks/" || exit 1
           echo ALL_CHUNKS_UPLOADED
 
       - name: Assemble jar, verify sha256, verify jar, start service
