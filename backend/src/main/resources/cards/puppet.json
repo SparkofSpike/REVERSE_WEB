@@ -1,7 +1,7 @@
 {
   "id": "training-dummy",
   "name": "训练木桩",
-  "maxHp": 800,
+  "maxHp": 500,
   "maxEnergy": 200,
   "speedDice": "1d6",
   "physicalResistance": 1.0,

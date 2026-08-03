@@ -108,7 +108,7 @@ class CardPackDataTest {
         PuppetTemplate puppet = mapper.readValue(
                 getClass().getResourceAsStream("/cards/puppet.json"), PuppetTemplate.class);
         assertThat(puppet.getId()).isEqualTo("training-dummy");
-        assertThat(puppet.getMaxHp()).isEqualTo(800);
+        assertThat(puppet.getMaxHp()).isEqualTo(500);
         assertThat(puppet.getBaseActions()).contains(ActionType.ATTACK, ActionType.DEFEND);
     }
 
