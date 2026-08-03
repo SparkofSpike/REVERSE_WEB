@@ -12,6 +12,15 @@ management, training dummy battles and battle report statistics.
   prototype). Battle mode is single-player vs training dummy; PVP is planned
   for a later stage.
 
+## Credits
+
+Custom-built for **@XuChuanRenNIUBI** (game design owner and commissioner).
+This repository is open-sourced with the designer's explicit permission.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 XuChuanRenNIUBI.
+
 ## Tech Stack
 
 | Layer | Technology |

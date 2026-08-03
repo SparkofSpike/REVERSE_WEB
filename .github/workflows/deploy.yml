@@ -40,6 +40,15 @@ jobs:
           cd backend
           mvn -B package -DskipTests
 
+      - name: Stop service (release jar file lock)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            powershell -NoProfile -Command "Stop-ScheduledTask -TaskName TestEngine -ErrorAction SilentlyContinue; Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Write-Host STOPPED"
+
       - name: Upload jar to server
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -50,11 +59,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 backend/target/test-engine-0.1.0-SNAPSHOT.jar Administrator@$DEPLOY_HOST:"C:/Reverse_Web/test-engine-0.1.0-SNAPSHOT.jar"
 
-      - name: Restart service
+      - name: Start service
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            powershell -NoProfile -Command "Stop-ScheduledTask -TaskName TestEngine -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-ScheduledTask -TaskName TestEngine; Write-Host RESTARTED"
+            powershell -NoProfile -Command "Start-ScheduledTask -TaskName TestEngine; Write-Host STARTED"
