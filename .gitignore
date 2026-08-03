@@ -32,3 +32,6 @@ logs/
 
 # Local learnings (not for public repo)
 .learnings/
+
+# Bundled frontend build output (produced by CI)
+backend/src/main/resources/static/
