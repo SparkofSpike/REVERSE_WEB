@@ -26,7 +26,7 @@ Released under the [MIT License](LICENSE). Copyright (c) 2026 [@SparkofSpike](ht
 | Layer | Technology |
 | --- | --- |
 | Backend | Java 21 + Spring Boot 3.2 + Maven + Spring Security (JWT) + Spring Data JPA |
-| Frontend | Vue 3 + Vite 5 + TypeScript + Naive UI + Pinia + Vue Router + Axios |
+| Frontend | Vue 3 + Vite 6 + TypeScript + Naive UI + Pinia + Vue Router + Axios |
 | Database | H2 file mode (`AUTO_SERVER=TRUE`), JPA abstraction, switchable to MySQL later |
 | Data exchange | JSON, frontend and backend strictly follow the DTO contract |
 
@@ -35,6 +35,7 @@ Released under the [MIT License](LICENSE). Copyright (c) 2026 [@SparkofSpike](ht
 ```
 backend/    # Spring Boot backend (battle state machine, adjudication, accounts and decks)
 frontend/   # Vue 3 frontend (display and command forwarding only, no battle logic)
+ship.py     # local one-click deploy script (build, upload, verify, restart)
 ```
 
 ## Architecture Principles
@@ -56,6 +57,18 @@ mvn spring-boot:run
 cd frontend
 npm install
 npm run dev
+```
+
+## Testing
+
+```bash
+# Backend: 8 test classes / 40 tests (combat, dice, auth, build, card pack)
+cd backend
+mvn test
+
+# Frontend: type-check (vue-tsc) + production build
+cd frontend
+npm run build
 ```
 
 ## CI/CD
