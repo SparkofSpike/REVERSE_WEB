@@ -29,3 +29,6 @@ logs/
 
 # CodeWhale runtime
 .codewhale/
+
+# Local learnings (not for public repo)
+.learnings/

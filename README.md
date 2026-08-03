@@ -1,55 +1,69 @@
-# RESERVE_WEB（代号：TEST）
+# RESERVE_WEB (codenamed TEST)
 
-赛博桌游战斗辅助工具（Web 版），替代传统文字跑团中的手动骰点与数值计算。
+A cyberpunk tabletop battle assistant (Web edition) that replaces manual dice
+rolling and number crunching in text-based tabletop RPGs.
 
-核心能力：双边回合制战斗裁决（速度裁定、伤害计算、演出触发）、账号体系、构筑管理、木桩战与战报统计。
+Core capabilities: two-sided turn-based combat adjudication (speed
+resolution, damage calculation, performance triggers), account system, deck
+management, training dummy battles and battle report statistics.
 
-- 规则蓝本：`TEST.游戏玩法.pdf`（本仓库根目录）
-- 当前阶段：规则验证与框架搭建（Harness / 原型期），战斗模式为单人木桩战，PVP 留待后续
+- Rules blueprint: `TEST.游戏玩法.pdf` (in this repository root)
+- Current stage: rules validation and framework scaffolding (Harness /
+  prototype). Battle mode is single-player vs training dummy; PVP is planned
+  for a later stage.
 
-## 技术栈
+## Tech Stack
 
-| 层级 | 技术 |
+| Layer | Technology |
 | --- | --- |
-| 后端 | Java 21 + Spring Boot 3.2 + Maven + Spring Security (JWT) + Spring Data JPA |
-| 前端 | Vue 3 + Vite 5 + TypeScript + Naive UI + Pinia + Vue Router + Axios |
-| 数据库 | H2 文件模式（`AUTO_SERVER=TRUE`），JPA 抽象，后续可切换 MySQL |
-| 数据交换 | JSON，前后端严格遵循 DTO 契约 |
+| Backend | Java 21 + Spring Boot 3.2 + Maven + Spring Security (JWT) + Spring Data JPA |
+| Frontend | Vue 3 + Vite 5 + TypeScript + Naive UI + Pinia + Vue Router + Axios |
+| Database | H2 file mode (`AUTO_SERVER=TRUE`), JPA abstraction, switchable to MySQL later |
+| Data exchange | JSON, frontend and backend strictly follow the DTO contract |
 
-## 目录结构
+## Repository Layout
 
 ```
-backend/    # Spring Boot 后端（战斗状态机、裁决逻辑、账号与构筑）
-frontend/   # Vue 3 前端（展示与指令转发，不含任何战斗裁决逻辑）
+backend/    # Spring Boot backend (battle state machine, adjudication, accounts and decks)
+frontend/   # Vue 3 frontend (display and command forwarding only, no battle logic)
 ```
 
-## 架构原则
+## Architecture Principles
 
-- 前后端完全分离：所有胜负判定、伤害数值、随机骰子均由后端产出。
-- 前端仅负责展示与指令转发，绝不触碰战斗裁决逻辑。
-- 后端绝不关心前端渲染细节。
+- Fully separated frontend/backend: all victory checks, damage values and
+  random dice are produced by the backend.
+- The frontend only displays state and forwards commands; it never touches
+  battle adjudication logic.
+- The backend never cares about frontend rendering details.
 
-## 开发
+## Development
 
 ```bash
-# 后端（默认端口 5566，H2 数据文件位于 backend/data/）
+# Backend (default port 5566, H2 data files under backend/data/)
 cd backend
 mvn spring-boot:run
 
-# 前端（开发服务器默认 5173，代理 /api 到后端）
+# Frontend (dev server on 5173, proxies /api to the backend)
 cd frontend
 npm install
 npm run dev
 ```
 
-## Git 规范
+## CI/CD
 
-- 原子化提交：一次提交，一个逻辑变更。
-- Commit 信息遵循 Angular Convention，且描述使用纯英文：
+Pushing to `main` triggers a GitHub Actions workflow that builds the backend
+and frontend, packages the frontend `dist` into the backend jar, uploads it
+to the deployment server and restarts the service. See
+`.github/workflows/deploy.yml`.
+
+## Git Conventions
+
+- Atomic commits: one commit, one logical change.
+- Commit messages follow the Angular Convention with English descriptions:
 
 ```
 <type>(<scope>): <subject>
 ```
 
-- type：feat / fix / docs / style / refactor / test / chore
-- scope 示例：combat、dice、auth、ui-log、api-dto
+- type: feat / fix / docs / style / refactor / test / chore
+- scope examples: combat, dice, auth, ui-log, api-dto
