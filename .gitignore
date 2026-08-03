@@ -1,30 +1,31 @@
-# Dependencies
-node_modules/
-vendor/
-__pycache__/
-*.py[cod]
+# Java / Maven
+backend/target/
+backend/data/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
 
-# Build outputs
-dist/
-build/
-out/
-*.tsbuildinfo
-
-# Environment
-.env
-.env.*
-!.env.example
-
-# IDE / OS
+# IDE
 .idea/
+*.iml
 .vscode/
 *.swp
-.DS_Store
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# OS
 Thumbs.db
+.DS_Store
 
 # Logs
 *.log
-npm-debug.log*
+logs/
 
 # CodeWhale runtime
 .codewhale/
