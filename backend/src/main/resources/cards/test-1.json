@@ -1,0 +1,439 @@
+{
+  "id": "test-1",
+  "name": "TEST.1",
+  "core": {
+    "id": "core-faith",
+    "name": "本心尚存"
+  },
+  "initialPerks": [
+    {
+      "id": "perk-faithful-heart",
+      "name": "坚守本心",
+      "description": "你的所有角色获得18额外生命。",
+      "roundRequirement": 0,
+      "effect": { "type": "max_hp_bonus", "amount": 18, "target": "allies" }
+    },
+    {
+      "id": "perk-recharge",
+      "name": "养精蓄锐",
+      "description": "你的所有角色恢复5点精力——该效果每4个回合都会发生一次。",
+      "roundRequirement": 0,
+      "effect": { "type": "periodic_energy", "amount": 5, "interval": 4, "target": "allies" }
+    },
+    {
+      "id": "perk-attack-prep",
+      "name": "攻击准备",
+      "description": "你的角色获得25点护盾，在三回合内：每回合结束后，失去10点护盾。",
+      "roundRequirement": 0,
+      "effect": { "type": "decaying_shield", "amount": 25, "count": 10, "duration": 3, "target": "allies" }
+    }
+  ],
+  "specialPerks": [
+    {
+      "id": "perk-inner-breakthrough",
+      "name": "内心突破",
+      "description": "立即抽三张通用技能卡。",
+      "roundRequirement": 0,
+      "effect": { "type": "draw", "count": 3 }
+    },
+    {
+      "id": "perk-targeted-strike",
+      "name": "针对性打击",
+      "description": "对一个角色造成5d7点破击伤害。",
+      "roundRequirement": 0,
+      "effect": { "type": "damage", "dice": "5d7", "damageType": "BREAK", "target": "enemy" }
+    },
+    {
+      "id": "perk-slow-recover",
+      "name": "缓慢恢复",
+      "description": "接下来的三回合：每当回合开始，所有已方角色恢复1d4点生命。",
+      "roundRequirement": 0,
+      "effect": { "type": "heal_over_time", "dice": "1d4", "duration": 3, "target": "allies" }
+    },
+    {
+      "id": "perk-decide-speed",
+      "name": "决定速度",
+      "description": "选择一个角色，使其速度在本场对局内永久增加0d3。",
+      "roundRequirement": 0,
+      "effect": { "type": "speed_permanent", "dice": "0d3", "target": "ally" }
+    },
+    {
+      "id": "perk-recharge-2",
+      "name": "养精蓄锐II",
+      "description": "接下来的四回合内，每回合获得1d2张通用技能卡，上限为6张。",
+      "roundRequirement": 2,
+      "effect": { "type": "draw_over_time", "dice": "1d2", "duration": 4, "max": 6 }
+    },
+    {
+      "id": "perk-cold-realization",
+      "name": "冷漠实现",
+      "description": "使你的所有角色失去10点HP，获得30点精力，在余下的对局中，你生命值最低的角色恒拥有一颗额外的行动次数。",
+      "roundRequirement": -1,
+      "effect": { "type": "sacrifice_buff", "amount": 10, "count": 30, "target": "allies" }
+    }
+  ],
+  "genericSkills": [
+    {
+      "id": "g-fast-bandage",
+      "name": "快速包扎",
+      "consumed": false,
+      "description": "使一个角色在接下来的三回合：每回合开始，恢复1d3点生命。",
+      "effects": [{ "type": "heal_over_time", "dice": "1d3", "duration": 3, "target": "ally" }]
+    },
+    {
+      "id": "g-sharpen-blade",
+      "name": "磨尖刀锋",
+      "consumed": false,
+      "description": "使一个角色获得0d3的伤害增加。（在本局内都生效）",
+      "effects": [{ "type": "damage_bonus", "dice": "0d3", "target": "ally" }]
+    },
+    {
+      "id": "g-instant-defend",
+      "name": "即刻防守",
+      "consumed": false,
+      "description": "使一个角色获得4d3的护盾值。",
+      "effects": [{ "type": "shield", "dice": "4d3", "target": "ally" }]
+    },
+    {
+      "id": "g-joint-defend",
+      "name": "联合防守",
+      "consumed": false,
+      "description": "使2个角色获得一次额外的防守行动。",
+      "effects": [{ "type": "extra_defend", "count": 2, "target": "allies" }]
+    },
+    {
+      "id": "g-quick-strike",
+      "name": "快速闪击",
+      "consumed": false,
+      "description": "使一个角色在本回合中获得5点追加速度值。",
+      "effects": [{ "type": "speed_boost", "amount": 5, "target": "ally" }]
+    },
+    {
+      "id": "g-puppet-block",
+      "name": "木偶挡刀",
+      "consumed": false,
+      "description": "生成一个临时，具有嘲讽的木偶，拥有20点生命，本回合结束后消失。",
+      "effects": [{ "type": "puppet", "amount": 20 }]
+    },
+    {
+      "id": "g-reverse-draw",
+      "name": "倒反抽牌",
+      "consumed": true,
+      "description": "（消耗）使用后，下一次抽牌可以额外再抽两张。",
+      "effects": [{ "type": "draw_boost", "count": 2 }]
+    },
+    {
+      "id": "g-clock-accelerate",
+      "name": "钟表加速",
+      "consumed": false,
+      "description": "特殊词条选择加速一回合。选择结束后，该牌效果转为使一个角色在本回合内获得2点追加速度值。",
+      "effects": [{ "type": "accelerate", "amount": 2, "target": "ally" }]
+    },
+    {
+      "id": "g-focus",
+      "name": "专心致志",
+      "consumed": false,
+      "description": "恢复一个角色1d12点精力。",
+      "effects": [{ "type": "energy", "dice": "1d12", "target": "ally" }]
+    },
+    {
+      "id": "g-overlimit",
+      "name": "超限技能",
+      "consumed": false,
+      "description": "使一个角色在本回合内可以额外使用一个技能。",
+      "effects": [{ "type": "extra_skill", "count": 1, "target": "ally" }]
+    },
+    {
+      "id": "g-team-sacrifice",
+      "name": "团队奉献",
+      "consumed": false,
+      "description": "消耗一个角色的10点生命，恢复另一个角色8点生命。",
+      "effects": [
+        { "type": "hp_cost", "amount": 10, "target": "ally" },
+        { "type": "heal", "amount": 8, "target": "random_ally" }
+      ]
+    },
+    {
+      "id": "g-peek",
+      "name": "视角窥探",
+      "consumed": false,
+      "description": "展示一张对方在本回合内会使用的角色技能牌。",
+      "effects": [{ "type": "peek", "count": 1 }]
+    }
+  ],
+  "characters": [
+    {
+      "id": "warrior",
+      "name": "战斗者",
+      "description": "披上带血的盔甲，你的使命不会止于此...",
+      "maxHp": 80,
+      "maxEnergy": 100,
+      "speedDice": "1d7",
+      "physicalResistance": 1.0,
+      "magicResistance": 1.0,
+      "baseDamageDice": "1d7",
+      "baseDamageType": "PHYSICAL",
+      "blockDice": "1d7",
+      "dodgePenalty": "0d3",
+      "baseActions": ["ATTACK", "DEFEND", "DODGE", "GUARD", "COUNTER", "CHASE"],
+      "corePassive": {
+        "type": "undying",
+        "amount": 10,
+        "description": "宁死不屈：生命值低于10点时，在本回合和下回合都不会立刻死亡，每次对局仅触发一次。"
+      },
+      "performance": {
+        "triggerType": "hp_below",
+        "threshold": 40,
+        "description": "生命值低于40点",
+        "effects": [
+          { "type": "shield", "amount": 25, "duration": 3, "target": "self" },
+          { "type": "speed_permanent", "dice": "0d3", "target": "self" },
+          { "type": "upgrade_skills", "count": 1, "target": "self" },
+          { "type": "energy", "amount": 35, "target": "self" }
+        ]
+      },
+      "skills": [
+        {
+          "id": "warrior-s1",
+          "name": "曲线斩击",
+          "energyCost": 15,
+          "cooldown": 0,
+          "targetType": "enemies",
+          "description": "造成1d12的伤害，可以同时指定2个目标。",
+          "effects": [{ "type": "damage", "dice": "1d12", "target": "enemies", "count": 2 }],
+          "upgraded": {
+            "id": "warrior-s1-up",
+            "name": "曲线斩击",
+            "energyCost": 12,
+            "cooldown": 0,
+            "targetType": "enemies",
+            "description": "造成2d9伤害，可以同时指定2个目标。",
+            "effects": [{ "type": "damage", "dice": "2d9", "target": "enemies", "count": 2 }]
+          }
+        },
+        {
+          "id": "warrior-s2",
+          "name": "嗜血突袭",
+          "energyCost": 20,
+          "cooldown": 0,
+          "targetType": "self",
+          "description": "接下来的三个回合，你造成伤害恢复0.2倍造成伤害值的生命值。",
+          "effects": [{ "type": "lifesteal", "ratio": 0.2, "duration": 3, "target": "self" }],
+          "upgraded": {
+            "id": "warrior-s2-up",
+            "name": "嗜血突袭",
+            "energyCost": 15,
+            "cooldown": 0,
+            "targetType": "self",
+            "description": "接下来的三个回合，你造成伤害恢复0.4倍造成伤害的生命值。",
+            "effects": [{ "type": "lifesteal", "ratio": 0.4, "duration": 3, "target": "self" }]
+          }
+        },
+        {
+          "id": "warrior-s3",
+          "name": "连续奔袭",
+          "energyCost": 25,
+          "cooldown": 3,
+          "targetType": "self",
+          "description": "使用后，获得仅限本回合使用的3次额外基础行动。",
+          "effects": [{ "type": "extra_actions", "count": 3, "duration": 1, "target": "self" }],
+          "upgraded": {
+            "id": "warrior-s3-up",
+            "name": "连续奔袭",
+            "energyCost": 25,
+            "cooldown": 3,
+            "targetType": "self",
+            "description": "使用后，获得仅限本回合使用的4次额外基础行动。",
+            "effects": [{ "type": "extra_actions", "count": 4, "duration": 1, "target": "self" }]
+          }
+        }
+      ]
+    },
+    {
+      "id": "mage",
+      "name": "小法师",
+      "description": "阻止他们，想点办法！",
+      "maxHp": 60,
+      "maxEnergy": 120,
+      "speedDice": "1d8",
+      "physicalResistance": 1.2,
+      "magicResistance": 0.8,
+      "baseDamageDice": "1d9",
+      "baseDamageType": "MAGIC",
+      "blockDice": "1d4",
+      "dodgePenalty": "0d4",
+      "baseActions": ["ATTACK", "DEFEND", "DODGE", "GUARD", "COUNTER", "PRAY"],
+      "corePassive": {
+        "type": "energy_discount",
+        "amount": 2,
+        "description": "技艺生疏：任意消耗精力的动作都会减少2点精力消耗。"
+      },
+      "performance": {
+        "triggerType": "energy_below",
+        "threshold": 50,
+        "description": "精力值低于50点",
+        "effects": [
+          { "type": "damage_bonus", "dice": "2d2", "target": "self" },
+          { "type": "draw_energy", "amount": 1, "target": "self" }
+        ]
+      },
+      "skills": [
+        {
+          "id": "mage-s1",
+          "name": "星光折射",
+          "energyCost": 13,
+          "cooldown": 0,
+          "targetType": "enemies",
+          "description": "造成1d10点的穿击伤害，可以同时指定2个目标。",
+          "effects": [{ "type": "damage", "dice": "1d10", "damageType": "PIERCE", "target": "enemies", "count": 2 }]
+        },
+        {
+          "id": "mage-s2",
+          "name": "聚求",
+          "energyCost": 28,
+          "cooldown": 0,
+          "targetType": "self",
+          "description": "抽一张通用技能。",
+          "effects": [{ "type": "draw", "count": 1 }]
+        },
+        {
+          "id": "mage-s3",
+          "name": "魔力炮",
+          "energyCost": 40,
+          "cooldown": 3,
+          "targetType": "enemy",
+          "description": "对一个目标造成1d42点的魔法伤害。",
+          "effects": [{ "type": "damage", "dice": "1d42", "damageType": "MAGIC", "target": "enemy" }]
+        }
+      ]
+    },
+    {
+      "id": "priest",
+      "name": "老牧师",
+      "description": "不要恨任何人。",
+      "maxHp": 70,
+      "maxEnergy": 110,
+      "speedDice": "1d5",
+      "physicalResistance": 0.7,
+      "magicResistance": 1.4,
+      "baseDamageDice": "1d4",
+      "baseDamageType": "MAGIC",
+      "blockDice": "1d4",
+      "dodgePenalty": "0d3",
+      "baseActions": ["ATTACK", "DEFEND", "DODGE", "GUARD", "COUNTER"],
+      "corePassive": {
+        "type": "compassion_heal",
+        "ratio": 0.5,
+        "description": "和谐友爱：本角色失去生命时，会恢复随机一个队友角色的生命值。恢复的生命值等于0.5倍失去的生命值。"
+      },
+      "performance": {
+        "triggerType": "heal_total",
+        "threshold": 30,
+        "description": "为队友恢复了30点生命值",
+        "effects": [
+          { "type": "upgrade_skills", "count": 1, "target": "self" },
+          { "type": "heal_end_of_round", "dice": "1d8", "target": "allies" }
+        ]
+      },
+      "skills": [
+        {
+          "id": "priest-s1",
+          "name": "庇",
+          "energyCost": 20,
+          "cooldown": 0,
+          "targetType": "ally",
+          "description": "使一个角色获得12点护盾值，持续2回合。",
+          "effects": [{ "type": "shield", "amount": 12, "duration": 2, "target": "ally" }],
+          "upgraded": {
+            "id": "priest-s1-up",
+            "name": "庇",
+            "energyCost": 16,
+            "cooldown": 0,
+            "targetType": "ally",
+            "description": "使一个角色获得14点护盾值，持续2回合。",
+            "effects": [{ "type": "shield", "amount": 14, "duration": 2, "target": "ally" }]
+          }
+        },
+        {
+          "id": "priest-s2",
+          "name": "佑",
+          "energyCost": 15,
+          "cooldown": 0,
+          "targetType": "ally",
+          "description": "使一个角色恢复1d5点生命。",
+          "effects": [{ "type": "heal", "dice": "1d5", "target": "ally" }]
+        },
+        {
+          "id": "priest-s3",
+          "name": "甘露",
+          "energyCost": 50,
+          "cooldown": 3,
+          "targetType": "allies",
+          "description": "使两个已方角色在接下来的三回合内：每回合开始，获得10点护盾（仅限当回合），获得1d18点精力值。",
+          "effects": [
+            { "type": "shield_over_time", "amount": 10, "duration": 3, "count": 2, "target": "allies" },
+            { "type": "energy_over_time", "dice": "1d18", "duration": 3, "count": 2, "target": "allies" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crab-dwarf",
+      "name": "螃蟹壳矮人",
+      "description": "我是个矮人？我不是！看我夹你前列腺",
+      "maxHp": 100,
+      "maxEnergy": 70,
+      "speedDice": "1d4",
+      "physicalResistance": 0.7,
+      "magicResistance": 0.8,
+      "baseDamageDice": "1d4",
+      "baseDamageType": "PHYSICAL",
+      "blockDice": "1d9",
+      "dodgePenalty": "0d2",
+      "baseActions": ["ATTACK", "DEFEND", "DODGE", "GUARD", "COUNTER"],
+      "corePassive": {
+        "type": "stone_shield",
+        "dice": "1d5",
+        "description": "像块石头：防御成功后，下回合开始获得1d5点护盾值。"
+      },
+      "performance": {
+        "triggerType": "guard_success",
+        "threshold": 5,
+        "description": "累计守护成功了5次",
+        "effects": [
+          { "type": "shield", "amount": 30, "duration": 10, "target": "self" },
+          { "type": "heal", "amount": 20, "target": "self" }
+        ]
+      },
+      "skills": [
+        {
+          "id": "crab-s1",
+          "name": "蟹壳拓展",
+          "energyCost": 10,
+          "cooldown": 0,
+          "targetType": "self",
+          "description": "仅限本回合，获得2次额外的守护行动次数。",
+          "effects": [{ "type": "extra_guard", "count": 2, "duration": 1, "target": "self" }]
+        },
+        {
+          "id": "crab-s2",
+          "name": "蟹不弱",
+          "energyCost": 20,
+          "cooldown": 0,
+          "targetType": "self",
+          "description": "获得15点护盾，持续2回合。",
+          "effects": [{ "type": "shield", "amount": 15, "duration": 2, "target": "self" }]
+        },
+        {
+          "id": "crab-s3",
+          "name": "盾山",
+          "energyCost": 0,
+          "cooldown": 3,
+          "targetType": "ally",
+          "description": "获得10点护盾，绑定一个角色，替他挡下所有的伤害，持续两回合。",
+          "effects": [{ "type": "guard_bind", "amount": 10, "duration": 2, "target": "ally" }]
+        }
+      ]
+    }
+  ]
+}

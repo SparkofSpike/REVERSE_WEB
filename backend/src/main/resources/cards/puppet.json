@@ -1,0 +1,14 @@
+{
+  "id": "training-dummy",
+  "name": "训练木桩",
+  "maxHp": 800,
+  "maxEnergy": 200,
+  "speedDice": "1d6",
+  "physicalResistance": 1.0,
+  "magicResistance": 1.0,
+  "baseDamageDice": "1d8",
+  "baseDamageType": "PHYSICAL",
+  "blockDice": "1d6",
+  "dodgePenalty": "0d2",
+  "baseActions": ["ATTACK", "DEFEND", "DODGE"]
+}
