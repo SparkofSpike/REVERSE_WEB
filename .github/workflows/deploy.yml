@@ -1,4 +1,4 @@
-﻿name: deploy
+name: deploy
 
 on:
   push:
@@ -44,39 +44,48 @@ jobs:
           cd backend
           mvn -B package -DskipTests
 
-      - name: Stop service (release jar file lock)
+      - name: Split jar into 5MB chunks and compute sha256
+        run: |
+          cd backend/target
+          sha256sum test-engine-0.1.0-SNAPSHOT.jar > sha256.txt
+          split -b 5M test-engine-0.1.0-SNAPSHOT.jar part_
+          echo "=== chunks ==="
+          ls -la part_*
+          echo "=== sha256 ==="
+          cat sha256.txt
+
+      - name: Stop service and reset remote chunks dir
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            powershell -NoProfile -Command "Stop-ScheduledTask -TaskName TestEngine -ErrorAction SilentlyContinue; Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Write-Host STOPPED"
+            powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Stop-ScheduledTask -TaskName TestEngine; Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; if (Test-Path 'C:\Reverse_Web\chunks') { Remove-Item 'C:\Reverse_Web\chunks' -Recurse -Force }; New-Item -ItemType Directory -Path 'C:\Reverse_Web\chunks' | Out-Null; Write-Host STOPPED_CHUNKS_READY"
 
-      - name: Upload jar to server
+      - name: Upload jar chunks via scp (small files, reliable cross-border)
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 backend/target/test-engine-0.1.0-SNAPSHOT.jar Administrator@$DEPLOY_HOST:"C:/Reverse_Web/test-engine-0.1.0-SNAPSHOT.jar"
+          cd backend/target
+          for f in part_*; do
+            echo "uploading $f"
+            scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 "$f" $DEPLOY_USER@$DEPLOY_HOST:"C:/Reverse_Web/chunks/$f" || exit 1
+          done
+          echo "uploading sha256.txt"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 sha256.txt $DEPLOY_USER@$DEPLOY_HOST:"C:/Reverse_Web/chunks/sha256.txt" || exit 1
+          echo ALL_CHUNKS_UPLOADED
 
-      - name: Verify jar integrity
+      - name: Assemble jar, verify sha256, verify jar, start service
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            powershell -NoProfile -Command "$ErrorActionPreference='Stop'; & 'C:\tools\jdk-21.0.12+8\bin\jar.exe' tf 'C:\Reverse_Web\test-engine-0.1.0-SNAPSHOT.jar' | Select-String 'TestApplication.class' | Out-Null; if (-not $?) { throw 'jar integrity check failed' }; Write-Host JAR_OK"
-
-      - name: Start service
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            powershell -NoProfile -Command "Start-ScheduledTask -TaskName TestEngine; Write-Host STARTED"
+            powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $dir='C:\Reverse_Web'; $parts=@(Get-ChildItem (Join-Path $dir 'chunks') -Filter 'part_*' | Sort-Object Name); if($parts.Count -eq 0){ throw 'no chunks found' }; Write-Host CHUNKS=$($parts.Count); $out=Join-Path $dir 'test-engine-0.1.0-SNAPSHOT.jar'; if(Test-Path $out){ Remove-Item $out -Force }; $fs=[System.IO.File]::OpenWrite($out); try{ foreach($p in $parts){ $b=[System.IO.File]::ReadAllBytes($p.FullName); $fs.Write($b,0,$b.Length) } } finally { $fs.Close() }; Write-Host ASSEMBLED; $expected=((Get-Content -Raw (Join-Path $dir 'chunks\sha256.txt')) -split '\s+')[0]; $expected=$expected.ToUpper(); $actual=(Get-FileHash $out -Algorithm SHA256).Hash; Write-Host EXPECTED=$expected; Write-Host ACTUAL=$actual; if($actual -ne $expected){ throw 'SHA256 MISMATCH' }; Write-Host SHA256_OK; & 'C:\tools\jdk-21.0.12+8\bin\jar.exe' tf $out | Out-Null; if($LASTEXITCODE -ne 0){ throw 'jar tf check failed' }; Write-Host JAR_OK; Start-ScheduledTask -TaskName TestEngine; Write-Host STARTED"
