@@ -47,7 +47,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           source: "backend/target/test-engine-0.1.0-SNAPSHOT.jar"
-          target: "C:/app"
+          target: "C:/Reverse_Web"
 
       - name: Restart service
         uses: appleboy/ssh-action@v1.2.0
@@ -56,4 +56,4 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            powershell -NoProfile -Command "Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-Process -FilePath 'C:\tools\jdk-21.0.12+8\bin\java.exe' -ArgumentList '-jar','C:\app\test-engine-0.1.0-SNAPSHOT.jar','--server.port=80' -WorkingDirectory 'C:\app' -WindowStyle Hidden; Write-Host DEPLOYED"
+            powershell -NoProfile -Command "Stop-Process -Name java -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; Start-Process -FilePath 'C:\tools\jdk-21.0.12+8\bin\java.exe' -ArgumentList '-jar','C:\Reverse_Web\test-engine-0.1.0-SNAPSHOT.jar','--server.port=80' -WorkingDirectory 'C:\Reverse_Web' -WindowStyle Hidden; Write-Host DEPLOYED"
