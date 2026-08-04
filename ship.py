@@ -22,6 +22,7 @@ Notes:
 
 import argparse
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,10 @@ def _subprocess_run(cmd: list, cwd=None, capture=False):
 
 def run(cmd: list, cwd: Path | None = None, capture: bool = False) -> subprocess.CompletedProcess:
     """Run command and print it"""
+    if os.name == "nt" and not cmd[0].lower().endswith((".exe", ".cmd")):
+        # Windows: npm/mvn ship as .cmd shims without .exe; bare names
+        # cannot be launched by subprocess (WinError 2)
+        cmd = [cmd[0] + ".cmd", *cmd[1:]]
     print(f"  $ {' '.join(str(c) for c in cmd)}")
     try:
         return _subprocess_run(cmd, cwd=cwd, capture=capture)
