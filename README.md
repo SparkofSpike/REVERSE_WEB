@@ -47,6 +47,25 @@ ship.py     # local one-click deploy script (build, upload, verify, restart)
   battle adjudication logic.
 - The backend never cares about frontend rendering details.
 
+## Battle View
+
+The battle screen is a stage presentation, not a card grid:
+
+- Combatants stand face-to-face in the middle of the field on the stage
+  background (`/assets/fight_background.webp`), each with a portrait
+  (`/assets/{templateId}.webp`, falling back to an initial-letter
+  placeholder), name, a blood-red HP bar and a green EP bar below.
+- Round transitions play natural curtain sweeps (rise on round start, fall
+  on round end); the last-dash (生死时速) moment bursts outward from the
+  center. All art is preloaded and served with a 7-day Cache-Control.
+- Performance cues are driven by structured event data from the backend:
+  action labels (Attack!/Defend!/Skill!/Heal!/...), a camera zoom anchored
+  on the acting unit, step-toward movement, target shake and floating
+  damage/heal numbers. A unit's actions play serially (Attack finishes
+  before Chase starts) and HP settles together with each damage cue.
+- The decision panel is locked while animations play, so a new submission
+  can never interleave with a still-running animation.
+
 ## Development
 
 ```bash
@@ -63,7 +82,7 @@ npm run dev
 ## Testing
 
 ```bash
-# Backend: 8 test classes / 40 tests (combat, dice, auth, build, card pack)
+# Backend: 8 test classes / 52 tests (combat, dice, auth, build, card pack)
 cd backend
 mvn test
 
