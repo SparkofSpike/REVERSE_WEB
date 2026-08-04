@@ -44,7 +44,12 @@ public class SecurityConfig {
                         // the frontend router guards private views client-side.
                         .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")).permitAll()
                         .anyRequest().authenticated())
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.sameOrigin())
+                        // let the browser cache static art; the default
+                        // no-cache header made curtain/dash images
+                        // re-download on every round transition
+                        .cacheControl(cache -> cache.disable()))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
                         response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "未认证")))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
