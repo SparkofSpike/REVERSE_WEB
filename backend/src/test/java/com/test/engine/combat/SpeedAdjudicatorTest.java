@@ -20,6 +20,11 @@ class SpeedAdjudicatorTest {
         return c;
     }
 
+    private static boolean allDistinct(List<Combatant> ordered, CombatState state) {
+        return state.getRoundSpeed().values().stream().distinct().count()
+                == state.getRoundSpeed().size();
+    }
+
     @Test
     void ordersBySpeedDescending() {
         CombatState state = new CombatState();
@@ -74,6 +79,7 @@ class SpeedAdjudicatorTest {
         assertThat(ordered).hasSize(4);
         long distinct = state.getRoundSpeed().values().stream().distinct().count();
         assertThat(distinct).isEqualTo(4);
+        assertThat(state.getLogs()).anyMatch(e -> "last_dash".equals(e.getType()));
     }
 
     @Test
@@ -89,5 +95,97 @@ class SpeedAdjudicatorTest {
         List<Combatant> ordered = adjudicator.resolve(alive, state);
         // b's +10 permanent boost always wins against a's 1d7 (max 7)
         assertThat(ordered.get(0).getId()).isEqualTo("b");
+    }
+
+    @Test
+    void twoPersonTieOnMultiFieldTriggersLastDash() {
+        // a is fixed at 3 (1d1 + 2), b and c are fixed at 1: exactly a
+        // two-person tie on a three-person field -> immediate last dash.
+        CombatState state = new CombatState();
+        List<Combatant> alive = new ArrayList<>();
+        Combatant a = combatant("a", "1d1");
+        a.setPermanentSpeedBonus(2);
+        alive.add(a);
+        alive.add(combatant("b", "1d1"));
+        alive.add(combatant("c", "1d1"));
+
+        List<Combatant> ordered = adjudicator.resolve(alive, state);
+
+        assertThat(ordered).hasSize(3);
+        assertThat(state.getLogs()).anyMatch(e -> "last_dash".equals(e.getType()));
+        assertThat(allDistinct(ordered, state)).isTrue();
+        // the dash winner becomes the fastest on the field, the loser the slowest
+        int winnerSpeed = state.getRoundSpeed().get(ordered.get(0).getId());
+        int loserSpeed = state.getRoundSpeed().get(ordered.get(2).getId());
+        assertThat(winnerSpeed).isGreaterThan(state.getRoundSpeed().get("a"));
+        assertThat(loserSpeed).isLessThan(state.getRoundSpeed().get("a"));
+        assertThat(winnerSpeed).isGreaterThan(loserSpeed);
+    }
+
+    @Test
+    void fixedDiceTiesResolveViaLastDash() {
+        // three 1d1 combatants always tie and cannot be re-rolled apart:
+        // they must go straight to the last dash without looping.
+        CombatState state = new CombatState();
+        List<Combatant> alive = new ArrayList<>();
+        alive.add(combatant("x", "1d1"));
+        alive.add(combatant("y", "1d1"));
+        alive.add(combatant("z", "1d1"));
+
+        List<Combatant> ordered = adjudicator.resolve(alive, state);
+
+        assertThat(ordered).hasSize(3);
+        assertThat(state.getLogs()).anyMatch(e -> "last_dash".equals(e.getType()));
+        assertThat(allDistinct(ordered, state)).isTrue();
+    }
+
+    @Test
+    void wholeFieldTiedLastDashAllDistinct() {
+        // 4 fixed-speed combatants: the whole field last-dashes; the final
+        // speed map must still be strictly distinct.
+        CombatState state = new CombatState();
+        List<Combatant> alive = new ArrayList<>();
+        alive.add(combatant("p", "1d1"));
+        alive.add(combatant("q", "1d1"));
+        alive.add(combatant("r", "1d1"));
+        alive.add(combatant("s", "1d1"));
+
+        List<Combatant> ordered = adjudicator.resolve(alive, state);
+
+        assertThat(ordered).hasSize(4);
+        assertThat(state.getLogs()).anyMatch(e -> "last_dash".equals(e.getType()));
+        assertThat(allDistinct(ordered, state)).isTrue();
+        // strictly descending order
+        for (int i = 0; i < ordered.size() - 1; i++) {
+            int s1 = state.getRoundSpeed().get(ordered.get(i).getId());
+            int s2 = state.getRoundSpeed().get(ordered.get(i + 1).getId());
+            assertThat(s1).isGreaterThan(s2);
+        }
+    }
+
+    @Test
+    void noResidualTiesAcrossManySeeds() {
+        // 1d7 four-combatant fields frequently tie; whatever path is taken
+        // (re-roll, 2-person dash, guaranteed-collision dash), the resolved
+        // speed map must always be strictly distinct.
+        for (long seed = 1; seed <= 40; seed++) {
+            SpeedAdjudicator ad = new SpeedAdjudicator(new DiceRoller(seed));
+            CombatState state = new CombatState();
+            List<Combatant> alive = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                alive.add(combatant("c" + i, "1d7"));
+            }
+
+            List<Combatant> ordered = ad.resolve(alive, state);
+
+            assertThat(state.getRoundSpeed().values().stream().distinct().count())
+                    .as("seed %d must produce distinct speeds", seed)
+                    .isEqualTo(4);
+            for (int i = 0; i < ordered.size() - 1; i++) {
+                int s1 = state.getRoundSpeed().get(ordered.get(i).getId());
+                int s2 = state.getRoundSpeed().get(ordered.get(i + 1).getId());
+                assertThat(s1).isGreaterThan(s2);
+            }
+        }
     }
 }
