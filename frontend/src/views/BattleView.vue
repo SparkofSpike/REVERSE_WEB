@@ -59,6 +59,9 @@ let consumedLogs = 0
 const performing = ref<Record<string, boolean>>({})
 const approaching = ref<Record<string, boolean>>({})
 const shaking = ref<Record<string, boolean>>({})
+// the HP bar keeps its old value until the matching damage/heal cue lands,
+// so HP does not drop for every unit at once when the response arrives
+const displayHp = ref<Record<string, number>>({})
 interface FloatNum {
   id: number
   targetId: string
@@ -155,6 +158,9 @@ watch(
     if (!baselineSet) {
       baselineSet = true
       consumedLogs = logs.length
+      for (const c of battle.value?.combatants ?? []) {
+        displayHp.value[c.id] = c.hp
+      }
       return
     }
     for (let i = consumedLogs; i < logs.length; i++) {
@@ -177,26 +183,25 @@ watch(
 // performance cues -> (pause) -> curtain fall -> curtain rise, so actions
 // are never hidden behind a falling curtain and the rise never cuts the fall.
 function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
-  // fixed rhythm: play on schedule; the image fades in over a gradient
   window.clearTimeout(curtainTimer)
   curtain.value = { kind, seq: ++curtainSeq }
-  animStart()
   curtainTimer = window.setTimeout(() => {
     curtain.value = null
     onDone?.()
-    animEnd()
   }, 1900)
 }
 
 function handleRoundEnd() {
-  // let the round's performance cues finish first, then drop the curtain
+  // lock through the whole curtain window (delay + animation), so the
+  // panel never unlocks between the cues ending and the fall starting
+  animStart()
   window.clearTimeout(fallTimer)
-  fallTimer = window.setTimeout(() => playCurtainNow('fall'), 2600)
+  fallTimer = window.setTimeout(() => playCurtainNow('fall', () => animEnd()), 2600)
 }
 
 function handleRoundStart() {
-  // fall first (after the pause), then rise once the fall has finished;
-  // performance cues stay buffered until the rise completes
+  // lock through the whole curtain chain (fall delay + fall + rise)
+  animStart()
   window.clearTimeout(fallTimer)
   perfGate = true
   fallTimer = window.setTimeout(() => {
@@ -206,12 +211,23 @@ function handleRoundStart() {
       playCurtainNow('rise', () => {
         perfGate = false
         flushPerf()
+        // round-start sync: any HP change without a cue settles now
+        for (const c of battle.value?.combatants ?? []) {
+          displayHp.value[c.id] = c.hp
+        }
+        animEnd()
       })
     }, 1900)
   }, 2600)
 }
 
+let dashCooldownUntil = 0
+
 function triggerDash() {
+  const now = Date.now()
+  // cooldown: consecutive last-dash moments never stack on each other
+  if (now < dashCooldownUntil) return
+  dashCooldownUntil = now + 2600
   dashOverlay.value = { seq: (dashOverlay.value?.seq ?? 0) + 1 }
   animStart()
   window.setTimeout(() => {
@@ -316,6 +332,8 @@ function applyPerformance(ev: CombatEvent) {
       if (healAction) addActionLabel(targetId, ACTION_LABELS[healAction] ?? healAction)
       window.setTimeout(() => {
         if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+        const real = battle.value?.combatants.find((c) => c.id === targetId)?.hp
+        if (real !== undefined) displayHp.value[targetId] = real
       }, 450)
     }
     return
@@ -362,6 +380,11 @@ function queueDamage(ev: CombatEvent) {
   window.setTimeout(() => {
     if (t) shakeTarget(t)
     if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
+    // HP bar settles together with the damage cue, not all at once
+    if (t) {
+      const real = battle.value?.combatants.find((c) => c.id === t)?.hp
+      if (real !== undefined) displayHp.value[t] = real
+    }
   }, delay)
 }
 
@@ -578,8 +601,12 @@ async function playCardFromHand(skillId: string, targetId?: string) {
   }
 }
 
+function displayHpOf(c: CombatantView): number {
+  return displayHp.value[c.id] ?? c.hp
+}
+
 function hpPercent(c: CombatantView): string {
-  return `${Math.max(0, Math.round((c.hp / c.maxHp) * 100))}%`
+  return `${Math.max(0, Math.round((displayHpOf(c) / c.maxHp) * 100))}%`
 }
 
 function energyPercent(c: CombatantView): string {
@@ -680,7 +707,7 @@ function statusText(c: CombatantView): string {
               <div class="bar-row">
                 <span class="bar-label">HP</span>
                 <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-                <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
+                <span class="bar-num">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
               </div>
               <div class="bar-row">
                 <span class="bar-label">EP</span>
@@ -734,7 +761,7 @@ function statusText(c: CombatantView): string {
               <div class="bar-row">
                 <span class="bar-label">HP</span>
                 <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-                <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
+                <span class="bar-num">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
               </div>
               <div class="bar-row">
                 <span class="bar-label">EP</span>
