@@ -245,7 +245,7 @@ public class CombatEngine {
         }
         if (!actor.getBaseActions().contains(action)) {
             state.log(CombatEvent.of(state.getRound(), "action",
-                    actor.getName() + " 尝试使用未装配的行动 " + action.label() + "。").with("actorId", actor.getId()));
+                    actor.getName() + " 尝试使用未装配的行动 " + action.label() + "。").with("actorId", actor.getId()).with("action", action.name()));
             return;
         }
         switch (action) {
@@ -263,7 +263,7 @@ public class CombatEngine {
         Combatant target = state.find(decision.getTargetId());
         if (target == null || target.isDead()) {
             state.log(CombatEvent.of(state.getRound(), "action", actor.getName() + " 的攻击落空（目标已不在）。")
-                .with("actorId", actor.getId()).with("targetId", decision.getTargetId()));
+                .with("actorId", actor.getId()).with("targetId", decision.getTargetId()).with("action", "ATTACK"));
             return;
         }
 
@@ -282,18 +282,18 @@ public class CombatEngine {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，抵消后 " + actor.getName() + " 造成 "
                                 + (raw - targetRaw) + " 点余伤。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", raw - targetRaw));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", raw - targetRaw).with("action", "ATTACK"));
                 deliverAttackDamage(state, actor, target, raw - targetRaw, absorber);
             } else if (targetRaw > raw) {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，抵消后 " + target.getName() + " 造成 "
                                 + (targetRaw - raw) + " 点余伤。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", targetRaw - raw));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", targetRaw - raw).with("action", "ATTACK"));
                 deliverAttackDamage(state, target, actor, targetRaw - raw, findGuardAbsorber(state, actor));
             } else {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，伤害完全抵消。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "ATTACK"));
             }
             grantAttackEnergy(state, actor);
             return;
@@ -305,13 +305,13 @@ public class CombatEngine {
             if (attackSpeed <= target.getDodgeValue()) {
                 state.log(CombatEvent.of(state.getRound(), "dodge",
                         target.getName() + " 成功闪避了 " + actor.getName() + " 的攻击！")
-                .with("actorId", actor.getId()).with("targetId", target.getId()));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "ATTACK"));
                 grantAttackEnergy(state, actor);
                 return;
             }
             state.log(CombatEvent.of(state.getRound(), "dodge",
                     target.getName() + " 闪避失败，" + actor.getName() + " 的攻击命中。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "ATTACK"));
         }
 
         // counter: a countering target strikes back immediately
@@ -319,7 +319,7 @@ public class CombatEngine {
             int counterDamage = dice.roll(target.getBaseDamageDice()).total() + target.getBonusDamage();
             state.log(CombatEvent.of(state.getRound(), "counter",
                     target.getName() + " 反击 " + actor.getName() + "！")
-                .with("actorId", target.getId()).with("targetId", actor.getId()).with("amount", counterDamage));
+                .with("actorId", target.getId()).with("targetId", actor.getId()).with("amount", counterDamage).with("action", "COUNTER"));
             deliverAttackDamage(state, target, actor, counterDamage, findGuardAbsorber(state, actor));
             if (actor.isDead()) {
                 return;
@@ -368,7 +368,7 @@ public class CombatEngine {
             absorber.setGuardSuccessCount(absorber.getGuardSuccessCount() + 1);
             state.log(CombatEvent.of(state.getRound(), "guard",
                     absorber.getName() + " 守护成功（累计 " + absorber.getGuardSuccessCount() + " 次）。")
-                .with("actorId", absorber.getId()).with("targetId", target.getId()));
+                .with("actorId", absorber.getId()).with("targetId", target.getId()).with("action", "GUARD"));
         }
 
         // lifesteal is based on actual hp lost
@@ -379,7 +379,7 @@ public class CombatEngine {
                     effectExecutor.heal(attacker, heal);
                     state.log(CombatEvent.of(state.getRound(), "heal",
                             attacker.getName() + " 通过吸血恢复 " + heal + " 点生命。")
-                .with("targetId", attacker.getId()).with("amount", heal));
+                .with("targetId", attacker.getId()).with("amount", heal).with("action", "HEAL"));
                 }
             }
         }
@@ -392,7 +392,7 @@ public class CombatEngine {
             effectExecutor.heal(attacker, 2);
             state.log(CombatEvent.of(state.getRound(), "chase",
                     attacker.getName() + " 追击追加 " + bonus + " 伤害并恢复 2 点生命。")
-                .with("actorId", attacker.getId()).with("targetId", target.getId()).with("amount", bonus));
+                .with("actorId", attacker.getId()).with("targetId", target.getId()).with("amount", bonus).with("action", "CHASE"));
         }
         attacker.setLastAttackedTarget(target.getId());
 
@@ -414,7 +414,7 @@ public class CombatEngine {
                     receiver.setTotalHealGiven(receiver.getTotalHealGiven() + healed);
                     state.log(CombatEvent.of(state.getRound(), "heal",
                             receiver.getName() + " 的和谐友爱恢复了 " + buddy.getName() + " " + healed + " 点生命。")
-                .with("targetId", buddy.getId()).with("amount", healed));
+                .with("targetId", buddy.getId()).with("amount", healed).with("action", "HEAL"));
                 }
             }
         }
@@ -427,7 +427,7 @@ public class CombatEngine {
         actor.setBlockValue(blockValue);
         state.log(CombatEvent.of(state.getRound(), "action",
                 actor.getName() + " 进入防御状态（物理/魔法抗性 -0.2），格挡值 " + blockValue + "。")
-                .with("actorId", actor.getId()));
+                .with("actorId", actor.getId()).with("action", "DEFEND"));
         if (actor.getTemplate() != null && actor.getTemplate().getCorePassive() != null
                 && "stone_shield".equals(actor.getTemplate().getCorePassive().getType())) {
             actor.setStoneShieldPending(true);
@@ -445,7 +445,7 @@ public class CombatEngine {
         actor.setDodging(true);
         state.log(CombatEvent.of(state.getRound(), "action",
                 actor.getName() + " 进入闪避状态（闪避值 " + value + "）。")
-                .with("actorId", actor.getId()));
+                .with("actorId", actor.getId()).with("action", "DODGE"));
         grantAttackEnergy(state, actor);
     }
 
@@ -457,7 +457,7 @@ public class CombatEngine {
         actor.setGuardTargetId(target.getId());
         state.log(CombatEvent.of(state.getRound(), "action",
                 actor.getName() + " 守护 " + target.getName() + "（守护者抗性 -0.1，被守护者 -0.2）。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "GUARD"));
         grantAttackEnergy(state, actor);
     }
 
@@ -465,7 +465,7 @@ public class CombatEngine {
         actor.setCountering(true);
         state.log(CombatEvent.of(state.getRound(), "action",
                 actor.getName() + " 进入反击状态（物理/魔法抗性 -0.1）。")
-                .with("actorId", actor.getId()));
+                .with("actorId", actor.getId()).with("action", "COUNTER"));
         grantAttackEnergy(state, actor);
     }
 
@@ -478,7 +478,7 @@ public class CombatEngine {
         actor.setEnergy(Math.min(actor.getMaxEnergy(), actor.getEnergy() + amount));
         state.log(CombatEvent.of(state.getRound(), "action",
                 actor.getName() + " 祈思，恢复 " + amount + " 点精力。")
-                .with("actorId", actor.getId()).with("amount", amount));
+                .with("actorId", actor.getId()).with("amount", amount).with("action", "PRAY"));
         grantAttackEnergy(state, actor);
     }
 
@@ -505,7 +505,7 @@ public class CombatEngine {
         if (caster.hasCooldown(skill.getId())) {
             state.log(CombatEvent.of(state.getRound(), "skill",
                     caster.getName() + " 的技能 " + skill.getName() + " 仍在冷却。")
-                .with("actorId", caster.getId()));
+                .with("actorId", caster.getId()).with("action", "SKILL"));
             return;
         }
         int cost = Math.max(0, skill.getEnergyCost() - energyDiscount(caster));
@@ -521,7 +521,7 @@ public class CombatEngine {
         }
         state.log(CombatEvent.of(state.getRound(), "skill",
                 caster.getName() + " 使用技能 " + skill.getName() + "（消耗 " + cost + " 精力）。")
-                .with("actorId", caster.getId()).with("targetId", decision.getTargetId()));
+                .with("actorId", caster.getId()).with("targetId", decision.getTargetId()).with("action", "SKILL"));
         for (EffectSpec effect : skill.getEffects()) {
             effectExecutor.execute(effect, caster, state, decision.getTargetId());
         }
@@ -553,7 +553,7 @@ public class CombatEngine {
         Combatant caster = state.alive(CombatSide.PLAYER).get(0);
         state.log(CombatEvent.of(state.getRound(), "card",
                 caster.getName() + " 打出通用技能 " + card.getName() + "。")
-                .with("actorId", caster.getId()));
+                .with("actorId", caster.getId()).with("action", "CARD"));
         for (EffectSpec effect : card.getEffects()) {
             effectExecutor.execute(effect, caster, state, targetId);
         }
