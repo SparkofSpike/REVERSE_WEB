@@ -39,8 +39,10 @@ const portraitFailed = ref<Record<string, boolean>>({})
 // The last-dash moment uses a separate full-screen channel so it is never
 // starved by per-round curtain events.
 const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
-const curtainQueue: Array<'rise' | 'fall'> = []
 let curtainSeq = 0
+let curtainTimer = 0
+let fallTimer = 0
+let riseTimer = 0
 const dashOverlay = ref<{ seq: number } | null>(null)
 
 // Log consumption: the first load is only a baseline (never replays old
@@ -56,7 +58,7 @@ interface FloatNum {
   id: number
   targetId: string
   text: string
-  kind: 'damage' | 'heal'
+  kind: 'damage' | 'heal' | 'action'
 }
 const floats = ref<FloatNum[]>([])
 let floatSeq = 0
@@ -123,9 +125,9 @@ watch(
     for (let i = consumedLogs; i < logs.length; i++) {
       const ev = logs[i]
       if (ev.type === 'round_start') {
-        triggerCurtain('rise')
+        handleRoundStart()
       } else if (ev.type === 'round_end') {
-        triggerCurtain('fall')
+        handleRoundEnd()
       } else if (ev.type === 'last_dash') {
         triggerDash()
       }
@@ -136,23 +138,31 @@ watch(
   { deep: true }
 )
 
-function triggerCurtain(kind: 'rise' | 'fall') {
-  if (curtain.value) {
-    curtainQueue.push(kind)
-    return
-  }
-  playCurtain(kind)
+// Curtain cooldown flow: one curtain at a time (~1.9s). Round order is
+// performance cues -> (pause) -> curtain fall -> curtain rise, so actions
+// are never hidden behind a falling curtain and the rise never cuts the fall.
+function playCurtainNow(kind: 'rise' | 'fall') {
+  window.clearTimeout(curtainTimer)
+  curtain.value = { kind, seq: ++curtainSeq }
+  curtainTimer = window.setTimeout(() => {
+    curtain.value = null
+  }, 1900)
 }
 
-function playCurtain(kind: 'rise' | 'fall') {
-  curtain.value = { kind, seq: ++curtainSeq }
-  window.setTimeout(() => {
-    curtain.value = null
-    const next = curtainQueue.shift()
-    if (next) {
-      playCurtain(next)
-    }
-  }, 1900)
+function handleRoundEnd() {
+  // let the round's performance cues finish first, then drop the curtain
+  window.clearTimeout(fallTimer)
+  fallTimer = window.setTimeout(() => playCurtainNow('fall'), 2600)
+}
+
+function handleRoundStart() {
+  // fall first (after the pause), then rise once the fall has finished
+  window.clearTimeout(fallTimer)
+  fallTimer = window.setTimeout(() => {
+    playCurtainNow('fall')
+    window.clearTimeout(riseTimer)
+    riseTimer = window.setTimeout(() => playCurtainNow('rise'), 1900)
+  }, 2600)
 }
 
 function triggerDash() {
@@ -163,24 +173,33 @@ function triggerDash() {
 }
 
 // ---------- performance cues from structured event data ----------
+const ACTION_LABELS: Record<string, string> = {
+  ATTACK: 'Attack!',
+  DEFEND: 'Defend!',
+  DODGE: 'Dodge!',
+  GUARD: 'Guard!',
+  COUNTER: 'Counter!',
+  CHASE: 'Chase!',
+  PRAY: 'Pray!',
+  SKILL: 'Skill!',
+  CARD: 'Card!',
+  HEAL: 'Heal!'
+}
+
+function addActionLabel(unitId: string, text: string) {
+  const id = ++floatSeq
+  floats.value.push({ id, targetId: unitId, text, kind: 'action' })
+  window.setTimeout(() => {
+    floats.value = floats.value.filter((f) => f.id !== id)
+  }, 1150)
+}
+
 function consumePerformanceEvent(ev: CombatEvent) {
   const d = (ev.data ?? {}) as Record<string, unknown>
   const actorId = d.actorId as string | undefined
   const targetId = d.targetId as string | undefined
+  const action = d.action as string | undefined
 
-  if (ev.type === 'skill' || ev.type === 'action' || ev.type === 'clash' || ev.type === 'chase') {
-    if (actorId) pulseActor(actorId)
-    if (ev.type === 'clash' || ev.type === 'chase') {
-      if (actorId && targetId) approachTarget(actorId)
-    }
-  }
-  if (ev.type === 'counter') {
-    const counterActor = d.actorId as string | undefined
-    if (counterActor) {
-      pulseActor(counterActor)
-      approachTarget(counterActor)
-    }
-  }
   if (ev.type === 'damage') {
     const t = d.target as string | undefined
     if (t) {
@@ -188,9 +207,22 @@ function consumePerformanceEvent(ev: CombatEvent) {
       const amount = (d.hpDamage ?? d.raw ?? 0) as number
       if (amount > 0) addFloat(t, `-${amount}`, 'damage')
     }
+    return
   }
   if (ev.type === 'heal') {
-    if (targetId && d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+    if (targetId) {
+      if (action) addActionLabel(targetId, ACTION_LABELS[action] ?? action)
+      if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+    }
+    return
+  }
+  // action / skill / clash / chase / counter / card: label first, then act
+  if (actorId) {
+    if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
+    pulseActor(actorId)
+    if ((ev.type === 'clash' || ev.type === 'chase' || ev.type === 'counter') && targetId) {
+      approachTarget(actorId)
+    }
   }
 }
 
@@ -461,18 +493,6 @@ function statusText(c: CombatantView): string {
         </div>
       </section>
 
-      <!-- special perk -->
-      <section v-if="inSpecialPerk" class="panel perk-panel">
-        <h3>特殊词条轮</h3>
-        <div class="perk-grid">
-          <div v-for="p in battle.specialPerkOptions" :key="p.id" class="perk-card" @click="chooseSpecialPerk(p.id)">
-            <div class="perk-name accent">{{ p.name }}</div>
-            <div class="perk-desc">{{ p.description }}</div>
-          </div>
-        </div>
-        <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
-      </section>
-
       <!-- battle stage: face-to-face showdown in the middle of the field -->
       <div class="stage" :class="{ dimmed: anyPerforming }">
         <div class="side-col side-player">
@@ -636,9 +656,18 @@ function statusText(c: CombatantView): string {
         <n-button type="primary" :loading="submitting" @click="submitDecisions">提交指令</n-button>
       </div>
 
-      <!-- generic skill hand -->
-      <div v-if="inDecision" class="panel footer-panel">
-        <div class="hand">
+      <!-- generic skill hand + special perk offers -->
+      <div v-if="inDecision || inSpecialPerk" class="panel footer-panel">
+        <div v-if="inSpecialPerk" class="hand">
+          <span class="dim">特殊词条</span>
+          <div v-for="p in battle.specialPerkOptions" :key="p.id" class="card" @click="chooseSpecialPerk(p.id)" :title="p.description">
+            <div class="card-name accent">{{ p.name }}</div>
+            <div class="card-desc dim">{{ p.description }}</div>
+          </div>
+          <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
+          <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
+        </div>
+        <div v-if="inDecision" class="hand">
           <span class="dim">手牌</span>
           <div v-for="card in battle.playerHand" :key="card.id" class="card" @click="playCardFromHand(card.id)" :title="card.description">
             <div class="card-name accent">{{ card.name }}</div>
@@ -905,6 +934,34 @@ function statusText(c: CombatantView): string {
 
 .float-num.heal {
   color: var(--ok);
+}
+
+.float-num.action {
+  top: 6%;
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffc857;
+  letter-spacing: 1px;
+  text-shadow: 0 0 14px rgba(255, 200, 87, 0.7), 0 2px 6px rgba(0, 0, 0, 0.95);
+  animation: action-pop 1.1s ease-out forwards;
+}
+
+@keyframes action-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -8px) scale(1.3);
+  }
+  45% {
+    transform: translate(-50%, -12px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -42px) scale(0.95);
+  }
 }
 
 .info {
