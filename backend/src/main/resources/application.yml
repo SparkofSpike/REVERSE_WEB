@@ -22,6 +22,14 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+logging:
+  file:
+    name: logs/test-engine.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+
 app:
   jwt:
     # local dev secret, override via APP_JWT_SECRET in production
