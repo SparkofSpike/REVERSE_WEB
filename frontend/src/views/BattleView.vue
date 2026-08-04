@@ -334,7 +334,7 @@ function pulseActor(id: string) {
   performing.value[id] = true
   window.setTimeout(() => {
     performing.value[id] = false
-  }, 680)
+  }, 980)
 }
 
 function approachTarget(id: string) {
@@ -930,7 +930,11 @@ function statusText(c: CombatantView): string {
 }
 
 .stage.dimmed .unit:not(.performing):not(.dead) {
-  opacity: 0.55;
+  opacity: 0.45;
+}
+
+.stage.dimmed .unit:not(.performing):not(.dead) .portrait-wrap {
+  transform: scale(0.88);
 }
 
 .side-col {
@@ -965,11 +969,17 @@ function statusText(c: CombatantView): string {
 }
 
 .unit.performing {
-  border-color: rgba(76, 194, 255, 0.6);
+  border-color: rgba(76, 194, 255, 0.85);
+  box-shadow: 0 0 28px rgba(76, 194, 255, 0.4);
+  z-index: 3;
 }
 
 .unit.performing .portrait-wrap {
-  transform: scale(1.14);
+  transform: scale(1.45);
+}
+
+.unit.performing .info {
+  transform: scale(1.12);
 }
 
 .side-player .unit.approaching {
