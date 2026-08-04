@@ -31,6 +31,19 @@ interface PendingDecision {
 const pending = ref<Record<string, PendingDecision>>({})
 const targetDummy = ref('dummy')
 
+// portrait images: /assets/{templateId}.png, falling back to a placeholder
+const portraitFailed = ref<Record<string, boolean>>({})
+
+// transition overlays driven by battle log events
+const OVERLAY_SRC: Record<string, string> = {
+  round_start: '/assets/curtain_rise.png',
+  round_end: '/assets/curtain_fall.png',
+  last_dash: '/assets/last_dash.png'
+}
+const overlay = ref<{ src: string; key: number } | null>(null)
+const overlayQueue: string[] = []
+let consumedLogs = 0
+
 const players = computed(() =>
   (battle.value?.combatants ?? []).filter((c) => c.side === 'PLAYER')
 )
@@ -59,6 +72,43 @@ watch(
   },
   { immediate: true }
 )
+
+// consume new battle log entries and queue transition overlays.
+// getBattle returns the FULL log array every poll, so only process the tail.
+watch(
+  () => battle.value?.logs,
+  (logs) => {
+    if (!logs) return
+    for (let i = consumedLogs; i < logs.length; i++) {
+      const src = OVERLAY_SRC[logs[i].type]
+      if (src) overlayQueue.push(src)
+      consumedLogs = i + 1
+    }
+    if (!overlay.value && overlayQueue.length > 0) {
+      showNextOverlay()
+    }
+  },
+  { deep: true }
+)
+
+function showNextOverlay() {
+  const src = overlayQueue.shift()
+  if (!src) return
+  overlay.value = { src, key: Date.now() }
+  window.setTimeout(() => {
+    overlay.value = null
+  }, 1600)
+}
+
+function onOverlayLeave() {
+  if (overlayQueue.length > 0) {
+    showNextOverlay()
+  }
+}
+
+function portraitUrl(c: CombatantView): string {
+  return `/assets/${c.templateId}.png`
+}
 
 async function load() {
   loading.value = true
@@ -313,133 +363,144 @@ function statusText(c: CombatantView): string {
         <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
       </section>
 
-      <!-- enemy side (top) -->
-      <section class="panel side">
-        <h4>敌方</h4>
-        <div class="unit-row">
-          <div v-for="c in enemies" :key="c.id" class="unit" :class="{ dead: c.dead }">
-            <div class="unit-head">
-              <span class="unit-name">{{ c.name }}</span>
-              <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label">HP</span>
-              <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label">EP</span>
-              <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
-            </div>
-            <div class="unit-stats dim">
-              速度 {{ c.speedDice }} | {{ c.baseDamageDice }} {{ c.baseDamageType }}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- battle log -->
-      <section class="panel log-panel">
-        <h4>战斗日志</h4>
-        <div class="log-list">
-          <div v-for="(log, i) in battle.logs" :key="i" class="log-row">
-            <span class="log-round dim">R{{ log.round }}</span>
-            <span class="log-type" :class="log.type">{{ log.type }}</span>
-            <span class="log-message">{{ log.message }}</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- player side -->
-      <section class="panel side">
-        <h4>我方</h4>
-        <div class="unit-row">
+      <!-- battle stage: combatants on the background image -->
+      <div class="stage">
+        <div class="side-col">
+          <h4>我方</h4>
           <div v-for="c in players" :key="c.id" class="unit" :class="{ dead: c.dead }">
-            <div class="unit-head">
-              <span class="unit-name">{{ c.name }}</span>
+            <div class="portrait-wrap">
+              <img
+                v-if="!portraitFailed[c.id]"
+                :src="portraitUrl(c)"
+                :alt="c.name"
+                class="portrait"
+                @error="portraitFailed[c.id] = true"
+              />
+              <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
-              <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
             </div>
-            <div class="bar-row">
-              <span class="bar-label">HP</span>
-              <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label">EP</span>
-              <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
-            </div>
-            <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
-
-            <!-- decision controls -->
-            <div v-if="inDecision && !c.dead" class="decision-row">
-              <n-select
-                v-model:value="pending[c.id].actionType"
-                :options="actionOptions(c)"
-                size="small"
-                style="width: 130px"
-              />
-              <n-select
-                v-if="pending[c.id].actionType === 'SKILL'"
-                v-model:value="pending[c.id].skillId"
-                :options="c.skills.map((s) => ({
-                  label: `${s.name} (${s.energyCost})${s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : ''}`,
-                  value: s.id
-                }))"
-                size="small"
-                style="width: 160px"
-              />
-              <n-select
-                v-if="needsTarget(pending[c.id].actionType) || (pending[c.id].actionType === 'SKILL' && pending[c.id].skillId)"
-                v-model:value="pending[c.id].targetId"
-                :options="
-                  pending[c.id].actionType === 'SKILL'
-                    ? skillTargetOptions(c.skills.find((s) => s.id === pending[c.id].skillId)?.targetType ?? '', c)
-                    : enemies.filter((e) => !e.dead).map((e) => ({ label: e.name, value: e.id }))
-                "
-                size="small"
-                style="width: 130px"
-              />
-              <n-select
-                v-if="needsGuardTarget(pending[c.id].actionType)"
-                v-model:value="pending[c.id].targetId"
-                :options="players.filter((p) => !p.dead && p.id !== c.id).map((p) => ({ label: p.name, value: p.id }))"
-                size="small"
-                style="width: 130px"
-              />
-            </div>
-            <div v-if="inDecision && !c.dead" class="skill-hint">
-              <span class="dim">技能</span>
-              <span
-                v-for="s in c.skills"
-                :key="s.id"
-                :class="skillTagClass(c, s)"
-                @click="selectSkill(c, s)"
-              >
-                {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
-              </span>
-            </div>
-            <div
-              v-if="inDecision && !c.dead && pending[c.id]?.actionType === 'SKILL' && selectedSkill(c)"
-              class="skill-detail"
-            >
-              <div class="skill-desc dim">{{ selectedSkill(c)?.description }}</div>
-              <n-select
-                v-if="skillNeedsTarget(selectedSkill(c))"
-                v-model:value="pending[c.id].targetId"
-                :options="skillTargetOptions(selectedSkill(c)?.targetType ?? '', c)"
-                size="small"
-                style="width: 170px"
-                placeholder="选择目标"
-              />
+            <div class="info">
+              <div class="name">
+                {{ c.name }}
+                <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">HP</span>
+                <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
+                <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">EP</span>
+                <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
+                <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
+              </div>
+              <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
             </div>
           </div>
         </div>
-      </section>
 
-      <!-- decision footer -->
+        <div class="side-col side-enemy">
+          <h4>敌方</h4>
+          <div v-for="c in enemies" :key="c.id" class="unit" :class="{ dead: c.dead }">
+            <div class="portrait-wrap">
+              <img
+                v-if="!portraitFailed[c.id]"
+                :src="portraitUrl(c)"
+                :alt="c.name"
+                class="portrait"
+                @error="portraitFailed[c.id] = true"
+              />
+              <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
+              <span v-if="c.performing" class="tag-perform">演出</span>
+            </div>
+            <div class="info">
+              <div class="name">
+                {{ c.name }}
+                <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">HP</span>
+                <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
+                <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-label">EP</span>
+                <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
+                <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
+              </div>
+              <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- decision panel: one control row per alive player -->
+      <div v-if="inDecision" class="panel decision-panel">
+        <div v-for="c in alivePlayers" :key="c.id" class="decision-unit">
+          <span class="actor-name">{{ c.name }}</span>
+          <n-select
+            v-model:value="pending[c.id].actionType"
+            :options="actionOptions(c)"
+            size="small"
+            style="width: 120px"
+          />
+          <n-select
+            v-if="pending[c.id].actionType === 'SKILL'"
+            v-model:value="pending[c.id].skillId"
+            :options="c.skills.map((s) => ({
+              label: `${s.name} (${s.energyCost})${s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : ''}`,
+              value: s.id
+            }))"
+            size="small"
+            style="width: 160px"
+          />
+          <n-select
+            v-if="needsTarget(pending[c.id].actionType) || (pending[c.id].actionType === 'SKILL' && pending[c.id].skillId)"
+            v-model:value="pending[c.id].targetId"
+            :options="
+              pending[c.id].actionType === 'SKILL'
+                ? skillTargetOptions(c.skills.find((s) => s.id === pending[c.id].skillId)?.targetType ?? '', c)
+                : enemies.filter((e) => !e.dead).map((e) => ({ label: e.name, value: e.id }))
+            "
+            size="small"
+            style="width: 120px"
+          />
+          <n-select
+            v-if="needsGuardTarget(pending[c.id].actionType)"
+            v-model:value="pending[c.id].targetId"
+            :options="players.filter((p) => !p.dead && p.id !== c.id).map((p) => ({ label: p.name, value: p.id }))"
+            size="small"
+            style="width: 120px"
+          />
+          <div class="skill-hint">
+            <span
+              v-for="s in c.skills"
+              :key="s.id"
+              :class="skillTagClass(c, s)"
+              @click="selectSkill(c, s)"
+            >
+              {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
+            </span>
+          </div>
+          <div
+            v-if="pending[c.id].actionType === 'SKILL' && selectedSkill(c)"
+            class="skill-detail"
+          >
+            <div class="skill-desc dim">{{ selectedSkill(c)?.description }}</div>
+            <n-select
+              v-if="skillNeedsTarget(selectedSkill(c))"
+              v-model:value="pending[c.id].targetId"
+              :options="skillTargetOptions(selectedSkill(c)?.targetType ?? '', c)"
+              size="small"
+              style="width: 170px"
+              placeholder="选择目标"
+            />
+          </div>
+        </div>
+        <n-button type="primary" :loading="submitting" @click="submitDecisions">提交指令</n-button>
+      </div>
+
+      <!-- generic skill hand -->
       <div v-if="inDecision" class="panel footer-panel">
         <div class="hand">
           <span class="dim">手牌</span>
@@ -455,11 +516,27 @@ function statusText(c: CombatantView): string {
           </div>
           <span v-if="battle.playerHand.length === 0" class="dim">无手牌</span>
         </div>
-        <n-button type="primary" :loading="submitting" @click="submitDecisions">
-          提交指令
-        </n-button>
       </div>
+
+      <!-- battle log -->
+      <section class="panel log-panel">
+        <h4>战斗日志</h4>
+        <div class="log-list">
+          <div v-for="(log, i) in battle.logs" :key="i" class="log-row">
+            <span class="log-round dim">R{{ log.round }}</span>
+            <span class="log-type" :class="log.type">{{ log.type }}</span>
+            <span class="log-message">{{ log.message }}</span>
+          </div>
+        </div>
+      </section>
     </main>
+
+    <!-- transition overlay: curtain rise / curtain fall / last dash -->
+    <Transition name="overlay" @after-leave="onOverlayLeave">
+      <div v-if="overlay" :key="overlay.key" class="overlay">
+        <img :src="overlay.src" alt="" />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -561,90 +638,172 @@ function statusText(c: CombatantView): string {
   color: var(--text-dim);
 }
 
-.unit-row {
+/* ---------- battle stage ---------- */
+
+.stage {
+  position: relative;
+  min-height: 460px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(11, 14, 20, 0.25), rgba(11, 14, 20, 0.55)),
+    url('/assets/fight_background.png') center / cover no-repeat;
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 20px 28px;
 }
 
-.unit-row .unit {
-  flex: 1 1 300px;
+.side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 200px;
 }
 
-.side h4 {
-  font-size: 14px;
-  margin-bottom: 10px;
+.side-col h4 {
+  font-size: 13px;
   color: var(--text-dim);
-  letter-spacing: 1px;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  margin: 0 0 2px 6px;
+}
+
+.side-enemy {
+  align-items: flex-end;
+}
+
+.side-enemy h4 {
+  margin: 0 6px 2px 0;
+  text-align: right;
 }
 
 .unit {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 10px;
-  background: var(--bg-panel-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(18, 23, 32, 0.72);
+  border: 1px solid rgba(35, 44, 61, 0.85);
+  backdrop-filter: blur(2px);
+  transition: border-color 0.2s, opacity 0.2s;
 }
 
 .unit.dead {
-  opacity: 0.45;
+  opacity: 0.4;
+  filter: grayscale(0.9);
 }
 
-.unit-head {
+.portrait-wrap {
+  position: relative;
+  width: 150px;
+  height: 190px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.18), rgba(11, 14, 20, 0.6));
 }
 
-.unit-name {
-  font-size: 15px;
-  font-weight: 600;
+.portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.portrait-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  font-weight: 700;
+  color: rgba(215, 224, 238, 0.35);
+  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.12), rgba(11, 14, 20, 0.7));
 }
 
 .tag-perform {
+  position: absolute;
+  top: 6px;
+  left: 6px;
   font-size: 11px;
   color: var(--warn);
   border: 1px solid var(--warn);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
+  background: rgba(11, 14, 20, 0.6);
+}
+
+.info {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.name {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.shield-tag {
+  color: var(--shield);
+  font-size: 12px;
 }
 
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
 }
 
 .bar-label {
-  width: 24px;
+  width: 22px;
   font-size: 11px;
   color: var(--text-dim);
+  flex-shrink: 0;
 }
 
 .bar-num {
   font-size: 11px;
-  min-width: 56px;
+  min-width: 52px;
   text-align: right;
   color: var(--text-dim);
 }
 
 .unit-status {
   font-size: 11px;
-  margin-top: 4px;
+  text-align: center;
 }
 
-.unit-stats {
-  font-size: 12px;
-  margin-top: 6px;
-}
+/* ---------- decision panel ---------- */
 
-.decision-row {
+.decision-panel {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.decision-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.actor-name {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 90px;
 }
 
 .skill-hint {
@@ -652,7 +811,6 @@ function statusText(c: CombatantView): string {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
   font-size: 12px;
 }
 
@@ -682,16 +840,22 @@ function statusText(c: CombatantView): string {
 }
 
 .skill-detail {
-  margin-top: 6px;
+  margin-top: 4px;
   padding: 6px 8px;
   border: 1px dashed var(--border);
   border-radius: 6px;
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .skill-desc {
-  margin-bottom: 6px;
+  margin-bottom: 0;
 }
+
+/* ---------- hand / log ---------- */
 
 .footer-panel {
   display: flex;
@@ -740,7 +904,7 @@ function statusText(c: CombatantView): string {
 }
 
 .log-list {
-  max-height: 320px;
+  max-height: 260px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -779,5 +943,41 @@ function statusText(c: CombatantView): string {
 
 .log-message {
   flex: 1;
+}
+
+/* ---------- transition overlay ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 12, 0.6);
+}
+
+.overlay img {
+  max-width: 68vw;
+  max-height: 62vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.7);
+}
+
+.overlay-enter-active {
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.overlay-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.overlay-enter-from {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+.overlay-leave-to {
+  opacity: 0;
 }
 </style>
