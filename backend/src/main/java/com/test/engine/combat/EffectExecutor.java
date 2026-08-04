@@ -288,6 +288,7 @@ public class EffectExecutor {
 
     private void upgradeSkills(Combatant caster, CombatState state) {
         int upgraded = 0;
+        caster.setSkillsUpgraded(true);
         List<SkillTemplateUpgrade> replacements = new ArrayList<>();
         for (com.test.engine.model.SkillTemplate skill : caster.getSkills()) {
             if (skill.getUpgraded() != null) {

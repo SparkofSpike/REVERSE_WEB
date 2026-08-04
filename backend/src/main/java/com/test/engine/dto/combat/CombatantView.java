@@ -28,6 +28,7 @@ public class CombatantView {
     private int shieldRemainingRounds;
     private boolean dead;
     private boolean performing;
+    private boolean skillsUpgraded;
     private boolean dodging;
     private int guardSuccessCount;
     private int totalHealGiven;

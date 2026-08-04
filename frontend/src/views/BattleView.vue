@@ -385,7 +385,7 @@ function statusText(c: CombatantView): string {
                 v-if="pending[c.id].actionType === 'SKILL'"
                 v-model:value="pending[c.id].skillId"
                 :options="c.skills.map((s) => ({
-                  label: `${s.name} (${s.energyCost})${s.upgraded ? ' 升变' : ''}`,
+                  label: `${s.name} (${s.energyCost})${s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : ''}`,
                   value: s.id
                 }))"
                 size="small"
@@ -418,7 +418,7 @@ function statusText(c: CombatantView): string {
                 :class="skillTagClass(c, s)"
                 @click="selectSkill(c, s)"
               >
-                {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? ' 升变' : '' }}
+                {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
               </span>
             </div>
             <div

@@ -180,6 +180,8 @@ class CombatEngineTest {
                 ActionDecision.skill(mage.getId(), "mage-s2", null))); // 聚求: draw a card
 
         assertThat(mage.isPerforming()).isTrue();
+        // mage performance has no upgrade_skills effect
+        assertThat(mage.isSkillsUpgraded()).isFalse();
         assertThat(state.getPlayerDrawEnergy()).isGreaterThanOrEqualTo(drawBefore + 2);
         // mage-s2 costs 28, discount -2 (技艺生疏): 30 - 26 + 20 default restore = 24
         assertThat(mage.getEnergy()).isEqualTo(24);
@@ -201,6 +203,8 @@ class CombatEngineTest {
                 ActionDecision.skill(warrior.getId(), "warrior-s2", null))); // 嗜血突袭: 20 energy
 
         assertThat(warrior.isPerforming()).isTrue();
+        // warrior performance upgrades all three skills
+        assertThat(warrior.isSkillsUpgraded()).isTrue();
         // 60 - 20 (skill) + 35 (performance) = 75; default +20 must NOT apply
         assertThat(warrior.getEnergy()).isEqualTo(75);
         assertThat(state.getPlayerDrawEnergy()).isGreaterThanOrEqualTo(2);

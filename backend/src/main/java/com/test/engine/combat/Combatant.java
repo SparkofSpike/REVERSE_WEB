@@ -46,6 +46,8 @@ public class Combatant {
     private int blockValue;
     private boolean dead;
     private boolean performing;
+    /** True once the performance has upgraded this character's skills. */
+    private boolean skillsUpgraded;
     private boolean undyingUsed;
     private int extraActionsThisTurn;
     private int extraGuardsThisTurn;

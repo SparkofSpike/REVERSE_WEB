@@ -126,6 +126,7 @@ public class CombatService {
         v.setShieldRemainingRounds(c.getShieldRemainingRounds());
         v.setDead(c.isDead());
         v.setPerforming(c.isPerforming());
+        v.setSkillsUpgraded(c.isSkillsUpgraded());
         v.setDodging(c.isDodging());
         v.setGuardSuccessCount(c.getGuardSuccessCount());
         v.setTotalHealGiven(c.getTotalHealGiven());

@@ -161,6 +161,7 @@ export interface CombatantView {
   shieldRemainingRounds: number
   dead: boolean
   performing: boolean
+  skillsUpgraded: boolean
   dodging: boolean
   guardSuccessCount: number
   totalHealGiven: number
