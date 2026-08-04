@@ -12,7 +12,7 @@ import {
   skipSpecialPerk
 } from '@/api/combat'
 import { errorMessage } from '@/api/http'
-import type { CombatView, CombatantView, ActionDecision } from '@/types'
+import type { CombatView, CombatantView, ActionDecision, SkillView } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -79,7 +79,10 @@ async function load() {
 }
 
 function actionOptions(c: CombatantView) {
-  return c.baseActions.map((a) => ({ label: actionLabel(a), value: a }))
+  return [
+    ...c.baseActions.map((a) => ({ label: actionLabel(a), value: a })),
+    { label: '技能', value: 'SKILL' }
+  ]
 }
 
 function actionLabel(action: string): string {
@@ -101,6 +104,34 @@ function needsTarget(action: string): boolean {
 
 function needsGuardTarget(action: string): boolean {
   return action === 'GUARD'
+}
+
+function selectSkill(c: CombatantView, s: SkillView) {
+  if (s.cooldown > 0) {
+    message.warning(`${s.name} 冷却中（还需 ${s.cooldown} 回合）`)
+    return
+  }
+  pending.value[c.id] = {
+    actionType: 'SKILL',
+    skillId: s.id,
+    targetId: s.targetType === 'self' ? c.id : null
+  }
+}
+
+function selectedSkill(c: CombatantView): SkillView | null {
+  const id = pending.value[c.id]?.skillId
+  return c.skills.find((s) => s.id === id) ?? null
+}
+
+function skillNeedsTarget(s: SkillView | null): boolean {
+  if (!s) return false
+  return s.targetType !== 'self' && s.targetType !== 'allies'
+}
+
+function skillTagClass(c: CombatantView, s: SkillView): string {
+  const active = pending.value[c.id]?.skillId === s.id ? ' active' : ''
+  const cooldown = s.cooldown > 0 ? ' cooldown' : ''
+  return 'skill-tag' + active + cooldown
 }
 
 function skillTargetOptions(skillTargetType: string, c: CombatantView) {
@@ -379,10 +410,30 @@ function statusText(c: CombatantView): string {
                 style="width: 130px"
               />
             </div>
-            <div v-if="inDecision && !c.dead" class="skill-hint dim">
-              <template v-for="s in c.skills" :key="s.id">
-                {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}
-              </template>
+            <div v-if="inDecision && !c.dead" class="skill-hint">
+              <span class="dim">技能</span>
+              <span
+                v-for="s in c.skills"
+                :key="s.id"
+                :class="skillTagClass(c, s)"
+                @click="selectSkill(c, s)"
+              >
+                {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? ' 升变' : '' }}
+              </span>
+            </div>
+            <div
+              v-if="inDecision && !c.dead && pending[c.id]?.actionType === 'SKILL' && selectedSkill(c)"
+              class="skill-detail"
+            >
+              <div class="skill-desc dim">{{ selectedSkill(c)?.description }}</div>
+              <n-select
+                v-if="skillNeedsTarget(selectedSkill(c))"
+                v-model:value="pending[c.id].targetId"
+                :options="skillTargetOptions(selectedSkill(c)?.targetType ?? '', c)"
+                size="small"
+                style="width: 170px"
+                placeholder="选择目标"
+              />
             </div>
           </div>
         </div>
@@ -597,8 +648,49 @@ function statusText(c: CombatantView): string {
 }
 
 .skill-hint {
-  font-size: 11px;
-  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.skill-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.skill-tag:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.skill-tag.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(76, 194, 255, 0.12);
+}
+
+.skill-tag.cooldown {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.skill-detail {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.skill-desc {
+  margin-bottom: 6px;
 }
 
 .footer-panel {
