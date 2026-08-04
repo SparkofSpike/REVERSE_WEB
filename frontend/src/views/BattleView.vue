@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NSelect, useMessage } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
@@ -44,6 +44,21 @@ const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 
 onMounted(load)
+
+// keep per-combatant pending decisions in sync with alive players.
+// summons (e.g. puppet minions) can appear mid-battle; rendering accesses
+// pending[c.id].actionType and would crash on a missing entry.
+watch(
+  () => alivePlayers.value.map((p) => p.id).join(','),
+  (ids) => {
+    for (const id of ids.split(',')) {
+      if (id && !pending.value[id]) {
+        pending.value[id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
+      }
+    }
+  },
+  { immediate: true }
+)
 
 async function load() {
   loading.value = true
@@ -250,10 +265,65 @@ function statusText(c: CombatantView): string {
         </div>
       </section>
 
-      <!-- battlefield -->
-      <div class="field">
-        <section class="side panel">
-          <h4>我方</h4>
+      <!-- special perk -->
+      <section v-if="inSpecialPerk" class="panel perk-panel">
+        <h3>特殊词条轮</h3>
+        <div class="perk-grid">
+          <div
+            v-for="p in battle.specialPerkOptions"
+            :key="p.id"
+            class="perk-card"
+            @click="chooseSpecialPerk(p.id)"
+          >
+            <div class="perk-name accent">{{ p.name }}</div>
+            <div class="perk-desc">{{ p.description }}</div>
+          </div>
+        </div>
+        <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
+      </section>
+
+      <!-- enemy side (top) -->
+      <section class="panel side">
+        <h4>敌方</h4>
+        <div class="unit-row">
+          <div v-for="c in enemies" :key="c.id" class="unit" :class="{ dead: c.dead }">
+            <div class="unit-head">
+              <span class="unit-name">{{ c.name }}</span>
+              <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">HP</span>
+              <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
+              <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">EP</span>
+              <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
+              <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
+            </div>
+            <div class="unit-stats dim">
+              速度 {{ c.speedDice }} | {{ c.baseDamageDice }} {{ c.baseDamageType }}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- battle log -->
+      <section class="panel log-panel">
+        <h4>战斗日志</h4>
+        <div class="log-list">
+          <div v-for="(log, i) in battle.logs" :key="i" class="log-row">
+            <span class="log-round dim">R{{ log.round }}</span>
+            <span class="log-type" :class="log.type">{{ log.type }}</span>
+            <span class="log-message">{{ log.message }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- player side -->
+      <section class="panel side">
+        <h4>我方</h4>
+        <div class="unit-row">
           <div v-for="c in players" :key="c.id" class="unit" :class="{ dead: c.dead }">
             <div class="unit-head">
               <span class="unit-name">{{ c.name }}</span>
@@ -315,31 +385,8 @@ function statusText(c: CombatantView): string {
               </template>
             </div>
           </div>
-        </section>
-
-        <section class="side panel">
-          <h4>敌方</h4>
-          <div v-for="c in enemies" :key="c.id" class="unit" :class="{ dead: c.dead }">
-            <div class="unit-head">
-              <span class="unit-name">{{ c.name }}</span>
-              <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label">HP</span>
-              <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.hp }}/{{ c.maxHp }}</span>
-            </div>
-            <div class="bar-row">
-              <span class="bar-label">EP</span>
-              <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
-              <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
-            </div>
-            <div class="unit-stats dim">
-              速度 {{ c.speedDice }} | {{ c.baseDamageDice }} {{ c.baseDamageType }}
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       <!-- decision footer -->
       <div v-if="inDecision" class="panel footer-panel">
@@ -361,35 +408,6 @@ function statusText(c: CombatantView): string {
           提交指令
         </n-button>
       </div>
-
-      <!-- special perk -->
-      <section v-if="inSpecialPerk" class="panel perk-panel">
-        <h3>特殊词条轮</h3>
-        <div class="perk-grid">
-          <div
-            v-for="p in battle.specialPerkOptions"
-            :key="p.id"
-            class="perk-card"
-            @click="chooseSpecialPerk(p.id)"
-          >
-            <div class="perk-name accent">{{ p.name }}</div>
-            <div class="perk-desc">{{ p.description }}</div>
-          </div>
-        </div>
-        <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
-      </section>
-
-      <!-- log -->
-      <section class="panel log-panel">
-        <h4>战斗日志</h4>
-        <div class="log-list">
-          <div v-for="(log, i) in battle.logs" :key="i" class="log-row">
-            <span class="log-round dim">R{{ log.round }}</span>
-            <span class="log-type" :class="log.type">{{ log.type }}</span>
-            <span class="log-message">{{ log.message }}</span>
-          </div>
-        </div>
-      </section>
     </main>
   </div>
 </template>
@@ -492,10 +510,14 @@ function statusText(c: CombatantView): string {
   color: var(--text-dim);
 }
 
-.field {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.unit-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
+}
+
+.unit-row .unit {
+  flex: 1 1 300px;
 }
 
 .side h4 {

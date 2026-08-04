@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const message = useMessage()
 const auth = useAuthStore()
+const appVersion = __APP_VERSION__
 
 const navItems = [
   { name: 'home', label: '作战室' },
@@ -24,6 +25,7 @@ function logout() {
   <header class="nav">
     <div class="nav-brand">
       <span class="brand-mark">TEST</span>
+      <span class="version-tag" :title="`GitHub commit: ${appVersion}`">v{{ appVersion }}</span>
       <span class="brand-sub dim">战斗辅助终端</span>
     </div>
     <nav class="nav-links">
@@ -63,6 +65,16 @@ function logout() {
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--accent);
+}
+
+.version-tag {
+  font-size: 11px;
+  font-family: Consolas, 'Courier New', monospace;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
 }
 
 .brand-sub {
