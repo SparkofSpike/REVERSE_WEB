@@ -608,6 +608,8 @@ public class CombatEngine {
     private void startRound(CombatState state) {
         state.setPhase(CombatPhase.ROUND_START);
         state.setRound(state.getRound() + 1);
+        state.log(CombatEvent.of(state.getRound(), "round_start",
+                "第 " + state.getRound() + " 回合开始，帷幕升起。"));
 
         int playerRoll;
         int enemyRoll;
@@ -722,6 +724,8 @@ public class CombatEngine {
 
     private void endRound(CombatState state) {
         state.setPhase(CombatPhase.ROUND_END);
+        state.log(CombatEvent.of(state.getRound(), "round_end",
+                "第 " + state.getRound() + " 回合结束，帷幕落下。"));
 
         // taunt puppets vanish at round end
         List<Combatant> expiredPuppets = state.getCombatants().stream()

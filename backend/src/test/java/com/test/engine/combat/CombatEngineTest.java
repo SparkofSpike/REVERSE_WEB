@@ -240,4 +240,34 @@ class CombatEngineTest {
         assertThat(state.getRound()).isGreaterThanOrEqualTo(3);
         assertThat(state.getPhase()).isEqualTo(CombatPhase.SPECIAL_PERK);
     }
+
+    @Test
+    void roundTransitionsLogStartAndEndEvents() {
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        // no round has started yet
+        assertThat(state.getLogs().stream().noneMatch(e -> "round_start".equals(e.getType()))).isTrue();
+
+        // picking the initial perk starts round 1 -> curtain rise event
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        assertThat(state.getRound()).isEqualTo(1);
+        assertThat(state.getLogs().stream().anyMatch(e -> "round_start".equals(e.getType()))).isTrue();
+
+        // resolving a round finishes with a curtain fall event (unless the
+        // battle ends mid-execution, in which case endRound is skipped)
+        int safety = 0;
+        while (state.getPhase() == CombatPhase.DECISION && safety < 10) {
+            safety++;
+            engine.decide(state.getId(), List.of(
+                    ActionDecision.base(state.alive(CombatSide.PLAYER).get(0).getId(), "ATTACK", "dummy")));
+        }
+        assertThat(state.getLogs().stream().anyMatch(e -> "round_end".equals(e.getType())))
+                .as("endRound should have logged round_end once it ran")
+                .isTrue();
+        // round_end must reference the round that just finished
+        assertThat(state.getLogs().stream()
+                .filter(e -> "round_end".equals(e.getType()))
+                .findFirst()
+                .map(CombatEvent::getRound)
+                .orElse(0)).isGreaterThanOrEqualTo(1);
+    }
 }
