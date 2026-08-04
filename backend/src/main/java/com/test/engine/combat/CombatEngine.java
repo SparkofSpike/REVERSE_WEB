@@ -31,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CombatEngine {
 
     private static final int DRAW_ENERGY_CAP = 10;
+    /** Design doc default performance bonus: restore this much energy. */
+    private static final int PERFORMANCE_DEFAULT_ENERGY = 20;
     private static final int GENERIC_DRAW_INTERVAL = 3;
     private static final int SPECIAL_PERK_INTERVAL = 4;
     private static final int SPECIAL_PERK_MAX_ROUNDS = 3;
@@ -186,8 +188,13 @@ public class CombatEngine {
         if (state.isOver()) {
             return;
         }
-        if (state.getRound() % SPECIAL_PERK_INTERVAL == 0
-                && state.getSpecialPerkRoundsTaken() < SPECIAL_PERK_MAX_ROUNDS) {
+        // special perk rounds: normally every 4 rounds; the clock-accelerate
+        // generic card advances the next offer by one round (mod 4 == 3)
+        boolean specialPerkDue = state.getRound() % SPECIAL_PERK_INTERVAL == 0
+                || (state.isSpecialPerkAdvancePending()
+                    && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1);
+        if (specialPerkDue && state.getSpecialPerkRoundsTaken() < SPECIAL_PERK_MAX_ROUNDS) {
+            state.setSpecialPerkAdvancePending(false);
             offerSpecialPerks(state);
             return;
         }
@@ -405,8 +412,10 @@ public class CombatEngine {
 
     private void executeDefend(CombatState state, Combatant actor) {
         actor.setDefending(true);
+        int blockValue = dice.roll(actor.getBlockDice()).total();
+        actor.setBlockValue(blockValue);
         state.log(CombatEvent.of(state.getRound(), "action",
-                actor.getName() + " 进入防御状态（物理/魔法抗性 -0.2）。"));
+                actor.getName() + " 进入防御状态（物理/魔法抗性 -0.2），格挡值 " + blockValue + "。"));
         if (actor.getTemplate() != null && actor.getTemplate().getCorePassive() != null
                 && "stone_shield".equals(actor.getTemplate().getCorePassive().getType())) {
             actor.setStoneShieldPending(true);
@@ -754,6 +763,7 @@ public class CombatEngine {
             c.setExtraSkillsThisTurn(0);
             c.setSpeedBoostThisRound(0);
             c.setDefending(false);
+            c.setBlockValue(0);
             c.setCountering(false);
             c.setDodging(false);
             c.setDodgeValue(0);
@@ -832,6 +842,21 @@ public class CombatEngine {
                     c.getName() + " 触发演出！" + perf.getDescription()));
             for (EffectSpec effect : perf.getEffects()) {
                 effectExecutor.execute(effect, c, state, null);
+            }
+            // design doc: entering performance grants +2 draw energy (player side)
+            if (c.isPlayerSide()) {
+                state.addDrawEnergy(2);
+                state.log(CombatEvent.of(state.getRound(), "energy",
+                        c.getName() + " 进入演出，抽牌能量 +2（当前 " + state.getPlayerDrawEnergy() + "/" + DRAW_ENERGY_CAP + "）。"));
+            }
+            // design doc default: restore energy unless the performance
+            // already defines an explicit energy-restore effect
+            boolean restoresEnergy = perf.getEffects().stream()
+                    .anyMatch(e -> "energy".equals(e.getType()));
+            if (!restoresEnergy) {
+                c.setEnergy(Math.min(c.getMaxEnergy(), c.getEnergy() + PERFORMANCE_DEFAULT_ENERGY));
+                state.log(CombatEvent.of(state.getRound(), "energy",
+                        c.getName() + " 演出默认恢复 " + PERFORMANCE_DEFAULT_ENERGY + " 点精力。"));
             }
         }
     }

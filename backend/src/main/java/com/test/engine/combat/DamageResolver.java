@@ -61,6 +61,13 @@ public class DamageResolver {
             if (type == DamageType.BREAK && target.getShield() <= 0) {
                 scaled = (int) Math.round(rawDamage * BREAK_HP_FRACTION * resistance);
             }
+            // defending combatants deduct their rolled block value
+            // (design doc: block value directly offsets damage after resistance)
+            if (target.isDefending() && target.getBlockValue() > 0) {
+                int blocked = Math.min(scaled, target.getBlockValue());
+                scaled -= blocked;
+                outcome.setBlocked(blocked);
+            }
             absorbWithShield(target, scaled, outcome);
         }
 
@@ -104,10 +111,12 @@ public class DamageResolver {
     private void logEvent(Combatant target, DamageType type, DamageOutcome outcome, CombatState state) {
         state.log(CombatEvent.of(state.getRound(), "damage",
                         target.getName() + " 受到 " + outcome.getRaw() + " 点" + type.label()
+                                + "，格挡减免 " + outcome.getBlocked()
                                 + "，护盾吸收 " + outcome.getShieldAbsorbed()
                                 + "，生命损失 " + outcome.getHpDamage() + "。")
                 .with("target", target.getId())
                 .with("raw", outcome.getRaw())
+                .with("blocked", outcome.getBlocked())
                 .with("shieldAbsorbed", outcome.getShieldAbsorbed())
                 .with("hpDamage", outcome.getHpDamage()));
     }
@@ -122,6 +131,7 @@ public class DamageResolver {
      */
     public static class DamageOutcome {
         private int raw;
+        private int blocked;
         private int shieldAbsorbed;
         private int hpDamage;
         private int hpLost;
@@ -130,6 +140,14 @@ public class DamageResolver {
 
         public int getRaw() {
             return raw;
+        }
+
+        public int getBlocked() {
+            return blocked;
+        }
+
+        public void setBlocked(int blocked) {
+            this.blocked = blocked;
         }
 
         public void setRaw(int raw) {

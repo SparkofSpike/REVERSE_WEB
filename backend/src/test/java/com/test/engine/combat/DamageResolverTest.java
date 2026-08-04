@@ -44,6 +44,32 @@ class DamageResolverTest {
     }
 
     @Test
+    void defendingTargetDeductsBlockValueAfterResistance() {
+        Combatant t = target(100, 1.0, 1.0);
+        t.setDefending(true);
+        t.setBlockValue(7);
+        CombatState state = new CombatState();
+        DamageResolver.DamageOutcome o = resolver.dealDamage(t, 10, DamageType.PHYSICAL, state);
+        // defending lowers resistance by 0.2: 10 * 0.8 = 8, then 8 - 7 block = 1
+        assertThat(o.getBlocked()).isEqualTo(7);
+        assertThat(o.getHpDamage()).isEqualTo(1);
+        assertThat(t.getHp()).isEqualTo(99);
+    }
+
+    @Test
+    void blockValueDoesNotGoNegative() {
+        Combatant t = target(100, 1.0, 1.0);
+        t.setDefending(true);
+        t.setBlockValue(50);
+        CombatState state = new CombatState();
+        DamageResolver.DamageOutcome o = resolver.dealDamage(t, 10, DamageType.PHYSICAL, state);
+        // 10 * 0.8 = 8 scaled damage, fully blocked by 50 block value
+        assertThat(o.getBlocked()).isEqualTo(8);
+        assertThat(o.getHpDamage()).isZero();
+        assertThat(t.getHp()).isEqualTo(100);
+    }
+
+    @Test
     void shieldOverflowDamagesHp() {
         Combatant t = target(100, 1.0, 1.0);
         t.setShield(5);

@@ -17,6 +17,8 @@ public class PerformanceSpec {
     private int threshold;
     /** Human readable trigger condition. */
     private String description;
+    /** Human readable reward text (追加效果), shown after the trigger. */
+    private String rewardDescription;
     /** Effects applied when the performance triggers. */
     private List<EffectSpec> effects;
 }

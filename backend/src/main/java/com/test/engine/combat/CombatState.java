@@ -36,6 +36,7 @@ public class CombatState {
     private List<Perk> initialPerkOptions = new ArrayList<>();
     private List<Perk> specialPerkOptions = new ArrayList<>();
     private int specialPerkRoundsTaken;
+    private boolean specialPerkAdvancePending;
     private boolean perkSkipped;
 
     // round flow

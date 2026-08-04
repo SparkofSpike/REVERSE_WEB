@@ -185,6 +185,7 @@
         "triggerType": "hp_below",
         "threshold": 40,
         "description": "生命值低于40点",
+        "rewardDescription": "获得持续3回合的25点护盾，速度增加0d3点，技能1，技能2，技能3升变，恢复35点精力",
         "effects": [
           { "type": "shield", "amount": 25, "duration": 3, "target": "self" },
           { "type": "speed_permanent", "dice": "0d3", "target": "self" },
@@ -272,6 +273,7 @@
         "triggerType": "energy_below",
         "threshold": 50,
         "description": "精力值低于50点",
+        "rewardDescription": "每次造成伤害会追加2d2点追加伤害，并额外获得1点抽牌能量",
         "effects": [
           { "type": "damage_bonus", "dice": "2d2", "target": "self" },
           { "type": "draw_energy", "amount": 1, "target": "self" }
@@ -330,6 +332,7 @@
         "triggerType": "heal_total",
         "threshold": 30,
         "description": "为队友恢复了30点生命值",
+        "rewardDescription": "技能1升变，在进入演出的本回合结束后，恢复所有队友角色1d8点生命值",
         "effects": [
           { "type": "upgrade_skills", "count": 1, "target": "self" },
           { "type": "heal_end_of_round", "dice": "1d8", "target": "allies" }
@@ -400,6 +403,7 @@
         "triggerType": "guard_success",
         "threshold": 5,
         "description": "累计守护成功了5次",
+        "rewardDescription": "获得持续十回合的30点护盾，恢复20点生命",
         "effects": [
           { "type": "shield", "amount": 30, "duration": 10, "target": "self" },
           { "type": "heal", "amount": 20, "target": "self" }

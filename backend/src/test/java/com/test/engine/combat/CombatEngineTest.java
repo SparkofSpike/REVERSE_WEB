@@ -164,4 +164,76 @@ class CombatEngineTest {
                 .anyMatch(e -> "performance".equals(e.getType()) && e.getMessage().contains("宁死不屈"));
         assertThat(undyingLogged).as("warrior must trigger undying when dropped").isTrue();
     }
+
+    @Test
+    void performanceGrantsDrawEnergyAndDefaultEnergyRestore() {
+        // mage performance (energy below 50) has no energy-restore effect, so the
+        // design-doc defaults apply: +2 draw energy and a default energy restore
+        CombatState state = engine.createDummyBattle("test-1", List.of("mage"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        Combatant mage = state.alive(CombatSide.PLAYER).get(0);
+        mage.setEnergy(30);
+        int drawBefore = state.getPlayerDrawEnergy();
+
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(mage.getId(), "mage-s2", null))); // 聚求: draw a card
+
+        assertThat(mage.isPerforming()).isTrue();
+        assertThat(state.getPlayerDrawEnergy()).isGreaterThanOrEqualTo(drawBefore + 2);
+        // mage-s2 costs 28, discount -2 (技艺生疏): 30 - 26 + 20 default restore = 24
+        assertThat(mage.getEnergy()).isEqualTo(24);
+    }
+
+    @Test
+    void performanceWithEnergyEffectSkipsDefaultRestore() {
+        // warrior performance grants energy 35 explicitly; the default restore
+        // must not stack on top of it
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setHp(35);
+        warrior.setEnergy(60);
+
+        // using a skill triggers the caster's performance check (hp 35 < 40)
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s2", null))); // 嗜血突袭: 20 energy
+
+        assertThat(warrior.isPerforming()).isTrue();
+        // 60 - 20 (skill) + 35 (performance) = 75; default +20 must NOT apply
+        assertThat(warrior.getEnergy()).isEqualTo(75);
+        assertThat(state.getPlayerDrawEnergy()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void clockAccelerateAdvancesSpecialPerkOffer() {
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        // ensure the clock-accelerate card is in hand (deck is shuffled)
+        GenericSkillTemplate card = state.getPlayerHand().stream()
+                .filter(c -> "g-clock-accelerate".equals(c.getId()))
+                .findFirst()
+                .orElseGet(() -> state.getPlayerDeck().stream()
+                        .filter(c -> "g-clock-accelerate".equals(c.getId()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("clock accelerate not in deck")));
+        if (state.getPlayerHand().stream().noneMatch(c -> "g-clock-accelerate".equals(c.getId()))) {
+            state.getPlayerHand().add(card);
+        }
+        engine.playGenericSkill(state.getId(), card.getId(), null);
+        assertThat(state.isSpecialPerkAdvancePending()).isTrue();
+
+        // advance rounds; the accelerated special perk offer fires at round 3
+        // (3 % 4 == 3) instead of the normal round 4
+        int safety = 0;
+        while (state.getPhase() == CombatPhase.DECISION && safety < 8) {
+            safety++;
+            engine.decide(state.getId(), List.of(
+                    ActionDecision.base(state.alive(CombatSide.PLAYER).get(0).getId(), "ATTACK", "dummy")));
+        }
+        assertThat(state.getRound()).isGreaterThanOrEqualTo(3);
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.SPECIAL_PERK);
+    }
 }

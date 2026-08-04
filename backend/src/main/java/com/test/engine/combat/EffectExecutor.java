@@ -62,7 +62,13 @@ public class EffectExecutor {
             case "hp_cost" -> applyHpCost(spec, caster, state);
             case "puppet" -> spawnPuppet(spec, caster, state);
             case "peek" -> logPeek(caster, state);
-            case "accelerate" -> addSpeedBoost(spec, caster, state);
+            case "accelerate" -> {
+                addSpeedBoost(spec, caster, state);
+                // clock accelerate: the next special perk offer comes one round early
+                state.setSpecialPerkAdvancePending(true);
+                state.log(CombatEvent.of(state.getRound(), "effect",
+                        "钟表加速：下一次特殊词条轮提前一回合。"));
+            }
             case "guard_bind" -> applyGuardBind(spec, caster, state, explicitTarget);
             case "sacrifice_buff" -> applySacrificeBuff(spec, caster, state);
             case "upgrade_skills" -> upgradeSkills(caster, state);

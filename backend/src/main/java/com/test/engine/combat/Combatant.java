@@ -42,6 +42,8 @@ public class Combatant {
     // transient combat state
     private int shield;
     private int shieldRemainingRounds;
+    /** Block value rolled while defending, deducted from incoming damage. */
+    private int blockValue;
     private boolean dead;
     private boolean performing;
     private boolean undyingUsed;
