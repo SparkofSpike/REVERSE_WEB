@@ -70,6 +70,17 @@ const floats = ref<FloatNum[]>([])
 let floatSeq = 0
 const anyPerforming = computed(() => Object.values(performing.value).some(Boolean))
 
+// camera focus: the whole scene (background + units) zooms in, anchored on
+// the acting unit's side so it reads as a real dolly-in, not a sprite grow
+const zoomOrigin = computed(() => {
+  if (!battle.value) return '50% 65%'
+  const acting = Object.keys(performing.value).find((id) => performing.value[id])
+  const side = battle.value.combatants.find((c) => c.id === acting)?.side
+  if (side === 'ENEMY') return '66% 62%'
+  if (side === 'PLAYER') return '34% 62%'
+  return '50% 65%'
+})
+
 const players = computed(() =>
   (battle.value?.combatants ?? []).filter((c) => c.side === 'PLAYER')
 )
@@ -621,7 +632,12 @@ function statusText(c: CombatantView): string {
       </section>
 
       <!-- battle stage: face-to-face showdown in the middle of the field -->
-      <div class="stage" :class="{ dimmed: anyPerforming }">
+      <div class="stage">
+        <div
+          class="stage-scene"
+          :class="{ dimmed: anyPerforming, zoomed: anyPerforming }"
+          :style="{ transformOrigin: zoomOrigin }"
+        >
         <div class="side-col side-player">
           <div
             v-for="c in players"
@@ -738,6 +754,7 @@ function statusText(c: CombatantView): string {
         <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
+        </div>
         </div>
       </div>
 
@@ -944,18 +961,30 @@ function statusText(c: CombatantView): string {
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
-    url('/assets/fight_background.webp') center / cover no-repeat;
+  transition: filter 0.4s ease;
+}
+
+/* the scene is the camera subject: background + units zoom together */
+.stage-scene {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   gap: 6%;
   padding: 18px 30px 24px;
-  transition: filter 0.4s ease;
+  background:
+    linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
+    url('/assets/fight_background.webp') center / cover no-repeat;
+  transition: transform 0.5s ease;
+  will-change: transform;
 }
 
-.stage.dimmed .unit:not(.performing):not(.dead) {
+.stage-scene.zoomed {
+  transform: scale(1.16);
+}
+
+.stage-scene.dimmed .unit:not(.performing):not(.dead) {
   opacity: 0.45;
   transform: scale(0.92);
 }
