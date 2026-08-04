@@ -94,7 +94,7 @@ public class EffectExecutor {
             if (t.isDead()) {
                 continue;
             }
-            damageResolver.dealDamage(t, damage, type, state);
+            damageResolver.dealDamage(t, damage, type, state, caster, "SKILL");
             if (t.getHp() <= 0 && !t.isDead()) {
                 handleDeath(t, state);
             }

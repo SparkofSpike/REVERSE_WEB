@@ -36,6 +36,11 @@ public class DamageResolver {
      * Applies damage to a target and returns the outcome record.
      */
     public DamageOutcome dealDamage(Combatant target, int rawDamage, DamageType type, CombatState state) {
+        return dealDamage(target, rawDamage, type, state, null, null);
+    }
+
+    public DamageOutcome dealDamage(Combatant target, int rawDamage, DamageType type, CombatState state,
+                                    Combatant attacker, String action) {
         DamageOutcome outcome = new DamageOutcome();
         outcome.setRaw(rawDamage);
         outcome.setType(type);
@@ -72,7 +77,7 @@ public class DamageResolver {
         }
 
         applyHpDamage(target, outcome.getHpDamage(), outcome);
-        logEvent(target, type, outcome, state);
+        logEvent(target, type, outcome, state, attacker, action);
         return outcome;
     }
 
@@ -108,8 +113,9 @@ public class DamageResolver {
         outcome.setHpLost(actual);
     }
 
-    private void logEvent(Combatant target, DamageType type, DamageOutcome outcome, CombatState state) {
-        state.log(CombatEvent.of(state.getRound(), "damage",
+    private void logEvent(Combatant target, DamageType type, DamageOutcome outcome, CombatState state,
+                          Combatant attacker, String action) {
+        CombatEvent event = CombatEvent.of(state.getRound(), "damage",
                         target.getName() + " 受到 " + outcome.getRaw() + " 点" + type.label()
                                 + "，格挡减免 " + outcome.getBlocked()
                                 + "，护盾吸收 " + outcome.getShieldAbsorbed()
@@ -118,7 +124,14 @@ public class DamageResolver {
                 .with("raw", outcome.getRaw())
                 .with("blocked", outcome.getBlocked())
                 .with("shieldAbsorbed", outcome.getShieldAbsorbed())
-                .with("hpDamage", outcome.getHpDamage()));
+                .with("hpDamage", outcome.getHpDamage());
+        if (attacker != null) {
+            event.with("actorId", attacker.getId());
+        }
+        if (action != null) {
+            event.with("action", action);
+        }
+        state.log(event);
     }
 
     /** Roll base damage for an attack. */

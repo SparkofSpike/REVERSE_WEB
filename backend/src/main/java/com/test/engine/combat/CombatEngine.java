@@ -249,7 +249,7 @@ public class CombatEngine {
             return;
         }
         switch (action) {
-            case ATTACK -> executeAttack(state, actor, decision, preRolled);
+            case ATTACK -> executeAttack(state, actor, decision, preRolled, true);
             case DEFEND -> executeDefend(state, actor);
             case DODGE -> executeDodge(state, actor);
             case GUARD -> executeGuard(state, actor, decision);
@@ -259,7 +259,7 @@ public class CombatEngine {
         }
     }
 
-    private void executeAttack(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
+    private void executeAttack(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled, boolean clashEnabled) {
         Combatant target = state.find(decision.getTargetId());
         if (target == null || target.isDead()) {
             state.log(CombatEvent.of(state.getRound(), "action", actor.getName() + " 的攻击落空（目标已不在）。")
@@ -272,24 +272,26 @@ public class CombatEngine {
         int raw = preRolled != null ? preRolled.total() : dice.roll(actor.getBaseDamageDice()).total();
         raw += actor.getBonusDamage();
 
-        // clash: if the target attacks the actor too, damages cancel first
+        // clash: only a mutual attack counts - the target must also be
+        // attacking the actor, otherwise every attack would falsely clash
         ActionDecision targetDecision = decisionOf(state, target.getId());
-        if (targetDecision != null && !targetDecision.isSkill()
+        if (clashEnabled && targetDecision != null && !targetDecision.isSkill()
                 && ActionType.ATTACK.name().equals(targetDecision.getActionType())
-                && target.getId().equals(decision.getTargetId())) {
+                && targetDecision.getTargetId() != null
+                && targetDecision.getTargetId().equals(actor.getId())) {
             int targetRaw = dice.roll(target.getBaseDamageDice()).total() + target.getBonusDamage();
             if (raw > targetRaw) {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，抵消后 " + actor.getName() + " 造成 "
                                 + (raw - targetRaw) + " 点余伤。")
                 .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", raw - targetRaw).with("action", "ATTACK"));
-                deliverAttackDamage(state, actor, target, raw - targetRaw, absorber);
+                deliverAttackDamage(state, actor, target, raw - targetRaw, absorber, "ATTACK");
             } else if (targetRaw > raw) {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，抵消后 " + target.getName() + " 造成 "
                                 + (targetRaw - raw) + " 点余伤。")
                 .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", targetRaw - raw).with("action", "ATTACK"));
-                deliverAttackDamage(state, target, actor, targetRaw - raw, findGuardAbsorber(state, actor));
+                deliverAttackDamage(state, target, actor, targetRaw - raw, findGuardAbsorber(state, actor), "ATTACK");
             } else {
                 state.log(CombatEvent.of(state.getRound(), "clash",
                         actor.getName() + " 与 " + target.getName() + " 对击，伤害完全抵消。")
@@ -320,13 +322,13 @@ public class CombatEngine {
             state.log(CombatEvent.of(state.getRound(), "counter",
                     target.getName() + " 反击 " + actor.getName() + "！")
                 .with("actorId", target.getId()).with("targetId", actor.getId()).with("amount", counterDamage).with("action", "COUNTER"));
-            deliverAttackDamage(state, target, actor, counterDamage, findGuardAbsorber(state, actor));
+            deliverAttackDamage(state, target, actor, counterDamage, findGuardAbsorber(state, actor), "COUNTER");
             if (actor.isDead()) {
                 return;
             }
         }
 
-        deliverAttackDamage(state, actor, target, raw, absorber);
+        deliverAttackDamage(state, actor, target, raw, absorber, "ATTACK");
         grantAttackEnergy(state, actor);
     }
 
@@ -345,7 +347,7 @@ public class CombatEngine {
         return null;
     }
 
-    private void deliverAttackDamage(CombatState state, Combatant attacker, Combatant target, int damage, Combatant absorber) {
+    private void deliverAttackDamage(CombatState state, Combatant attacker, Combatant target, int damage, Combatant absorber, String action) {
         Combatant receiver = absorber != null ? absorber : target;
         if (receiver.isDead()) {
             return;
@@ -362,7 +364,7 @@ public class CombatEngine {
             }
         }
         DamageResolver.DamageOutcome outcome =
-                damageResolver.dealDamage(receiver, damage, attacker.getBaseDamageType(), state);
+                damageResolver.dealDamage(receiver, damage, attacker.getBaseDamageType(), state, attacker, action);
 
         if (absorber != null) {
             absorber.setGuardSuccessCount(absorber.getGuardSuccessCount() + 1);
@@ -388,7 +390,7 @@ public class CombatEngine {
         if (attacker.getBaseActions().contains(ActionType.CHASE)
                 && target.getId().equals(attacker.getLastAttackedTarget())) {
             int bonus = dice.roll("0d4").total();
-            damageResolver.dealDamage(target, bonus, DamageType.PHYSICAL, state);
+            damageResolver.dealDamage(target, bonus, DamageType.PHYSICAL, state, attacker, "CHASE");
             effectExecutor.heal(attacker, 2);
             state.log(CombatEvent.of(state.getRound(), "chase",
                     attacker.getName() + " 追击追加 " + bonus + " 伤害并恢复 2 点生命。")
@@ -470,7 +472,8 @@ public class CombatEngine {
     }
 
     private void executeChase(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
-        executeAttack(state, actor, decision, preRolled);
+        // chase is a unilateral follow-up strike: it never clashes
+        executeAttack(state, actor, decision, preRolled, false);
     }
 
     private void executePray(CombatState state, Combatant actor) {
