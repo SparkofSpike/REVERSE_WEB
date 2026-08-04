@@ -39,6 +39,8 @@ const portraitFailed = ref<Record<string, boolean>>({})
 // The last-dash moment uses a separate full-screen channel so it is never
 // starved by per-round curtain events.
 const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
+const curtainQueue: Array<'rise' | 'fall'> = []
+let curtainSeq = 0
 const dashOverlay = ref<{ seq: number } | null>(null)
 
 // Log consumption: the first load is only a baseline (never replays old
@@ -135,12 +137,22 @@ watch(
 )
 
 function triggerCurtain(kind: 'rise' | 'fall') {
-  curtain.value = { kind, seq: (curtain.value?.seq ?? 0) + 1 }
+  if (curtain.value) {
+    curtainQueue.push(kind)
+    return
+  }
+  playCurtain(kind)
+}
+
+function playCurtain(kind: 'rise' | 'fall') {
+  curtain.value = { kind, seq: ++curtainSeq }
   window.setTimeout(() => {
-    if (curtain.value?.kind === kind) {
-      curtain.value = null
+    curtain.value = null
+    const next = curtainQueue.shift()
+    if (next) {
+      playCurtain(next)
     }
-  }, 1800)
+  }, 1900)
 }
 
 function triggerDash() {
@@ -559,6 +571,11 @@ function statusText(c: CombatantView): string {
         <div v-if="curtain" :key="curtain.seq" class="curtain" :class="curtain.kind">
           <img :src="curtain.kind === 'rise' ? '/assets/curtain_rise.png' : '/assets/curtain_fall.png'" alt="" />
         </div>
+
+        <!-- last-dash moment: natural reveal inside the stage -->
+        <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
+          <img src="/assets/last_dash.png" alt="决速时刻" />
+        </div>
       </div>
 
       <!-- decision panel: one control row per alive player -->
@@ -644,10 +661,6 @@ function statusText(c: CombatantView): string {
       </section>
     </main>
 
-    <!-- last-dash full-screen channel (independent, never starved) -->
-    <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-overlay">
-      <img src="/assets/last_dash.png" alt="决速时刻" />
-    </div>
   </div>
 </template>
 
@@ -1013,50 +1026,41 @@ function statusText(c: CombatantView): string {
 
 /* ---------- last dash overlay (full screen, high priority) ---------- */
 
-.dash-overlay {
-  position: fixed;
+.dash-moment {
+  position: absolute;
   inset: 0;
-  z-index: 999;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 8, 12, 0.55);
-  animation: dash-in 0.4s ease;
+  pointer-events: none;
+  z-index: 6;
 }
 
-.dash-overlay img {
-  max-width: 62vw;
-  max-height: 56vh;
-  border-radius: 8px;
-  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.7);
+.dash-moment img {
+  max-width: 72%;
+  max-height: 82%;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.6);
   animation: dash-pop 1.9s ease forwards;
-}
-
-@keyframes dash-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes dash-pop {
   0% {
     opacity: 0;
-    transform: scale(0.9);
+    transform: scale(0.86);
   }
-  18% {
+  16% {
     opacity: 1;
     transform: scale(1);
   }
-  80% {
+  78% {
     opacity: 1;
     transform: scale(1);
   }
   100% {
     opacity: 0;
-    transform: scale(1.03);
+    transform: scale(1.04);
   }
 }
 
