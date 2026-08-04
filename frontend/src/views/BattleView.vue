@@ -262,42 +262,72 @@ function flushPerf() {
   for (const ev of batch) applyPerformance(ev)
 }
 
+// Per-actor serial performance: a unit's actions play one after another
+// (Attack! fully finishes, then Chase! starts), and each damage number
+// lands after the action it belongs to - never simultaneously.
+const ACTION_STEP = 1150
+const actorQueueDepth: Record<string, number> = {}
+
 function applyPerformance(ev: CombatEvent) {
   const d = (ev.data ?? {}) as Record<string, unknown>
   const actorId = d.actorId as string | undefined
-  const targetId = d.targetId as string | undefined
-  const action = d.action as string | undefined
 
   if (ev.type === 'damage') {
-    // damage lands after ITS OWN action animation: attack damage after the
-    // attack cue, chase damage after the chase cue, never all at once
-    const t = d.target as string | undefined
-    const amount = (d.hpDamage ?? d.raw ?? 0) as number
-    const actorAction = d.action as string | undefined
-    const delay = actorAction === 'CHASE' ? 1250 : actorAction ? 900 : 600
-    window.setTimeout(() => {
-      if (t) shakeTarget(t)
-      if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
-    }, delay)
+    queueDamage(ev)
     return
   }
   if (ev.type === 'heal') {
+    const targetId = d.targetId as string | undefined
     if (targetId) {
-      if (action) addActionLabel(targetId, ACTION_LABELS[action] ?? action)
+      const healAction = d.action as string | undefined
+      if (healAction) addActionLabel(targetId, ACTION_LABELS[healAction] ?? healAction)
       window.setTimeout(() => {
         if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
       }, 450)
     }
     return
   }
-  // show order: label -> zoom in -> step toward the target -> damage later
+  // action / skill / clash / chase / counter / card: serialized per actor
   if (actorId) {
-    if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
-    window.setTimeout(() => pulseActor(actorId), 260)
-    if ((ev.type === 'clash' || ev.type === 'chase' || ev.type === 'counter') && targetId) {
-      window.setTimeout(() => approachTarget(actorId), 560)
-    }
+    enqueueActorAction(actorId, ev)
   }
+}
+
+function enqueueActorAction(actorId: string, ev: CombatEvent) {
+  const depth = actorQueueDepth[actorId] ?? 0
+  actorQueueDepth[actorId] = depth + 1
+  const startAt = depth * ACTION_STEP
+  window.setTimeout(() => playActionNow(ev), startAt)
+  window.setTimeout(() => {
+    actorQueueDepth[actorId] = Math.max(0, (actorQueueDepth[actorId] ?? 1) - 1)
+  }, startAt + ACTION_STEP + 250)
+}
+
+function playActionNow(ev: CombatEvent) {
+  const d = (ev.data ?? {}) as Record<string, unknown>
+  const actorId = d.actorId as string | undefined
+  const action = d.action as string | undefined
+  const targetId = d.targetId as string | undefined
+  if (!actorId) return
+  if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
+  pulseActor(actorId)
+  if ((ev.type === 'clash' || ev.type === 'chase' || ev.type === 'counter') && targetId) {
+    approachTarget(actorId)
+  }
+}
+
+function queueDamage(ev: CombatEvent) {
+  const d = (ev.data ?? {}) as Record<string, unknown>
+  const actorId = d.actorId as string | undefined
+  const t = d.target as string | undefined
+  const amount = (d.hpDamage ?? d.raw ?? 0) as number
+  // damage belongs to the last action queued for this actor
+  const depth = actorId ? (actorQueueDepth[actorId] ?? 0) : 0
+  const delay = Math.max(0, depth - 1) * ACTION_STEP + 900
+  window.setTimeout(() => {
+    if (t) shakeTarget(t)
+    if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
+  }, delay)
 }
 
 function pulseActor(id: string) {
