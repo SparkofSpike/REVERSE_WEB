@@ -9,8 +9,10 @@ management, training dummy battles and battle report statistics.
 
 - Rules blueprint: `TEST.游戏玩法.pdf` (design doc kept locally; not tracked
   in this repository — see `.gitignore`)
-- Current stage: rules validation and framework scaffolding (Harness /
-  prototype). Battle mode is single-player vs training dummy; PVP is planned
+- Current stage: playable battle loop vs a training dummy - speed
+  adjudication (incl. last-dash ties), damage/clash rules and the
+  stage-style battle presentation (portraits, HP/EP bars, curtain
+  transitions, action cues) are implemented and deployed. PVP is planned
   for a later stage.
 
 ## Credits
@@ -36,6 +38,7 @@ Released under the [MIT License](LICENSE). Copyright (c) 2026 [@SparkofSpike](ht
 ```
 backend/    # Spring Boot backend (battle state machine, adjudication, accounts and decks)
 frontend/   # Vue 3 frontend (display and command forwarding only, no battle logic)
+assets/     # client-supplied art: stage background, portraits, curtain/last-dash transitions
 ship.py     # local one-click deploy script (build, upload, verify, restart)
 ```
 
