@@ -64,6 +64,7 @@ interface FloatNum {
   targetId: string
   text: string
   kind: 'damage' | 'heal' | 'action'
+  offsetY?: number
 }
 const floats = ref<FloatNum[]>([])
 let floatSeq = 0
@@ -199,12 +200,33 @@ const ACTION_LABELS: Record<string, string> = {
   HEAL: 'Heal!'
 }
 
-function addActionLabel(unitId: string, text: string) {
+function pushFloat(
+  unitId: string,
+  text: string,
+  kind: 'damage' | 'heal' | 'action',
+  stackStep: number,
+  ttl: number
+) {
   const id = ++floatSeq
-  floats.value.push({ id, targetId: unitId, text, kind: 'action' })
+  // later floats push earlier ones upward, like stacked labels in other games
+  for (const f of floats.value) {
+    if (f.targetId === unitId) {
+      f.offsetY = (f.offsetY ?? 0) - stackStep
+    }
+  }
+  floats.value.push({ id, targetId: unitId, text, kind, offsetY: 0 })
   window.setTimeout(() => {
     floats.value = floats.value.filter((f) => f.id !== id)
-  }, 1150)
+  }, ttl)
+}
+
+function floatTop(f: FloatNum): string {
+  const base = f.kind === 'action' ? -40 : 34
+  return `${base + (f.offsetY ?? 0)}px`
+}
+
+function addActionLabel(unitId: string, text: string) {
+  pushFloat(unitId, text, 'action', 34, 1150)
 }
 
 function consumePerformanceEvent(ev: CombatEvent) {
@@ -228,27 +250,30 @@ function applyPerformance(ev: CombatEvent) {
   const action = d.action as string | undefined
 
   if (ev.type === 'damage') {
+    // damage lands AFTER the action animation finishes
     const t = d.target as string | undefined
-    if (t) {
-      shakeTarget(t)
-      const amount = (d.hpDamage ?? d.raw ?? 0) as number
-      if (amount > 0) addFloat(t, `-${amount}`, 'damage')
-    }
+    const amount = (d.hpDamage ?? d.raw ?? 0) as number
+    window.setTimeout(() => {
+      if (t) shakeTarget(t)
+      if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
+    }, 900)
     return
   }
   if (ev.type === 'heal') {
     if (targetId) {
       if (action) addActionLabel(targetId, ACTION_LABELS[action] ?? action)
-      if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+      window.setTimeout(() => {
+        if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+      }, 450)
     }
     return
   }
-  // action / skill / clash / chase / counter / card: label first, then act
+  // show order: label -> zoom in -> step toward the target -> damage later
   if (actorId) {
     if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
-    pulseActor(actorId)
+    window.setTimeout(() => pulseActor(actorId), 260)
     if ((ev.type === 'clash' || ev.type === 'chase' || ev.type === 'counter') && targetId) {
-      approachTarget(actorId)
+      window.setTimeout(() => approachTarget(actorId), 560)
     }
   }
 }
@@ -275,15 +300,10 @@ function shakeTarget(id: string) {
 }
 
 function addFloat(targetId: string, text: string, kind: 'damage' | 'heal') {
-  const id = ++floatSeq
-  // show order: the action label pops first, the number follows a beat
-  // later and lower, so Attack! and -12 never stack on top of each other
+  // numbers appear a beat later (after the action label) and stack upward
   window.setTimeout(() => {
-    floats.value.push({ id, targetId, text, kind })
+    pushFloat(targetId, text, kind, 26, 1300)
   }, 340)
-  window.setTimeout(() => {
-    floats.value = floats.value.filter((f) => f.id !== id)
-  }, 340 + 1300)
 }
 
 function floatsFor(unitId: string): FloatNum[] {
@@ -550,7 +570,15 @@ function statusText(c: CombatantView): string {
               <span v-if="c.performing" class="tag-perform">演出</span>
             </div>
             <div class="float-layer">
-              <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
+              <div
+                  v-for="f in floatsFor(c.id)"
+                  :key="f.id"
+                  class="float-num"
+                  :class="f.kind"
+                  :style="{ top: floatTop(f) }"
+                >
+                  {{ f.text }}
+                </div>
             </div>
             <div class="info">
               <div class="name">
@@ -596,7 +624,15 @@ function statusText(c: CombatantView): string {
               <span v-if="c.performing" class="tag-perform">演出</span>
             </div>
             <div class="float-layer">
-              <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
+              <div
+                  v-for="f in floatsFor(c.id)"
+                  :key="f.id"
+                  class="float-num"
+                  :class="f.kind"
+                  :style="{ top: floatTop(f) }"
+                >
+                  {{ f.text }}
+                </div>
             </div>
             <div class="info">
               <div class="name">
@@ -978,7 +1014,7 @@ function statusText(c: CombatantView): string {
 }
 
 .float-num.action {
-  top: -2px;
+  top: -40px;
   font-size: 26px;
   font-weight: 900;
   color: #ffc857;
@@ -1138,22 +1174,26 @@ function statusText(c: CombatantView): string {
 .dash-moment img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  opacity: 0.9;
-  animation: dash-fade 2s ease forwards;
+  object-fit: contain;
+  animation: dash-sweep 2s ease forwards;
 }
 
-@keyframes dash-fade {
+/* identical motion to curtain-rise: sweep up, hold, sweep out the top */
+@keyframes dash-sweep {
   0% {
+    transform: translateY(100%);
     opacity: 0;
   }
-  22% {
-    opacity: 0.9;
+  25% {
+    transform: translateY(0);
+    opacity: 0.92;
   }
-  75% {
-    opacity: 0.9;
+  72% {
+    transform: translateY(0);
+    opacity: 0.92;
   }
   100% {
+    transform: translateY(-100%);
     opacity: 0;
   }
 }
