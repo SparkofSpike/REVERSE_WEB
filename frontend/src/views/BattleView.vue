@@ -82,24 +82,35 @@ const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 
-onMounted(() => {
-  preloadAssets()
+onMounted(async () => {
+  await preloadAssets()
   load()
 })
 
-// Preload stage art + transition images so animations never pop in half-loaded.
-function preloadAssets() {
-  const urls = [
+// Preload stage art + transition images so animations never pop in
+// half-loaded. The essential images (background + curtains + last dash)
+// must finish loading before the battle data is fetched, otherwise the
+// first round_start curtain can play against an empty <img> on slow links.
+function loadImage(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve()
+    img.onerror = () => resolve()
+    img.src = url
+  })
+}
+
+async function preloadAssets(): Promise<void> {
+  const essential = [
     '/assets/fight_background.png',
     '/assets/curtain_rise.png',
     '/assets/curtain_fall.png',
-    '/assets/last_dash.png',
-    '/assets/warrior.png',
-    '/assets/mage.png'
+    '/assets/last_dash.png'
   ]
-  for (const u of urls) {
-    const img = new Image()
-    img.src = u
+  const extra = ['/assets/warrior.png', '/assets/mage.png']
+  await Promise.all(essential.map(loadImage))
+  for (const u of extra) {
+    void loadImage(u)
   }
 }
 
@@ -250,13 +261,16 @@ function applyPerformance(ev: CombatEvent) {
   const action = d.action as string | undefined
 
   if (ev.type === 'damage') {
-    // damage lands AFTER the action animation finishes
+    // damage lands after ITS OWN action animation: attack damage after the
+    // attack cue, chase damage after the chase cue, never all at once
     const t = d.target as string | undefined
     const amount = (d.hpDamage ?? d.raw ?? 0) as number
+    const actorAction = d.action as string | undefined
+    const delay = actorAction === 'CHASE' ? 1250 : actorAction ? 900 : 600
     window.setTimeout(() => {
       if (t) shakeTarget(t)
       if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
-    }, 900)
+    }, delay)
     return
   }
   if (ev.type === 'heal') {
