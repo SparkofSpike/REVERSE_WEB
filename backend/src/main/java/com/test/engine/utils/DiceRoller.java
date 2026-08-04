@@ -37,6 +37,9 @@ public class DiceRoller {
      * @throws IllegalArgumentException if the expression is malformed
      */
     public DiceResult roll(String expression) {
+        if (expression == null) {
+            throw new IllegalArgumentException("dice expression must not be null");
+        }
         Matcher m = DICE_PATTERN.matcher(expression);
         if (!m.matches()) {
             throw new IllegalArgumentException("invalid dice expression: " + expression);

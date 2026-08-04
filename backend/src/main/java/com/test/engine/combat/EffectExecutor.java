@@ -322,6 +322,8 @@ public class EffectExecutor {
         minion.setSide(caster.getSide());
         minion.setMaxHp(spec.getAmount());
         minion.setHp(spec.getAmount());
+        minion.setSpeedDice("1d6");
+        minion.setBaseDamageDice("1d6");
         minion.setTaunt(true);
         minion.setExpiresEndOfRound(true);
         minion.setOwnerId(caster.getId());

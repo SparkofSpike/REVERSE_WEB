@@ -66,6 +66,15 @@ class DiceRollerTest {
     }
 
     @Test
+    void rejectsNullExpression() {
+        // regression: SpeedAdjudicator once passed a null dice string (puppet
+        // minion without speedDice), which NPE'd inside Pattern.matcher
+        // instead of failing with a clear business error.
+        assertThatThrownBy(() -> roller.roll(null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void rejectsInvalidSidesAndCount() {
         assertThatThrownBy(() -> roller.roll(1, 0))
                 .isInstanceOf(IllegalArgumentException.class);

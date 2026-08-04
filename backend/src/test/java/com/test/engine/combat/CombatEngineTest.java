@@ -1,6 +1,7 @@
 package com.test.engine.combat;
 
 import com.test.engine.model.CardPackLoader;
+import com.test.engine.model.GenericSkillTemplate;
 import com.test.engine.utils.DiceRoller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,6 +103,36 @@ class CombatEngineTest {
         engine.playGenericSkill(state.getId(), cardId, null);
 
         assertThat(state.getPlayerHand().stream().noneMatch(c -> c.getId().equals(cardId))).isTrue();
+    }
+
+    @Test
+    void puppetCardThenDecideDoesNotThrow() {
+        // regression: PuppetMinion had a null speedDice, so the next decide round
+        // crashed in SpeedAdjudicator (dice.roll(null) -> Pattern.matcher(null) NPE),
+        // surfacing as HTTP 500 and a black screen on the battle view.
+        CombatState state = engine.createDummyBattle("test-1", List.of("priest"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        // the puppet card may not be dealt into the initial hand (deck is shuffled)
+        GenericSkillTemplate puppetCard = state.getPlayerDeck().stream()
+                .filter(c -> "g-puppet-block".equals(c.getId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("puppet card not in deck"));
+        if (state.getPlayerHand().stream().noneMatch(c -> "g-puppet-block".equals(c.getId()))) {
+            state.getPlayerHand().add(puppetCard);
+        }
+        GenericSkillTemplate card = state.getPlayerHand().stream()
+                .filter(c -> "g-puppet-block".equals(c.getId()))
+                .findFirst()
+                .orElseThrow();
+        engine.playGenericSkill(state.getId(), card.getId(), null);
+
+        assertThat(state.getCombatants().stream().anyMatch(c -> c instanceof PuppetMinion)).isTrue();
+        // every alive player character needs a decision, puppet included
+        List<ActionDecision> decisions = state.alive(CombatSide.PLAYER).stream()
+                .map(p -> ActionDecision.base(p.getId(), "ATTACK", "dummy"))
+                .toList();
+        engine.decide(state.getId(), decisions);
     }
 
     @Test
