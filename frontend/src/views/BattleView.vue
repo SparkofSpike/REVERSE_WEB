@@ -1027,12 +1027,20 @@ function statusText(c: CombatantView): string {
   transform: scale(1.22);
 }
 
-.side-player .unit.approaching .portrait-wrap {
-  transform: translateX(48px);
+.side-player .unit.approaching {
+  transform: translateX(56px);
 }
 
-.side-enemy .unit.approaching .portrait-wrap {
-  transform: translateX(-48px);
+.side-enemy .unit.approaching {
+  transform: translateX(-56px);
+}
+
+.side-player .unit.performing.approaching {
+  transform: translateX(56px) scale(1.22);
+}
+
+.side-enemy .unit.performing.approaching {
+  transform: translateX(-56px) scale(1.22);
 }
 
 .portrait-wrap {
@@ -1275,7 +1283,7 @@ function statusText(c: CombatantView): string {
   justify-content: center;
   pointer-events: none;
   z-index: 6;
-  animation: dash-sweep 2s ease forwards;
+  animation: dash-burst 1.4s ease-out forwards;
 }
 
 .dash-moment img {
@@ -1284,23 +1292,19 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
-/* identical motion to curtain-rise: sweep up, hold, sweep out the top */
-@keyframes dash-sweep {
+/* burst: expand outward from the center while fading out fast */
+@keyframes dash-burst {
   0% {
-    transform: translateY(100%);
     opacity: 0;
+    transform: scale(0.35);
   }
-  25% {
-    transform: translateY(0);
-    opacity: 0.92;
-  }
-  72% {
-    transform: translateY(0);
-    opacity: 0.92;
+  22% {
+    opacity: 1;
+    transform: scale(1);
   }
   100% {
-    transform: translateY(-100%);
     opacity: 0;
+    transform: scale(1.65);
   }
 }
 

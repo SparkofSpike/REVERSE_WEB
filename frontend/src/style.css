@@ -11,7 +11,7 @@
   --ok: #5ddb8c;
   --warn: #ffc857;
   --hp: #ff5d6c;
-  --energy: #4cc2ff;
+  --energy: #5ddb8c;
   --shield: #ffc857;
 }
 
@@ -65,7 +65,7 @@ a {
 
 .energy-bar > div {
   height: 100%;
-  background: linear-gradient(90deg, #4cc2ff, #2a7fb8);
+  background: linear-gradient(90deg, #5ddb8c, #2ea86a);
   transition: width 0.4s ease;
 }
 
