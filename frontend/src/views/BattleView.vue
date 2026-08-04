@@ -931,10 +931,7 @@ function statusText(c: CombatantView): string {
 
 .stage.dimmed .unit:not(.performing):not(.dead) {
   opacity: 0.45;
-}
-
-.stage.dimmed .unit:not(.performing):not(.dead) .portrait-wrap {
-  transform: scale(0.88);
+  transform: scale(0.92);
 }
 
 .side-col {
@@ -972,22 +969,15 @@ function statusText(c: CombatantView): string {
   border-color: rgba(76, 194, 255, 0.85);
   box-shadow: 0 0 28px rgba(76, 194, 255, 0.4);
   z-index: 3;
+  transform: scale(1.22);
 }
 
-.unit.performing .portrait-wrap {
-  transform: scale(1.45);
+.side-player .unit.approaching .portrait-wrap {
+  transform: translateX(48px);
 }
 
-.unit.performing .info {
-  transform: scale(1.12);
-}
-
-.side-player .unit.approaching {
-  transform: translateX(56px);
-}
-
-.side-enemy .unit.approaching {
-  transform: translateX(-56px);
+.side-enemy .unit.approaching .portrait-wrap {
+  transform: translateX(-48px);
 }
 
 .portrait-wrap {
