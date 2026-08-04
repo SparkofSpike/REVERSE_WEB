@@ -191,17 +191,36 @@ function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
   }, 1900)
 }
 
+// The curtain window (fall delay + fall + rise) is locked as ONE unit.
+// round_end and round_start arrive adjacent in the same response, so a
+// shared flag prevents double-counting the lock and the new chain is the
+// single unlock point - otherwise the panel would stay locked forever.
+let curtainWindowLocked = false
+
+function lockCurtainWindow() {
+  if (curtainWindowLocked) return
+  curtainWindowLocked = true
+  animStart()
+}
+
+function unlockCurtainWindow() {
+  if (!curtainWindowLocked) return
+  curtainWindowLocked = false
+  animEnd()
+}
+
 function handleRoundEnd() {
   // lock through the whole curtain window (delay + animation), so the
   // panel never unlocks between the cues ending and the fall starting
-  animStart()
+  lockCurtainWindow()
   window.clearTimeout(fallTimer)
-  fallTimer = window.setTimeout(() => playCurtainNow('fall', () => animEnd()), 2600)
+  fallTimer = window.setTimeout(() => playCurtainNow('fall', () => unlockCurtainWindow()), 2600)
 }
 
 function handleRoundStart() {
-  // lock through the whole curtain chain (fall delay + fall + rise)
-  animStart()
+  // lock through the whole curtain chain (fall delay + fall + rise);
+  // the lock is shared with the adjacent round_end so it counts once
+  lockCurtainWindow()
   window.clearTimeout(fallTimer)
   perfGate = true
   fallTimer = window.setTimeout(() => {
@@ -215,7 +234,7 @@ function handleRoundStart() {
         for (const c of battle.value?.combatants ?? []) {
           displayHp.value[c.id] = c.hp
         }
-        animEnd()
+        unlockCurtainWindow()
       })
     }, 1900)
   }, 2600)
