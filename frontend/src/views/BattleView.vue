@@ -12,7 +12,7 @@ import {
   skipSpecialPerk
 } from '@/api/combat'
 import { errorMessage } from '@/api/http'
-import type { CombatView, CombatantView, ActionDecision, SkillView } from '@/types'
+import type { CombatView, CombatantView, ActionDecision, SkillView, CombatEvent } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,15 +34,31 @@ const targetDummy = ref('dummy')
 // portrait images: /assets/{templateId}.png, falling back to a placeholder
 const portraitFailed = ref<Record<string, boolean>>({})
 
-// transition overlays driven by battle log events
-const OVERLAY_SRC: Record<string, string> = {
-  round_start: '/assets/curtain_rise.png',
-  round_end: '/assets/curtain_fall.png',
-  last_dash: '/assets/last_dash.png'
-}
-const overlay = ref<{ src: string; key: number } | null>(null)
-const overlayQueue: string[] = []
+// ---------------- transition overlays ----------------
+// Curtains play inside the stage (natural, non-blocking, latest-wins).
+// The last-dash moment uses a separate full-screen channel so it is never
+// starved by per-round curtain events.
+const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
+const dashOverlay = ref<{ seq: number } | null>(null)
+
+// Log consumption: the first load is only a baseline (never replays old
+// transitions after a refresh); later responses consume only the tail.
+let baselineSet = false
 let consumedLogs = 0
+
+// ---------------- performance animation state ----------------
+const performing = ref<Record<string, boolean>>({})
+const approaching = ref<Record<string, boolean>>({})
+const shaking = ref<Record<string, boolean>>({})
+interface FloatNum {
+  id: number
+  targetId: string
+  text: string
+  kind: 'damage' | 'heal'
+}
+const floats = ref<FloatNum[]>([])
+let floatSeq = 0
+const anyPerforming = computed(() => Object.values(performing.value).some(Boolean))
 
 const players = computed(() =>
   (battle.value?.combatants ?? []).filter((c) => c.side === 'PLAYER')
@@ -56,7 +72,26 @@ const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 
-onMounted(load)
+onMounted(() => {
+  preloadAssets()
+  load()
+})
+
+// Preload stage art + transition images so animations never pop in half-loaded.
+function preloadAssets() {
+  const urls = [
+    '/assets/fight_background.png',
+    '/assets/curtain_rise.png',
+    '/assets/curtain_fall.png',
+    '/assets/last_dash.png',
+    '/assets/warrior.png',
+    '/assets/mage.png'
+  ]
+  for (const u of urls) {
+    const img = new Image()
+    img.src = u
+  }
+}
 
 // keep per-combatant pending decisions in sync with alive players.
 // summons (e.g. puppet minions) can appear mid-battle; rendering accesses
@@ -73,37 +108,111 @@ watch(
   { immediate: true }
 )
 
-// consume new battle log entries and queue transition overlays.
-// getBattle returns the FULL log array every poll, so only process the tail.
+// consume new battle log entries: curtains, last-dash and performance cues.
 watch(
   () => battle.value?.logs,
   (logs) => {
     if (!logs) return
-    for (let i = consumedLogs; i < logs.length; i++) {
-      const src = OVERLAY_SRC[logs[i].type]
-      if (src) overlayQueue.push(src)
-      consumedLogs = i + 1
+    if (!baselineSet) {
+      baselineSet = true
+      consumedLogs = logs.length
+      return
     }
-    if (!overlay.value && overlayQueue.length > 0) {
-      showNextOverlay()
+    for (let i = consumedLogs; i < logs.length; i++) {
+      const ev = logs[i]
+      if (ev.type === 'round_start') {
+        triggerCurtain('rise')
+      } else if (ev.type === 'round_end') {
+        triggerCurtain('fall')
+      } else if (ev.type === 'last_dash') {
+        triggerDash()
+      }
+      consumePerformanceEvent(ev)
+      consumedLogs = i + 1
     }
   },
   { deep: true }
 )
 
-function showNextOverlay() {
-  const src = overlayQueue.shift()
-  if (!src) return
-  overlay.value = { src, key: Date.now() }
+function triggerCurtain(kind: 'rise' | 'fall') {
+  curtain.value = { kind, seq: (curtain.value?.seq ?? 0) + 1 }
   window.setTimeout(() => {
-    overlay.value = null
-  }, 1600)
+    if (curtain.value?.kind === kind) {
+      curtain.value = null
+    }
+  }, 1800)
 }
 
-function onOverlayLeave() {
-  if (overlayQueue.length > 0) {
-    showNextOverlay()
+function triggerDash() {
+  dashOverlay.value = { seq: (dashOverlay.value?.seq ?? 0) + 1 }
+  window.setTimeout(() => {
+    dashOverlay.value = null
+  }, 2100)
+}
+
+// ---------- performance cues from structured event data ----------
+function consumePerformanceEvent(ev: CombatEvent) {
+  const d = (ev.data ?? {}) as Record<string, unknown>
+  const actorId = d.actorId as string | undefined
+  const targetId = d.targetId as string | undefined
+
+  if (ev.type === 'skill' || ev.type === 'action' || ev.type === 'clash' || ev.type === 'chase') {
+    if (actorId) pulseActor(actorId)
+    if (ev.type === 'clash' || ev.type === 'chase') {
+      if (actorId && targetId) approachTarget(actorId)
+    }
   }
+  if (ev.type === 'counter') {
+    const counterActor = d.actorId as string | undefined
+    if (counterActor) {
+      pulseActor(counterActor)
+      approachTarget(counterActor)
+    }
+  }
+  if (ev.type === 'damage') {
+    const t = d.target as string | undefined
+    if (t) {
+      shakeTarget(t)
+      const amount = (d.hpDamage ?? d.raw ?? 0) as number
+      if (amount > 0) addFloat(t, `-${amount}`, 'damage')
+    }
+  }
+  if (ev.type === 'heal') {
+    if (targetId && d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+  }
+}
+
+function pulseActor(id: string) {
+  performing.value[id] = true
+  window.setTimeout(() => {
+    performing.value[id] = false
+  }, 680)
+}
+
+function approachTarget(id: string) {
+  approaching.value[id] = true
+  window.setTimeout(() => {
+    approaching.value[id] = false
+  }, 860)
+}
+
+function shakeTarget(id: string) {
+  shaking.value[id] = true
+  window.setTimeout(() => {
+    shaking.value[id] = false
+  }, 480)
+}
+
+function addFloat(targetId: string, text: string, kind: 'damage' | 'heal') {
+  const id = ++floatSeq
+  floats.value.push({ id, targetId, text, kind })
+  window.setTimeout(() => {
+    floats.value = floats.value.filter((f) => f.id !== id)
+  }, 1300)
+}
+
+function floatsFor(unitId: string): FloatNum[] {
+  return floats.value.filter((f) => f.targetId === unitId)
 }
 
 function portraitUrl(c: CombatantView): string {
@@ -115,7 +224,6 @@ async function load() {
   try {
     const battleId = route.params.battleId as string
     battle.value = await getBattle(battleId)
-    // initialize pending decisions for alive players
     for (const c of alivePlayers.value) {
       if (!pending.value[c.id]) {
         pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
@@ -334,12 +442,7 @@ function statusText(c: CombatantView): string {
       <section v-if="inInitialPerk" class="panel perk-panel">
         <h3>选择初始词条</h3>
         <div class="perk-grid">
-          <div
-            v-for="p in battle.initialPerkOptions"
-            :key="p.id"
-            class="perk-card"
-            @click="chooseInitialPerk(p.id)"
-          >
+          <div v-for="p in battle.initialPerkOptions" :key="p.id" class="perk-card" @click="chooseInitialPerk(p.id)">
             <div class="perk-name accent">{{ p.name }}</div>
             <div class="perk-desc">{{ p.description }}</div>
           </div>
@@ -350,12 +453,7 @@ function statusText(c: CombatantView): string {
       <section v-if="inSpecialPerk" class="panel perk-panel">
         <h3>特殊词条轮</h3>
         <div class="perk-grid">
-          <div
-            v-for="p in battle.specialPerkOptions"
-            :key="p.id"
-            class="perk-card"
-            @click="chooseSpecialPerk(p.id)"
-          >
+          <div v-for="p in battle.specialPerkOptions" :key="p.id" class="perk-card" @click="chooseSpecialPerk(p.id)">
             <div class="perk-name accent">{{ p.name }}</div>
             <div class="perk-desc">{{ p.description }}</div>
           </div>
@@ -363,11 +461,20 @@ function statusText(c: CombatantView): string {
         <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
       </section>
 
-      <!-- battle stage: combatants on the background image -->
-      <div class="stage">
-        <div class="side-col">
-          <h4>我方</h4>
-          <div v-for="c in players" :key="c.id" class="unit" :class="{ dead: c.dead }">
+      <!-- battle stage: face-to-face showdown in the middle of the field -->
+      <div class="stage" :class="{ dimmed: anyPerforming }">
+        <div class="side-col side-player">
+          <div
+            v-for="c in players"
+            :key="c.id"
+            class="unit"
+            :class="{
+              dead: c.dead,
+              performing: performing[c.id],
+              approaching: approaching[c.id],
+              shaking: shaking[c.id]
+            }"
+          >
             <div class="portrait-wrap">
               <img
                 v-if="!portraitFailed[c.id]"
@@ -378,6 +485,9 @@ function statusText(c: CombatantView): string {
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
+              <div class="float-layer">
+                <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
+              </div>
             </div>
             <div class="info">
               <div class="name">
@@ -400,8 +510,17 @@ function statusText(c: CombatantView): string {
         </div>
 
         <div class="side-col side-enemy">
-          <h4>敌方</h4>
-          <div v-for="c in enemies" :key="c.id" class="unit" :class="{ dead: c.dead }">
+          <div
+            v-for="c in enemies"
+            :key="c.id"
+            class="unit"
+            :class="{
+              dead: c.dead,
+              performing: performing[c.id],
+              approaching: approaching[c.id],
+              shaking: shaking[c.id]
+            }"
+          >
             <div class="portrait-wrap">
               <img
                 v-if="!portraitFailed[c.id]"
@@ -412,6 +531,9 @@ function statusText(c: CombatantView): string {
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
+              <div class="float-layer">
+                <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
+              </div>
             </div>
             <div class="info">
               <div class="name">
@@ -431,6 +553,11 @@ function statusText(c: CombatantView): string {
               <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
             </div>
           </div>
+        </div>
+
+        <!-- natural curtain overlay inside the stage -->
+        <div v-if="curtain" :key="curtain.seq" class="curtain" :class="curtain.kind">
+          <img :src="curtain.kind === 'rise' ? '/assets/curtain_rise.png' : '/assets/curtain_fall.png'" alt="" />
         </div>
       </div>
 
@@ -473,19 +600,11 @@ function statusText(c: CombatantView): string {
             style="width: 120px"
           />
           <div class="skill-hint">
-            <span
-              v-for="s in c.skills"
-              :key="s.id"
-              :class="skillTagClass(c, s)"
-              @click="selectSkill(c, s)"
-            >
+            <span v-for="s in c.skills" :key="s.id" :class="skillTagClass(c, s)" @click="selectSkill(c, s)">
               {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
             </span>
           </div>
-          <div
-            v-if="pending[c.id].actionType === 'SKILL' && selectedSkill(c)"
-            class="skill-detail"
-          >
+          <div v-if="pending[c.id].actionType === 'SKILL' && selectedSkill(c)" class="skill-detail">
             <div class="skill-desc dim">{{ selectedSkill(c)?.description }}</div>
             <n-select
               v-if="skillNeedsTarget(selectedSkill(c))"
@@ -504,13 +623,7 @@ function statusText(c: CombatantView): string {
       <div v-if="inDecision" class="panel footer-panel">
         <div class="hand">
           <span class="dim">手牌</span>
-          <div
-            v-for="card in battle.playerHand"
-            :key="card.id"
-            class="card"
-            @click="playCardFromHand(card.id)"
-            :title="card.description"
-          >
+          <div v-for="card in battle.playerHand" :key="card.id" class="card" @click="playCardFromHand(card.id)" :title="card.description">
             <div class="card-name accent">{{ card.name }}</div>
             <div class="card-desc dim">{{ card.description }}</div>
           </div>
@@ -531,12 +644,10 @@ function statusText(c: CombatantView): string {
       </section>
     </main>
 
-    <!-- transition overlay: curtain rise / curtain fall / last dash -->
-    <Transition name="overlay" @after-leave="onOverlayLeave">
-      <div v-if="overlay" :key="overlay.key" class="overlay">
-        <img :src="overlay.src" alt="" />
-      </div>
-    </Transition>
+    <!-- last-dash full-screen channel (independent, never starved) -->
+    <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-overlay">
+      <img src="/assets/last_dash.png" alt="决速时刻" />
+    </div>
   </div>
 </template>
 
@@ -638,75 +749,86 @@ function statusText(c: CombatantView): string {
   color: var(--text-dim);
 }
 
-/* ---------- battle stage ---------- */
+/* ---------- battle stage: face-to-face showdown ---------- */
 
 .stage {
   position: relative;
-  min-height: 460px;
+  min-height: 400px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
   background:
-    linear-gradient(180deg, rgba(11, 14, 20, 0.25), rgba(11, 14, 20, 0.55)),
+    linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
     url('/assets/fight_background.png') center / cover no-repeat;
   display: flex;
-  justify-content: space-between;
   align-items: flex-end;
-  padding: 20px 28px;
+  justify-content: center;
+  gap: 6%;
+  padding: 18px 30px 24px;
+  transition: filter 0.4s ease;
+}
+
+.stage.dimmed .unit:not(.performing):not(.dead) {
+  opacity: 0.55;
 }
 
 .side-col {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 200px;
-}
-
-.side-col h4 {
-  font-size: 13px;
-  color: var(--text-dim);
-  letter-spacing: 2px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
-  margin: 0 0 2px 6px;
-}
-
-.side-enemy {
+  flex-direction: row;
   align-items: flex-end;
-}
-
-.side-enemy h4 {
-  margin: 0 6px 2px 0;
-  text-align: right;
+  gap: 10px;
 }
 
 .unit {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  width: 118px;
+  padding: 8px;
   border-radius: 10px;
-  background: rgba(18, 23, 32, 0.72);
+  background: rgba(18, 23, 32, 0.66);
   border: 1px solid rgba(35, 44, 61, 0.85);
   backdrop-filter: blur(2px);
-  transition: border-color 0.2s, opacity 0.2s;
+  transition: transform 0.55s ease, opacity 0.35s ease, border-color 0.2s;
 }
 
 .unit.dead {
-  opacity: 0.4;
+  opacity: 0.35;
   filter: grayscale(0.9);
+}
+
+.unit.shaking {
+  animation: unit-shake 0.45s ease;
+}
+
+.unit.performing {
+  border-color: rgba(76, 194, 255, 0.6);
+}
+
+.unit.performing .portrait-wrap {
+  transform: scale(1.14);
+}
+
+.side-player .unit.approaching {
+  transform: translateX(56px);
+}
+
+.side-enemy .unit.approaching {
+  transform: translateX(-56px);
 }
 
 .portrait-wrap {
   position: relative;
-  width: 150px;
-  height: 190px;
+  width: 96px;
+  height: 126px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.18), rgba(11, 14, 20, 0.6));
+  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.16), rgba(11, 14, 20, 0.6));
+  transition: transform 0.45s ease;
 }
 
 .portrait {
@@ -715,13 +837,19 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
+/* enemies face the players */
+.side-enemy .portrait,
+.side-enemy .portrait-placeholder {
+  transform: scaleX(-1);
+}
+
 .portrait-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 56px;
+  font-size: 44px;
   font-weight: 700;
   color: rgba(215, 224, 238, 0.35);
   background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.12), rgba(11, 14, 20, 0.7));
@@ -729,60 +857,241 @@ function statusText(c: CombatantView): string {
 
 .tag-perform {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 11px;
+  top: 5px;
+  left: 5px;
+  font-size: 10px;
   color: var(--warn);
   border: 1px solid var(--warn);
   border-radius: 4px;
-  padding: 0 5px;
+  padding: 0 4px;
   background: rgba(11, 14, 20, 0.6);
+  z-index: 2;
+}
+
+.float-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.float-num {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 21px;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  animation: float-up 1.25s ease-out forwards;
+}
+
+.float-num.damage {
+  color: var(--danger);
+}
+
+.float-num.heal {
+  color: var(--ok);
 }
 
 .info {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shield-tag {
   color: var(--shield);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .bar-label {
-  width: 22px;
-  font-size: 11px;
+  width: 20px;
+  font-size: 10px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
 
 .bar-num {
-  font-size: 11px;
-  min-width: 52px;
+  font-size: 10px;
+  min-width: 48px;
   text-align: right;
   color: var(--text-dim);
 }
 
 .unit-status {
-  font-size: 11px;
+  font-size: 10px;
   text-align: center;
+}
+
+/* ---------- curtains (natural, inside the stage) ---------- */
+
+.curtain {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.curtain img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.88;
+  border-radius: 10px;
+}
+
+.curtain.rise img {
+  animation: curtain-rise 1.7s ease forwards;
+}
+
+.curtain.fall img {
+  animation: curtain-fall 1.7s ease forwards;
+}
+
+/* rise: sweep up from the bottom like a curtain opening */
+@keyframes curtain-rise {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  25% {
+    transform: translateY(0);
+    opacity: 0.88;
+  }
+  72% {
+    transform: translateY(0);
+    opacity: 0.88;
+  }
+  100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+/* fall: drop down from the top like a curtain closing */
+@keyframes curtain-fall {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  25% {
+    transform: translateY(0);
+    opacity: 0.88;
+  }
+  72% {
+    transform: translateY(0);
+    opacity: 0.88;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* ---------- last dash overlay (full screen, high priority) ---------- */
+
+.dash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 12, 0.55);
+  animation: dash-in 0.4s ease;
+}
+
+.dash-overlay img {
+  max-width: 62vw;
+  max-height: 56vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.7);
+  animation: dash-pop 1.9s ease forwards;
+}
+
+@keyframes dash-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dash-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes unit-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-7px);
+  }
+  40% {
+    transform: translateX(7px);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.12);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -48px) scale(1);
+  }
 }
 
 /* ---------- decision panel ---------- */
@@ -904,7 +1213,7 @@ function statusText(c: CombatantView): string {
 }
 
 .log-list {
-  max-height: 260px;
+  max-height: 240px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -943,41 +1252,5 @@ function statusText(c: CombatantView): string {
 
 .log-message {
   flex: 1;
-}
-
-/* ---------- transition overlay ---------- */
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(5, 8, 12, 0.6);
-}
-
-.overlay img {
-  max-width: 68vw;
-  max-height: 62vh;
-  border-radius: 8px;
-  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.7);
-}
-
-.overlay-enter-active {
-  transition: opacity 0.45s ease, transform 0.45s ease;
-}
-
-.overlay-leave-active {
-  transition: opacity 0.5s ease;
-}
-
-.overlay-enter-from {
-  opacity: 0;
-  transform: scale(0.92);
-}
-
-.overlay-leave-to {
-  opacity: 0;
 }
 </style>
