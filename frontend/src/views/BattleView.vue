@@ -169,9 +169,11 @@ function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
   // fixed rhythm: play on schedule; the image fades in over a gradient
   window.clearTimeout(curtainTimer)
   curtain.value = { kind, seq: ++curtainSeq }
+  animStart()
   curtainTimer = window.setTimeout(() => {
     curtain.value = null
     onDone?.()
+    animEnd()
   }, 1900)
 }
 
@@ -200,8 +202,10 @@ function handleRoundStart() {
 
 function triggerDash() {
   dashOverlay.value = { seq: (dashOverlay.value?.seq ?? 0) + 1 }
+  animStart()
   window.setTimeout(() => {
     dashOverlay.value = null
+    animEnd()
   }, 2100)
 }
 
@@ -268,6 +272,24 @@ function flushPerf() {
 const ACTION_STEP = 1150
 const actorQueueDepth: Record<string, number> = {}
 
+// While any animation is running (action cues, curtains, last dash) the
+// decision panel stays locked, so a new submission can never interleave
+// with a still-playing animation and scramble the order.
+const animating = ref(false)
+let animCount = 0
+
+function animStart() {
+  animCount++
+  animating.value = true
+}
+
+function animEnd() {
+  animCount = Math.max(0, animCount - 1)
+  if (animCount === 0) {
+    animating.value = false
+  }
+}
+
 function applyPerformance(ev: CombatEvent) {
   const d = (ev.data ?? {}) as Record<string, unknown>
   const actorId = d.actorId as string | undefined
@@ -297,9 +319,11 @@ function enqueueActorAction(actorId: string, ev: CombatEvent) {
   const depth = actorQueueDepth[actorId] ?? 0
   actorQueueDepth[actorId] = depth + 1
   const startAt = depth * ACTION_STEP
+  animStart()
   window.setTimeout(() => playActionNow(ev), startAt)
   window.setTimeout(() => {
     actorQueueDepth[actorId] = Math.max(0, (actorQueueDepth[actorId] ?? 1) - 1)
+    animEnd()
   }, startAt + ACTION_STEP + 250)
 }
 
@@ -718,7 +742,7 @@ function statusText(c: CombatantView): string {
       </div>
 
       <!-- decision panel: one control row per alive player -->
-      <div v-if="inDecision" class="panel decision-panel">
+      <div v-if="inDecision" class="panel decision-panel" :class="{ locked: animating }">
         <div v-for="c in alivePlayers" :key="c.id" class="decision-unit">
           <span class="actor-name">{{ c.name }}</span>
           <n-select
@@ -772,7 +796,9 @@ function statusText(c: CombatantView): string {
             />
           </div>
         </div>
-        <n-button type="primary" :loading="submitting" @click="submitDecisions">提交指令</n-button>
+        <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
+          提交指令
+        </n-button>
       </div>
 
       <!-- generic skill hand + special perk offers -->
@@ -1289,6 +1315,11 @@ function statusText(c: CombatantView): string {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.decision-panel.locked {
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .decision-unit {
