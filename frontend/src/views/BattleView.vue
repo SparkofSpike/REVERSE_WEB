@@ -43,6 +43,11 @@ let curtainSeq = 0
 let curtainTimer = 0
 let fallTimer = 0
 let riseTimer = 0
+// Performance gate: while the curtain chain (fall -> rise) is playing,
+// incoming performance cues are buffered and released after the rise ends,
+// so action labels never pop on top of a curtain.
+let perfGate = false
+const perfBuffer: CombatEvent[] = []
 const dashOverlay = ref<{ seq: number } | null>(null)
 
 // Log consumption: the first load is only a baseline (never replays old
@@ -141,11 +146,12 @@ watch(
 // Curtain cooldown flow: one curtain at a time (~1.9s). Round order is
 // performance cues -> (pause) -> curtain fall -> curtain rise, so actions
 // are never hidden behind a falling curtain and the rise never cuts the fall.
-function playCurtainNow(kind: 'rise' | 'fall') {
+function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
   window.clearTimeout(curtainTimer)
   curtain.value = { kind, seq: ++curtainSeq }
   curtainTimer = window.setTimeout(() => {
     curtain.value = null
+    onDone?.()
   }, 1900)
 }
 
@@ -156,12 +162,19 @@ function handleRoundEnd() {
 }
 
 function handleRoundStart() {
-  // fall first (after the pause), then rise once the fall has finished
+  // fall first (after the pause), then rise once the fall has finished;
+  // performance cues stay buffered until the rise completes
   window.clearTimeout(fallTimer)
+  perfGate = true
   fallTimer = window.setTimeout(() => {
     playCurtainNow('fall')
     window.clearTimeout(riseTimer)
-    riseTimer = window.setTimeout(() => playCurtainNow('rise'), 1900)
+    riseTimer = window.setTimeout(() => {
+      playCurtainNow('rise', () => {
+        perfGate = false
+        flushPerf()
+      })
+    }, 1900)
   }, 2600)
 }
 
@@ -195,6 +208,20 @@ function addActionLabel(unitId: string, text: string) {
 }
 
 function consumePerformanceEvent(ev: CombatEvent) {
+  if (perfGate) {
+    perfBuffer.push(ev)
+    return
+  }
+  applyPerformance(ev)
+}
+
+function flushPerf() {
+  if (perfBuffer.length === 0) return
+  const batch = perfBuffer.splice(0, perfBuffer.length)
+  for (const ev of batch) applyPerformance(ev)
+}
+
+function applyPerformance(ev: CombatEvent) {
   const d = (ev.data ?? {}) as Record<string, unknown>
   const actorId = d.actorId as string | undefined
   const targetId = d.targetId as string | undefined
