@@ -7,7 +7,8 @@ Core capabilities: two-sided turn-based combat adjudication (speed
 resolution, damage calculation, performance triggers), account system, deck
 management, training dummy battles and battle report statistics.
 
-- Rules blueprint: `TEST.游戏玩法.pdf` (in this repository root)
+- Rules blueprint: `TEST.游戏玩法.pdf` (design doc kept locally; not tracked
+  in this repository — see `.gitignore`)
 - Current stage: rules validation and framework scaffolding (Harness /
   prototype). Battle mode is single-player vs training dummy; PVP is planned
   for a later stage.

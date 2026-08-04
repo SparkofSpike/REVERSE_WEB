@@ -38,3 +38,6 @@ backend/src/main/resources/static/
 
 # Local agent project standards (not for public repo)
 AGENTS.md
+
+# Design docs (kept local, not tracked)
+*.pdf
