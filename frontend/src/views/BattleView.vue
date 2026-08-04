@@ -82,15 +82,12 @@ const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 
-onMounted(async () => {
-  await preloadAssets()
+onMounted(() => {
+  // fire-and-forget warm-up: never blocks the battle screen
+  preloadAssets()
   load()
 })
 
-// Preload stage art + transition images so animations never pop in
-// half-loaded. The essential images (background + curtains + last dash)
-// must finish loading before the battle data is fetched, otherwise the
-// first round_start curtain can play against an empty <img> on slow links.
 function loadImage(url: string): Promise<void> {
   return new Promise((resolve) => {
     const img = new Image()
@@ -100,17 +97,27 @@ function loadImage(url: string): Promise<void> {
   })
 }
 
-async function preloadAssets(): Promise<void> {
-  const essential = [
-    '/assets/fight_background.png',
-    '/assets/curtain_rise.png',
-    '/assets/curtain_fall.png',
-    '/assets/last_dash.png'
+// warm the browser cache in the background; never blocks the battle screen
+const imageCache = new Map<string, Promise<void>>()
+
+function ensureImageLoaded(url: string): Promise<void> {
+  if (!imageCache.has(url)) {
+    imageCache.set(url, loadImage(url))
+  }
+  return imageCache.get(url)!
+}
+
+function preloadAssets() {
+  const urls = [
+    '/assets/fight_background.webp',
+    '/assets/curtain_rise.webp',
+    '/assets/curtain_fall.webp',
+    '/assets/last_dash.webp',
+    '/assets/warrior.webp',
+    '/assets/mage.webp'
   ]
-  const extra = ['/assets/warrior.png', '/assets/mage.png']
-  await Promise.all(essential.map(loadImage))
-  for (const u of extra) {
-    void loadImage(u)
+  for (const u of urls) {
+    void ensureImageLoaded(u)
   }
 }
 
@@ -159,6 +166,7 @@ watch(
 // performance cues -> (pause) -> curtain fall -> curtain rise, so actions
 // are never hidden behind a falling curtain and the rise never cuts the fall.
 function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
+  // fixed rhythm: play on schedule; the image fades in over a gradient
   window.clearTimeout(curtainTimer)
   curtain.value = { kind, seq: ++curtainSeq }
   curtainTimer = window.setTimeout(() => {
@@ -325,7 +333,7 @@ function floatsFor(unitId: string): FloatNum[] {
 }
 
 function portraitUrl(c: CombatantView): string {
-  return `/assets/${c.templateId}.png`
+  return `/assets/${c.templateId}.webp`
 }
 
 async function load() {
@@ -670,12 +678,12 @@ function statusText(c: CombatantView): string {
 
         <!-- natural curtain overlay inside the stage -->
         <div v-if="curtain" :key="curtain.seq" class="curtain" :class="curtain.kind">
-          <img :src="curtain.kind === 'rise' ? '/assets/curtain_rise.png' : '/assets/curtain_fall.png'" alt="" />
+          <img :src="curtain.kind === 'rise' ? '/assets/curtain_rise.webp' : '/assets/curtain_fall.webp'" alt="" />
         </div>
 
         <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
-          <img src="/assets/last_dash.png" alt="决速时刻" />
+          <img src="/assets/last_dash.webp" alt="决速时刻" />
         </div>
       </div>
 
@@ -882,7 +890,7 @@ function statusText(c: CombatantView): string {
   border: 1px solid var(--border);
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
-    url('/assets/fight_background.png') center / cover no-repeat;
+    url('/assets/fight_background.webp') center / cover no-repeat;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1114,22 +1122,21 @@ function statusText(c: CombatantView): string {
   justify-content: center;
   pointer-events: none;
   z-index: 5;
+  overflow: hidden;
+}
+
+.curtain.rise {
+  animation: curtain-rise 1.7s ease forwards;
+}
+
+.curtain.fall {
+  animation: curtain-fall 1.7s ease forwards;
 }
 
 .curtain img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  opacity: 0.88;
-  border-radius: 10px;
-}
-
-.curtain.rise img {
-  animation: curtain-rise 1.7s ease forwards;
-}
-
-.curtain.fall img {
-  animation: curtain-fall 1.7s ease forwards;
 }
 
 /* rise: sweep up from the bottom like a curtain opening */
@@ -1183,13 +1190,13 @@ function statusText(c: CombatantView): string {
   justify-content: center;
   pointer-events: none;
   z-index: 6;
+  animation: dash-sweep 2s ease forwards;
 }
 
 .dash-moment img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  animation: dash-sweep 2s ease forwards;
 }
 
 /* identical motion to curtain-rise: sweep up, hold, sweep out the top */
