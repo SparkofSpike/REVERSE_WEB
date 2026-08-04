@@ -51,6 +51,7 @@ export interface PerformanceSpec {
   triggerType: string
   threshold: number
   description: string
+  rewardDescription?: string
   effects: EffectSpec[]
 }
 

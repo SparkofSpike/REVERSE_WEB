@@ -97,6 +97,7 @@ function characterName(id: string): string {
               <span class="char-name">{{ c.name }}</span>
               <span class="dim">{{ c.baseDamageDice }} {{ c.baseDamageType }}</span>
             </div>
+            <div class="char-intro dim">{{ c.description }}</div>
             <div class="char-stats dim">
               <span>生命 {{ c.maxHp }}</span>
               <span>精力 {{ c.maxEnergy }}</span>
@@ -107,7 +108,10 @@ function characterName(id: string): string {
               {{ c.corePassive.description }}
             </div>
             <div v-if="c.performance" class="char-perf dim">
-              演出：{{ c.performance.description }}
+              <div>触发条件：{{ c.performance.description }}</div>
+              <div v-if="c.performance.rewardDescription">
+                追加效果：{{ c.performance.rewardDescription }}
+              </div>
             </div>
             <div class="char-skills">
               <div v-for="s in c.skills" :key="s.id" class="skill-row">
