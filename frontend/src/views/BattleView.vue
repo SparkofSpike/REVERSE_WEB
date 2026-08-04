@@ -276,10 +276,14 @@ function shakeTarget(id: string) {
 
 function addFloat(targetId: string, text: string, kind: 'damage' | 'heal') {
   const id = ++floatSeq
-  floats.value.push({ id, targetId, text, kind })
+  // show order: the action label pops first, the number follows a beat
+  // later and lower, so Attack! and -12 never stack on top of each other
+  window.setTimeout(() => {
+    floats.value.push({ id, targetId, text, kind })
+  }, 340)
   window.setTimeout(() => {
     floats.value = floats.value.filter((f) => f.id !== id)
-  }, 1300)
+  }, 340 + 1300)
 }
 
 function floatsFor(unitId: string): FloatNum[] {
@@ -544,9 +548,9 @@ function statusText(c: CombatantView): string {
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
-              <div class="float-layer">
-                <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
-              </div>
+            </div>
+            <div class="float-layer">
+              <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
             </div>
             <div class="info">
               <div class="name">
@@ -590,9 +594,9 @@ function statusText(c: CombatantView): string {
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
-              <div class="float-layer">
-                <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
-              </div>
+            </div>
+            <div class="float-layer">
+              <div v-for="f in floatsFor(c.id)" :key="f.id" class="float-num" :class="f.kind">{{ f.text }}</div>
             </div>
             <div class="info">
               <div class="name">
@@ -849,6 +853,7 @@ function statusText(c: CombatantView): string {
 }
 
 .unit {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -939,20 +944,29 @@ function statusText(c: CombatantView): string {
 
 .float-layer {
   position: absolute;
-  inset: 0;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 0;
   pointer-events: none;
-  z-index: 3;
+  z-index: 4;
 }
 
 .float-num {
   position: absolute;
-  top: 12%;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
   font-size: 21px;
   font-weight: 700;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
   animation: float-up 1.25s ease-out forwards;
+}
+
+.float-num.damage,
+.float-num.heal {
+  top: 34px;
+  font-size: 18px;
 }
 
 .float-num.damage {
@@ -964,7 +978,7 @@ function statusText(c: CombatantView): string {
 }
 
 .float-num.action {
-  top: 6%;
+  top: -2px;
   font-size: 26px;
   font-weight: 900;
   color: #ffc857;
@@ -1113,6 +1127,7 @@ function statusText(c: CombatantView): string {
 .dash-moment {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1121,30 +1136,25 @@ function statusText(c: CombatantView): string {
 }
 
 .dash-moment img {
-  max-width: 72%;
-  max-height: 82%;
-  object-fit: contain;
-  border-radius: 10px;
-  box-shadow: 0 6px 32px rgba(0, 0, 0, 0.6);
-  animation: dash-pop 1.9s ease forwards;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.9;
+  animation: dash-fade 2s ease forwards;
 }
 
-@keyframes dash-pop {
+@keyframes dash-fade {
   0% {
     opacity: 0;
-    transform: scale(0.86);
   }
-  16% {
-    opacity: 1;
-    transform: scale(1);
+  22% {
+    opacity: 0.9;
   }
-  78% {
-    opacity: 1;
-    transform: scale(1);
+  75% {
+    opacity: 0.9;
   }
   100% {
     opacity: 0;
-    transform: scale(1.04);
   }
 }
 
