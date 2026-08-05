@@ -520,4 +520,99 @@ class CombatEngineTest {
         // the permanent extra action goes to the lowest ALIVE ally
         assertThat(mage.isPermanentExtraAction()).isTrue();
     }
+
+    @Test
+    void extraActionRoundRejectsSkillsWithoutOverlimit() {
+        // regression: extra-action rounds accepted SKILL decisions even
+        // though they grant "extra base actions" (连续奔袭); only 超限技能
+        // (extra_skill) unlocks a skill inside the extra round
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+        assertThat(state.isExtraActionRound()).isTrue();
+        int dummyHpBefore = state.find("dummy").getHp();
+
+        // a SKILL decision is rejected and burns nothing
+        assertThatThrownBy(() -> engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s1", "dummy"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(3);
+        assertThat(state.find("dummy").getHp()).isEqualTo(dummyHpBefore);
+
+        // base actions still work
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(2);
+    }
+
+    @Test
+    void extraSkillUnlocksSkillInsideExtraActionRound() {
+        // 超限技能 (g-overlimit): "使一个角色在本回合内可以额外使用一个技能"
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        // round 1: 连续奔袭 opens the extra round with 3 base actions
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+        assertThat(state.isExtraActionRound()).isTrue();
+
+        // 超限技能 card grants +1 extra skill for this turn
+        GenericSkillTemplate overlimit = state.getPlayerDeck().stream()
+                .filter(c -> "g-overlimit".equals(c.getId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("overlimit card not in deck"));
+        engine.playGenericSkill(state.getId(), overlimit.getId(), warrior.getId());
+        assertThat(warrior.getExtraSkillsThisTurn()).isEqualTo(1);
+
+        // a skill now passes the extra-round gate
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s1", "dummy")));
+        assertThat(warrior.getExtraSkillsThisTurn()).isZero();
+        assertThat(state.getLogs().stream()
+                .anyMatch(e -> "skill".equals(e.getType()) && warrior.getId().equals(e.getData().get("actorId"))))
+                .isTrue();
+    }
+
+    @Test
+    void secondGuardSameTurnNeedsExtraGuardCharge() {
+        // 蟹壳拓展 (crab-s1): "仅限本回合，获得2次额外的守护行动次数" - a
+        // character can only guard once per turn unless it holds extra guard
+        // charges (the extra-action round is the same-turn second action slot)
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior", "crab-dwarf"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        Combatant crab = state.alive(CombatSide.PLAYER).get(1);
+        warrior.setEnergy(100);
+
+        // main round: 连续奔袭 opens the extra-action round
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null),
+                ActionDecision.base(crab.getId(), "ATTACK", "dummy")));
+        assertThat(state.isExtraActionRound()).isTrue();
+
+        // extra action 1: first guard of the turn is free
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "GUARD", crab.getId())));
+        assertThat(warrior.getGuardTargetId()).isEqualTo(crab.getId());
+
+        // extra action 2: a second guard without extra charges is rejected
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "GUARD", warrior.getId())));
+        assertThat(warrior.getGuardTargetId()).isEqualTo(crab.getId());
+        assertThat(state.getLogs().stream().anyMatch(e -> "action".equals(e.getType())
+                && (e.getMessage() != null && e.getMessage().contains("没有额外的守护次数")))).isTrue();
+
+        // 蟹壳拓展 grants the charge: the second guard now succeeds
+        warrior.setExtraGuardsThisTurn(1);
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "GUARD", warrior.getId())));
+        assertThat(warrior.getExtraGuardsThisTurn()).isZero();
+        assertThat(warrior.getGuardTargetId()).isEqualTo(warrior.getId());
+    }
 }

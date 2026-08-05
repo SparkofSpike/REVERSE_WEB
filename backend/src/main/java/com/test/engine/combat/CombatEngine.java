@@ -197,6 +197,12 @@ public class CombatEngine {
             if (c == null || c.isDead() || c.getExtraActionsThisTurn() - claimed <= 0) {
                 throw new IllegalArgumentException("no extra actions left for " + d.getCombatantId());
             }
+            // extra actions are base actions only; 超限技能 grants extra
+            // skill usage on top (one charge per extra skill)
+            if (d.isSkill() && c.getExtraSkillsThisTurn() <= 0) {
+                throw new IllegalArgumentException(
+                        "extra actions are base actions only (超限技能 enables skills)");
+            }
             batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
@@ -209,9 +215,14 @@ public class CombatEngine {
             if (c == null) {
                 continue;
             }
-            boolean executed = d.isSkill()
-                    ? executeSkill(state, c, d)
-                    : executeBaseAction(state, c, d, null);
+            boolean executed;
+            if (d.isSkill()) {
+                // the validation above guaranteed a spare extra_skill charge
+                c.setExtraSkillsThisTurn(c.getExtraSkillsThisTurn() - 1);
+                executed = executeSkill(state, c, d);
+            } else {
+                executed = executeBaseAction(state, c, d, null);
+            }
             if (executed && c.getExtraActionsThisTurn() > 0) {
                 c.setExtraActionsThisTurn(c.getExtraActionsThisTurn() - 1);
             }
@@ -566,6 +577,12 @@ public class CombatEngine {
                     return c;
                 }
             }
+            // 盾山 guard bind: the binder absorbs ALL damage for the bound ally
+            for (Combatant c : state.alive(CombatSide.PLAYER)) {
+                if (target.getId().equals(c.getGuardBindTargetId()) && !c.getId().equals(target.getId())) {
+                    return c;
+                }
+            }
         }
         return null;
     }
@@ -668,6 +685,16 @@ public class CombatEngine {
         Combatant target = state.find(decision.getTargetId());
         if (target == null || target.isDead() || target.getId().equals(actor.getId())) {
             target = actor;
+        }
+        // one guard per turn by default; 蟹壳拓展 grants extra guard actions
+        if (actor.getGuardTargetId() != null && actor.getExtraGuardsThisTurn() <= 0) {
+            state.log(CombatEvent.of(state.getRound(), "action",
+                    actor.getName() + " 本回合已守护过，且没有额外的守护次数。")
+                    .with("actorId", actor.getId()).with("action", "GUARD"));
+            return;
+        }
+        if (actor.getGuardTargetId() != null) {
+            actor.setExtraGuardsThisTurn(actor.getExtraGuardsThisTurn() - 1);
         }
         actor.setGuardTargetId(target.getId());
         state.log(CombatEvent.of(state.getRound(), "action",
