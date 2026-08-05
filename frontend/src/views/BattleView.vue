@@ -44,7 +44,6 @@ const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
 let curtainSeq = 0
 let curtainTimer = 0
 let fallTimer = 0
-let riseTimer = 0
 // Performance gate: while the curtain chain (fall -> rise) is playing,
 // incoming performance cues are buffered and released after the rise ends,
 // so action labels never pop on top of a curtain.
@@ -219,9 +218,11 @@ function unlockCurtainWindow() {
 function handleRoundEnd() {
   // round_end merely marks the end of the settlement; the curtains are
   // driven by the decision-round boundaries (rise on submit, fall when a
-  // new decision round begins), so nothing further happens here
+  // new decision round begins). The rise curtain must NEVER be cancelled
+  // here: its completion callback releases the animation lock, and losing
+  // it would let the panel unlock early and submissions overlap the
+  // still-playing animations (queue residue -> duplicate cues).
   window.clearTimeout(fallTimer)
-  window.clearTimeout(riseTimer)
 }
 
 function handleRoundStart() {
@@ -343,12 +344,15 @@ function enqueueStep(step: QueuedStep) {
     const d = (step.ev.data ?? {}) as Record<string, unknown>
     const actorId = d.actorId as string | undefined
     const action = d.action as string | undefined
-    const last = animQueue[animQueue.length - 1]
-    const lastActor = last?.ev.data
-      ? (last.ev.data as Record<string, unknown>).actorId
-      : undefined
     const attackLike = action === 'ATTACK' || action === 'CHASE' || action === 'COUNTER'
-    if (actorId && attackLike && !(last?.kind === 'action' && lastActor === actorId)) {
+    // implicit lunge only when no not-yet-played action for the same
+    // actor exists anywhere in the queue; a queued action (even if not at
+    // the tail) already provides the attacker cue, and inserting another
+    // would play the label twice
+    const hasQueuedAction = animQueue.some(
+      (q) => q.kind === 'action' && (q.ev.data as Record<string, unknown>)?.actorId === actorId
+    )
+    if (actorId && attackLike && !hasQueuedAction) {
       animQueue.push({ kind: 'action', ev: step.ev })
     }
   }
@@ -636,22 +640,26 @@ async function submitDecisions() {
   }
   submitting.value = true
   try {
+    // decision round over: raise the curtain and gate the settlement
+    // animations behind it. Arm the gate BEFORE the request so the
+    // response events are already gated when the watch consumes them, and
+    // await nextTick() so the round_start fall-curtain handler (if any)
+    // runs first and the rise wins (the submit is the decision-round
+    // boundary, not round_start)
+    lockCurtainWindow()
+    curtainGateUntil = Date.now() + 1900
     if (inExtraRound.value) {
       battle.value = await decideExtraActions(battle.value!.id, decisions)
     } else {
       battle.value = await decide(battle.value!.id, decisions)
     }
-    // decision round over: raise the curtain, then gate the settlement
-    // animations behind it (the queue waits until the rise has played).
-    // The response may carry a round_start whose fall-curtain handler runs
-    // in the same tick - await nextTick() so the rise wins (the submit is
-    // the decision-round boundary, not round_start)
     await nextTick()
-    lockCurtainWindow()
-    curtainGateUntil = Date.now() + 1900
     playCurtainNow('rise', () => unlockCurtainWindow())
   } catch (e) {
     message.error(errorMessage(e))
+    // release the gate/lock armed before the request on failure
+    curtainGateUntil = 0
+    unlockCurtainWindow()
   } finally {
     submitting.value = false
   }
