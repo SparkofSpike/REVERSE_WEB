@@ -152,33 +152,32 @@ watch(
 )
 
 // consume new battle log entries: curtains, last-dash and performance cues.
-watch(
-  () => battle.value?.logs,
-  (logs) => {
-    if (!logs) return
-    if (!baselineSet) {
-      baselineSet = true
-      consumedLogs = logs.length
-      for (const c of battle.value?.combatants ?? []) {
-        displayHp.value[c.id] = c.hp
-      }
-      return
+// Explicit log consumption: every API call site invokes processLogs with
+// the fresh response, so event handling is deterministic and never depends
+// on Vue watch timing (watch-based consumption could stall or pile up).
+function processLogs(logs: CombatEvent[]) {
+  if (!logs) return
+  if (!baselineSet) {
+    baselineSet = true
+    consumedLogs = logs.length
+    for (const c of battle.value?.combatants ?? []) {
+      displayHp.value[c.id] = c.hp
     }
-    for (let i = consumedLogs; i < logs.length; i++) {
-      const ev = logs[i]
-      if (ev.type === 'round_start') {
-        handleRoundStart()
-      } else if (ev.type === 'round_end') {
-        handleRoundEnd()
-      } else if (ev.type === 'last_dash') {
-        triggerDash()
-      }
-      consumePerformanceEvent(ev)
-      consumedLogs = i + 1
+    return
+  }
+  for (let i = consumedLogs; i < logs.length; i++) {
+    const ev = logs[i]
+    if (ev.type === 'round_start') {
+      handleRoundStart()
+    } else if (ev.type === 'round_end') {
+      handleRoundEnd()
+    } else if (ev.type === 'last_dash') {
+      triggerDash()
     }
-  },
-  { deep: true }
-)
+    consumePerformanceEvent(ev)
+    consumedLogs = i + 1
+  }
+}
 
 // Curtain cooldown flow: one curtain at a time (~1.9s). Round order is
 // performance cues -> (pause) -> curtain fall -> curtain rise, so actions
@@ -326,22 +325,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 function enqueueStep(step: QueuedStep) {
-  if (step.kind === 'settle') {
-    const d = (step.ev.data ?? {}) as Record<string, unknown>
-    const actorId = d.actorId as string | undefined
-    const action = d.action as string | undefined
-    const attackLike = action === 'ATTACK' || action === 'CHASE' || action === 'COUNTER'
-    // implicit lunge only when no not-yet-played action for the same
-    // actor exists anywhere in the queue; a queued action (even if not at
-    // the tail) already provides the attacker cue, and inserting another
-    // would play the label twice
-    const hasQueuedAction = animQueue.some(
-      (q) => q.kind === 'action' && (q.ev.data as Record<string, unknown>)?.actorId === actorId
-    )
-    if (actorId && attackLike && !hasQueuedAction) {
-      animQueue.push({ kind: 'action', ev: step.ev })
-    }
-  }
   animQueue.push(step)
   void pumpQueue()
 }
@@ -352,8 +335,10 @@ async function pumpQueue() {
   animStart()
   try {
     while (animQueue.length > 0) {
-      while (Date.now() < curtainGateUntil) {
-        await sleep(100)
+      if (curtainGateUntil > 0) {
+        const wait = curtainGateUntil - Date.now()
+        if (wait > 0) await sleep(wait)
+        curtainGateUntil = 0
       }
       const step = animQueue.shift()!
       await playStep(step)
@@ -487,6 +472,7 @@ async function load() {
   try {
     const battleId = route.params.battleId as string
     battle.value = await getBattle(battleId)
+    processLogs(battle.value.logs)
     for (const c of alivePlayers.value) {
       if (!pending.value[c.id]) {
         pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
@@ -636,8 +622,10 @@ async function submitDecisions() {
     curtainGateUntil = Date.now() + 1900
     if (inExtraRound.value) {
       battle.value = await decideExtraActions(battle.value!.id, decisions)
+      processLogs(battle.value.logs)
     } else {
       battle.value = await decide(battle.value!.id, decisions)
+      processLogs(battle.value.logs)
     }
     await nextTick()
     playCurtainNow('rise', () => {
@@ -657,6 +645,7 @@ async function skipExtra() {
   submitting.value = true
   try {
     battle.value = await skipExtraActions(battle.value!.id)
+    processLogs(battle.value.logs)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -668,6 +657,7 @@ async function chooseInitialPerk(perkId: string) {
   submitting.value = true
   try {
     battle.value = await selectInitialPerk(battle.value!.id, perkId)
+    processLogs(battle.value.logs)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -679,6 +669,7 @@ async function chooseSpecialPerk(perkId: string) {
   submitting.value = true
   try {
     battle.value = await selectSpecialPerk(battle.value!.id, perkId)
+    processLogs(battle.value.logs)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -690,6 +681,7 @@ async function skipPerk() {
   submitting.value = true
   try {
     battle.value = await skipSpecialPerk(battle.value!.id)
+    processLogs(battle.value.logs)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -701,6 +693,7 @@ async function playCardFromHand(skillId: string, targetId?: string) {
   submitting.value = true
   try {
     battle.value = await playCard(battle.value!.id, skillId, targetId)
+    processLogs(battle.value.logs)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
