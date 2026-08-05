@@ -244,6 +244,51 @@ class CombatEngineTest {
     }
 
     @Test
+    void clockAccelerateSubstitutesNotStacksNormalPerkRound() {
+        // regression: the accelerated offer (round 3) used to fire and the
+        // normal round-4 offer fired right after it, granting two consecutive
+        // perk rounds; the accelerated round must consume the following one
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        // round 1: 钟表加速
+        GenericSkillTemplate card = state.getPlayerHand().stream()
+                .filter(c -> "g-clock-accelerate".equals(c.getId()))
+                .findFirst()
+                .orElseGet(() -> state.getPlayerDeck().stream()
+                        .filter(c -> "g-clock-accelerate".equals(c.getId()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("clock accelerate not in deck")));
+        if (state.getPlayerHand().stream().noneMatch(c -> "g-clock-accelerate".equals(c.getId()))) {
+            state.getPlayerHand().add(card);
+        }
+        engine.playGenericSkill(state.getId(), card.getId(), null);
+        assertThat(state.isSpecialPerkAdvancePending()).isTrue();
+
+        // round 3 fires the accelerated offer
+        int safety = 0;
+        while (state.getPhase() == CombatPhase.DECISION && safety < 8) {
+            safety++;
+            engine.decide(state.getId(), List.of(
+                    ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        }
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.SPECIAL_PERK);
+        assertThat(state.getRound()).isEqualTo(3);
+        int roundsTakenAfterAccelerated = state.getSpecialPerkRoundsTaken();
+        engine.skipSpecialPerk(state.getId());
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+
+        // round 4 must NOT fire a second offer
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        assertThat(state.getRound()).isEqualTo(5);
+        assertThat(state.getSpecialPerkRoundsTaken()).isEqualTo(roundsTakenAfterAccelerated);
+    }
+
+    @Test
     void roundTransitionsLogStartAndEndEvents() {
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         // no round has started yet

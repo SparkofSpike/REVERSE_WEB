@@ -1068,12 +1068,23 @@ public class CombatEngine {
         // Checked here so extra-action rounds cannot skip the offer;
         // specialPerkOffered guards against re-offering when the perk round
         // itself finalizes (select/skip also land in endRound).
-        boolean specialPerkDue = state.getRound() % SPECIAL_PERK_INTERVAL == 0
-                || (state.isSpecialPerkAdvancePending()
-                    && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1);
+        boolean normalPerkRound = state.getRound() % SPECIAL_PERK_INTERVAL == 0;
+        boolean acceleratedPerkRound = state.isSpecialPerkAdvancePending()
+                && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1;
+        // 钟表加速 pulls the next offer one round early: the accelerated
+        // offer SUBSTITUTES the following normal round instead of stacking
+        boolean specialPerkDue = !state.isSpecialPerkAcceleratedConsumed()
+                && (normalPerkRound || acceleratedPerkRound);
+        // the consumed flag lives exactly until the normal round it skipped
+        if (normalPerkRound) {
+            state.setSpecialPerkAcceleratedConsumed(false);
+        }
         if (specialPerkDue && !state.isSpecialPerkOffered()
                 && state.getSpecialPerkRoundsTaken() < SPECIAL_PERK_MAX_ROUNDS) {
             state.setSpecialPerkOffered(true);
+            if (acceleratedPerkRound) {
+                state.setSpecialPerkAcceleratedConsumed(true);
+            }
             state.setSpecialPerkAdvancePending(false);
             offerSpecialPerks(state);
             return;

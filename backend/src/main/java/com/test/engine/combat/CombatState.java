@@ -40,6 +40,8 @@ public class CombatState {
     private boolean perkSkipped;
     /** True once the perk offer fired for the current round (re-entry guard). */
     private boolean specialPerkOffered;
+    /** True once an accelerated offer consumed the next normal perk round. */
+    private boolean specialPerkAcceleratedConsumed;
 
     // round flow
     private Integer firstStrikeSide;
