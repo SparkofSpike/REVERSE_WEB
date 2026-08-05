@@ -222,6 +222,10 @@ public class CombatEngine {
             return state;
         }
         state.setExtraActionRound(false);
+        executeDeferredEnemyActions(state);
+        if (checkVictory(state)) {
+            return state;
+        }
         endRound(state);
         return state;
     }
@@ -233,6 +237,10 @@ public class CombatEngine {
             throw new IllegalStateException("battle is not in an extra-action round");
         }
         state.setExtraActionRound(false);
+        executeDeferredEnemyActions(state);
+        if (checkVictory(state)) {
+            return state;
+        }
         endRound(state);
         return state;
     }
@@ -247,20 +255,32 @@ public class CombatEngine {
                 .reduce((a, b) -> a + " > " + b).orElse("")));
 
         state.setPhase(CombatPhase.EXECUTION);
-        executeActions(state, speedOrder);
+        // A round whose player decisions include an extra-action skill
+        // (连续奔袭 etc.) splits into player phase -> extra-action round ->
+        // enemy phase, so the player's turn continues after the skill and
+        // the enemy acts only once the extra actions are spent. Ordinary
+        // rounds keep the regular speed-order resolution untouched.
+        if (mayGrantExtraActions(state, state.getPendingDecisions())) {
+            state.setPendingEnemyDecisions(collectEnemyDecisions(state));
+            executeActions(state, speedOrder, CombatSide.PLAYER);
+            if (state.isOver()) {
+                return;
+            }
+            boolean extraPending = state.alive(CombatSide.PLAYER).stream()
+                    .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
+            if (extraPending) {
+                state.setExtraActionRound(true);
+                state.setPhase(CombatPhase.DECISION);
+                state.log(CombatEvent.of(state.getRound(), "extra",
+                        "获得额外行动的角色可以继续行动（或跳过）。"));
+                return;
+            }
+            executeDeferredEnemyActions(state);
+        } else {
+            executeActions(state, speedOrder, null);
+        }
 
         if (state.isOver()) {
-            return;
-        }
-        // extra base actions (连续奔袭 etc.): the player freely spends them
-        // in follow-up decision rounds before the round is finalized
-        boolean extraPending = state.alive(CombatSide.PLAYER).stream()
-                .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
-        if (extraPending) {
-            state.setExtraActionRound(true);
-            state.setPhase(CombatPhase.DECISION);
-            state.log(CombatEvent.of(state.getRound(), "extra",
-                    "获得额外行动的角色可以继续行动（或跳过）。"));
             return;
         }
         // special perk rounds: normally every 4 rounds; the clock-accelerate
@@ -276,9 +296,77 @@ public class CombatEngine {
         endRound(state);
     }
 
+    /** True when any pending decision is a skill that grants extra actions. */
+    private boolean mayGrantExtraActions(CombatState state, List<ActionDecision> decisions) {
+        for (ActionDecision d : decisions) {
+            if (!d.isSkill()) {
+                continue;
+            }
+            Combatant c = state.find(d.getCombatantId());
+            if (c == null) {
+                continue;
+            }
+            SkillTemplate skill = c.findSkill(d.getSkillId());
+            if (skill != null && skill.getEffects() != null && skill.getEffects().stream()
+                    .anyMatch(e -> "extra_actions".equals(e.getType()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<ActionDecision> collectEnemyDecisions(CombatState state) {
+        // mutable list: clash resolution removes the consumed enemy decision
+        return state.getPendingDecisions().stream()
+                .filter(d -> {
+                    Combatant c = state.find(d.getCombatantId());
+                    return c != null && c.getSide() == CombatSide.ENEMY;
+                })
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+    }
+
+    /**
+     * Runs the enemy decisions deferred by an extra-action round. Enemy
+     * actions resolve without clash (the player phase already settled any
+     * mutual-attack clash and removed the consumed decision), and without a
+     * speed re-roll.
+     */
+    private void executeDeferredEnemyActions(CombatState state) {
+        List<ActionDecision> enemy = new ArrayList<>(state.getPendingEnemyDecisions());
+        state.getPendingEnemyDecisions().clear();
+        for (ActionDecision d : enemy) {
+            if (state.isOver()) {
+                return;
+            }
+            Combatant c = state.find(d.getCombatantId());
+            if (c == null || c.isDead()) {
+                continue;
+            }
+            if (d.isSkill()) {
+                executeSkill(state, c, d);
+                continue;
+            }
+            ActionType action;
+            try {
+                action = ActionType.valueOf(d.getActionType());
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            switch (action) {
+                case ATTACK -> executeAttack(state, c, d, null, "ATTACK", false);
+                case DEFEND -> executeDefend(state, c);
+                case DODGE -> executeDodge(state, c);
+                case GUARD -> executeGuard(state, c, d);
+                case COUNTER -> executeCounter(state, c);
+                case CHASE -> executeChase(state, c, d, null);
+                case PRAY -> executePray(state, c);
+            }
+        }
+    }
+
     // ===================== action execution =====================
 
-    private void executeActions(CombatState state, List<Combatant> speedOrder) {
+    private void executeActions(CombatState state, List<Combatant> speedOrder, CombatSide onlySide) {
         Map<String, ActionDecision> decisions = new LinkedHashMap<>();
         for (ActionDecision d : state.getPendingDecisions()) {
             decisions.put(d.getCombatantId(), d);
@@ -297,6 +385,9 @@ public class CombatEngine {
 
         for (Combatant c : speedOrder) {
             if (c.isDead() || state.isOver()) {
+                continue;
+            }
+            if (onlySide != null && c.getSide() != onlySide) {
                 continue;
             }
             ActionDecision d = decisions.get(c.getId());
@@ -394,6 +485,9 @@ public class CombatEngine {
                 && ActionType.ATTACK.name().equals(targetDecision.getActionType())
                 && targetDecision.getTargetId() != null
                 && targetDecision.getTargetId().equals(actor.getId())) {
+            // the mutual attack is consumed by the clash: if the target's
+            // action was deferred to the enemy phase it must not run again
+            state.getPendingEnemyDecisions().removeIf(d -> d.getCombatantId().equals(target.getId()));
             int targetRaw = dice.roll(target.getBaseDamageDice()).total() + target.getBonusDamage();
             if (raw > targetRaw) {
                 state.log(CombatEvent.of(state.getRound(), "clash",

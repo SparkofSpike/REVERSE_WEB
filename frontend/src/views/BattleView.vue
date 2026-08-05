@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NSelect, useMessage } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
@@ -296,7 +296,9 @@ function floatTop(f: FloatNum): string {
 }
 
 function addActionLabel(unitId: string, text: string) {
-  pushFloat(unitId, text, 'action', 34, 1150)
+  // short flash over the lunge-out phase; it must be gone before the unit
+  // runs back, otherwise the label reads as a duplicate cue
+  pushFloat(unitId, text, 'action', 34, 580)
 }
 
 function consumePerformanceEvent(ev: CombatEvent) {
@@ -638,12 +640,16 @@ async function submitDecisions() {
       battle.value = await decideExtraActions(battle.value!.id, decisions)
     } else {
       battle.value = await decide(battle.value!.id, decisions)
-      // decision round over: raise the curtain, then gate the settlement
-      // animations behind it (the queue waits until the rise has played)
-      lockCurtainWindow()
-      curtainGateUntil = Date.now() + 1900
-      playCurtainNow('rise', () => unlockCurtainWindow())
     }
+    // decision round over: raise the curtain, then gate the settlement
+    // animations behind it (the queue waits until the rise has played).
+    // The response may carry a round_start whose fall-curtain handler runs
+    // in the same tick - await nextTick() so the rise wins (the submit is
+    // the decision-round boundary, not round_start)
+    await nextTick()
+    lockCurtainWindow()
+    curtainGateUntil = Date.now() + 1900
+    playCurtainNow('rise', () => unlockCurtainWindow())
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
