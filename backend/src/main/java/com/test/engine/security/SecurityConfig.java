@@ -1,5 +1,6 @@
 package com.test.engine.security;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -23,6 +24,10 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
+    /** Dev-only switch: the H2 console stays protected (401) by default. */
+    @Value("${app.h2-console-enabled:false}")
+    private boolean h2ConsoleEnabled;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
     }
@@ -38,7 +43,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/h2-console/**").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        // H2 console is NOT public by default: only a dev
+                        // build with app.h2-console-enabled=true may open it
+                        .requestMatchers(r -> h2ConsoleEnabled && r.getRequestURI().startsWith("/h2-console")).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/packs/**").permitAll()
                         // SPA pages and static assets (everything outside /api) are public;
                         // the frontend router guards private views client-side.
