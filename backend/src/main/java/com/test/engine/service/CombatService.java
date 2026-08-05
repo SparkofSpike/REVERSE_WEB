@@ -197,7 +197,7 @@ public class CombatService {
         BattleRecord record = new BattleRecord();
         record.setUserId(user.getId());
         record.setBattleId(state.getId());
-        record.setPackId("test-1");
+        record.setPackId(state.getPackId() == null ? "test-1" : state.getPackId());
         record.setWinner(state.getWinner());
         record.setRounds(state.getRound());
         record.setPlayerCharacterIds(state.side(CombatSide.PLAYER).stream()

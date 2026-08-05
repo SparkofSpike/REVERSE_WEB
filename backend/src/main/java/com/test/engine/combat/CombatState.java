@@ -20,6 +20,8 @@ public class CombatState {
 
     private String id;
     private String ownerUsername;
+    /** The card pack this battle was created from. */
+    private String packId;
     private Instant createdAt = Instant.now();
 
     private List<Combatant> combatants = new ArrayList<>();

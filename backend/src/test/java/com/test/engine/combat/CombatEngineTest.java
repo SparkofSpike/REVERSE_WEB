@@ -834,4 +834,35 @@ class CombatEngineTest {
         assertThat(state.getRound()).isEqualTo(roundsBefore + 1);
         assertThat(state.getLogs().size()).isGreaterThan(logsBefore);
     }
+
+    @Test
+    void decideRejectsInvalidCombatantIds() {
+        // regression: decide accepted decisions for wrong/dead/enemy ids and
+        // silently dropped them, making that character skip its action
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior", "mage"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        Combatant mage = state.alive(CombatSide.PLAYER).get(1);
+
+        // unknown id
+        assertThatThrownBy(() -> engine.decide(state.getId(), List.of(
+                ActionDecision.base("nobody", "ATTACK", "dummy"),
+                ActionDecision.base(mage.getId(), "ATTACK", "dummy"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        // duplicate id
+        assertThatThrownBy(() -> engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        // enemy id (the dummy)
+        assertThatThrownBy(() -> engine.decide(state.getId(), List.of(
+                ActionDecision.base("dummy", "ATTACK", warrior.getId()),
+                ActionDecision.base(mage.getId(), "ATTACK", "dummy"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        // a valid batch still works
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(mage.getId(), "ATTACK", "dummy")));
+        assertThat(state.getRound()).isEqualTo(2);
+    }
 }

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +74,7 @@ public class CombatEngine {
         // 77k battles and silently overwrote an existing battle
         state.setId(UUID.randomUUID().toString().substring(0, 16));
         state.setOwnerUsername(ownerUsername);
+        state.setPackId(packId);
         state.setPhase(CombatPhase.INITIAL_PERK);
 
         int idx = 1;
@@ -182,6 +184,16 @@ public class CombatEngine {
         List<Combatant> players = state.alive(CombatSide.PLAYER);
         if (playerDecisions == null || playerDecisions.size() != players.size()) {
             throw new IllegalArgumentException("decisions for all alive player characters required");
+        }
+        // every decision must belong to a DISTINCT alive player character:
+        // wrong/duplicate ids or enemy ids would otherwise be silently
+        // dropped (that character skips its action) or overridden by the AI
+        Set<String> decided = new HashSet<>();
+        for (ActionDecision d : playerDecisions) {
+            Combatant c = state.find(d.getCombatantId());
+            if (c == null || !c.isPlayerSide() || c.isDead() || !decided.add(d.getCombatantId())) {
+                throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
+            }
         }
         state.setPendingDecisions(new ArrayList<>(playerDecisions));
         state.getPendingDecisions().addAll(puppetAi.decide(state));
@@ -852,7 +864,8 @@ public class CombatEngine {
     // ===================== special perks =====================
 
     private void offerSpecialPerks(CombatState state) {
-        CardPack pack = cardPackLoader.get("test-1");
+        // use the battle's own pack (multi-pack support)
+        CardPack pack = cardPackLoader.get(state.getPackId() == null ? "test-1" : state.getPackId());
         int roundNumber = state.getRound() / SPECIAL_PERK_INTERVAL;
         boolean isLast = state.getSpecialPerkRoundsTaken() == SPECIAL_PERK_MAX_ROUNDS - 1;
         List<Perk> eligible = pack.getSpecialPerks().stream()
