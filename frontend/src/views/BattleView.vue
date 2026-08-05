@@ -379,8 +379,10 @@ async function playStep(step: QueuedStep) {
     clashApproach(targetId)
     await sleep(CLASH_IMPACT)
     clashBurst.value = { seq: (clashBurst.value?.seq ?? 0) + 1 }
-    shakeTarget(actorId)
-    shakeTarget(targetId)
+    // NOTE: no shakeTarget here - unit-shake's keyframes would take over
+    // the transform and yank both fighters back to their home spot at the
+    // very moment they collide (the visual "miss" bug). The burst carries
+    // the impact feel; regular hit shakes still play after units return.
     await sleep(CLASH_STEP - CLASH_IMPACT)
     return
   }
@@ -1230,13 +1232,24 @@ function statusText(c: CombatantView): string {
   transform: translateX(-100px);
 }
 
-/* clash: both fighters charge further in and meet mid-field */
+/* clash: both fighters charge across the field and actually meet at
+   the midpoint (400px each on a ~1100px stage); smaller screens get
+   shorter charges via the media queries below */
 .side-player .unit.clashing {
-  transform: translateX(150px);
+  transform: translateX(400px);
 }
 
 .side-enemy .unit.clashing {
-  transform: translateX(-150px);
+  transform: translateX(-400px);
+}
+
+@media (max-width: 1024px) {
+  .side-player .unit.clashing {
+    transform: translateX(300px);
+  }
+  .side-enemy .unit.clashing {
+    transform: translateX(-300px);
+  }
 }
 
 .portrait-wrap {
@@ -1840,10 +1853,10 @@ function statusText(c: CombatantView): string {
     transform: translateX(-70px);
   }
   .side-player .unit.clashing {
-    transform: translateX(100px);
+    transform: translateX(110px);
   }
   .side-enemy .unit.clashing {
-    transform: translateX(-100px);
+    transform: translateX(-110px);
   }
   .clash-text {
     font-size: 26px;
