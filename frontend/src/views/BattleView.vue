@@ -374,12 +374,12 @@ async function playStep(step: QueuedStep) {
     if (!actorId) return
     if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
     pulseActor(actorId)
-    const offensive =
-      step.ev.type === 'clash' ||
-      step.ev.type === 'chase' ||
-      step.ev.type === 'counter' ||
-      (step.ev.type === 'action' && (action === 'ATTACK' || action === 'CHASE'))
-    if (offensive && targetId && targetId !== actorId) {
+    // melee fighters lunge at their target on every offensive action
+    // (plain attacks, chase, skills, clash, counter); magic casters
+    // strike from their spot
+    const melee =
+      battle.value?.combatants.find((c) => c.id === actorId)?.baseDamageType === 'PHYSICAL'
+    if (melee && targetId && targetId !== actorId) {
       approachTarget(actorId)
     }
     await sleep(ACTION_STEP)
