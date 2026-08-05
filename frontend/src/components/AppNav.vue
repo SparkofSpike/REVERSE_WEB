@@ -114,23 +114,37 @@ function logout() {
 /* ---------- mobile: compact top bar ---------- */
 @media (max-width: 768px) {
   .nav {
-    gap: 10px;
-    padding: 0 12px;
+    gap: 8px;
+    padding: 0 10px;
     height: 48px;
   }
+  /* only the brand mark stays; tag + subtitle would crush the links */
   .brand-sub {
     display: none;
   }
+  .version-tag {
+    display: none;
+  }
+  .brand-mark {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
   .nav-links {
     gap: 2px;
+    justify-content: flex-end;
+    min-width: 0;
   }
   .nav-links a {
-    padding: 6px 8px;
+    padding: 6px 6px;
     font-size: 13px;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .nav-user span {
     display: none;
+  }
+  .nav-user .n-button {
+    padding: 0 8px;
   }
 }
 </style>
