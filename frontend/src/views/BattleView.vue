@@ -379,10 +379,11 @@ async function playStep(step: QueuedStep) {
     clashApproach(targetId)
     await sleep(CLASH_IMPACT)
     clashBurst.value = { seq: (clashBurst.value?.seq ?? 0) + 1 }
-    // NOTE: no shakeTarget here - unit-shake's keyframes would take over
-    // the transform and yank both fighters back to their home spot at the
-    // very moment they collide (the visual "miss" bug). The burst carries
-    // the impact feel; regular hit shakes still play after units return.
+    // impact shake: the clash keyframes keep the fighters ON the collision
+    // spot (via --clash-x), so the shake reads as a real hit, not a jump
+    // back home
+    shakeTarget(actorId)
+    shakeTarget(targetId)
     await sleep(CLASH_STEP - CLASH_IMPACT)
     return
   }
@@ -1232,23 +1233,41 @@ function statusText(c: CombatantView): string {
   transform: translateX(-100px);
 }
 
-/* clash: both fighters charge across the field and actually meet at
-   the midpoint (400px each on a ~1100px stage); smaller screens get
-   shorter charges via the media queries below */
+/* clash: both fighters charge and stop EXACTLY where they meet -
+   the distance is derived from the stage width, so it never overshoots
+   and never falls short, on any window size */
 .side-player .unit.clashing {
-  transform: translateX(400px);
+  --clash-x: calc((min(1200px, 100vw) - 242px) / 2);
+  transform: translateX(var(--clash-x));
 }
 
 .side-enemy .unit.clashing {
-  transform: translateX(-400px);
+  --clash-x: calc((min(1200px, 100vw) - 242px) / -2);
+  transform: translateX(var(--clash-x));
 }
 
-@media (max-width: 1024px) {
-  .side-player .unit.clashing {
-    transform: translateX(300px);
+/* clash impact shake: keeps each fighter on its collision spot instead of
+   resetting the transform (unit-shake would snap them back home) */
+.unit.shaking.clashing {
+  animation: unit-shake-clash 0.45s ease;
+}
+
+@keyframes unit-shake-clash {
+  0%,
+  100% {
+    transform: translateX(var(--clash-x, 0px));
   }
-  .side-enemy .unit.clashing {
-    transform: translateX(-300px);
+  20% {
+    transform: translateX(calc(var(--clash-x, 0px) - 7px));
+  }
+  40% {
+    transform: translateX(calc(var(--clash-x, 0px) + 7px));
+  }
+  60% {
+    transform: translateX(calc(var(--clash-x, 0px) - 5px));
+  }
+  80% {
+    transform: translateX(calc(var(--clash-x, 0px) + 5px));
   }
 }
 
@@ -1853,10 +1872,12 @@ function statusText(c: CombatantView): string {
     transform: translateX(-70px);
   }
   .side-player .unit.clashing {
-    transform: translateX(110px);
+    --clash-x: 120px;
+    transform: translateX(var(--clash-x));
   }
   .side-enemy .unit.clashing {
-    transform: translateX(-110px);
+    --clash-x: -120px;
+    transform: translateX(var(--clash-x));
   }
   .clash-text {
     font-size: 26px;
