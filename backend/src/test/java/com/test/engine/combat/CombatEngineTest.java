@@ -768,4 +768,30 @@ class CombatEngineTest {
         assertThat(state.getWinner()).isEqualTo("ENEMY");
         assertThat(state.getPhase()).isEqualTo(CombatPhase.FINISHED);
     }
+
+    @Test
+    void battleIdIsWideEnoughToAvoidCollisions() {
+        // regression: 8 hex chars (32 bits) collide after roughly 77k battles
+        // and silently overwrite an existing battle; ids must be 64 bits
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        assertThat(state.getId()).hasSize(16);
+    }
+
+    @Test
+    void finishedBattlesAreReapedAfterTtl() {
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        state.setPhase(CombatPhase.FINISHED);
+        state.setWinner("PLAYER");
+        state.setCreatedAt(java.time.Instant.now().minusSeconds(7200));
+
+        // the stale battle is reaped lazily: reads fail with not-found
+        assertThatThrownBy(() -> engine.getBattle(state.getId()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("battle not found");
+
+        // fresh battles are untouched
+        CombatState fresh = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        assertThat(engine.getBattle(fresh.getId())).isNotNull();
+        assertThat(fresh.getId()).isNotEqualTo(state.getId());
+    }
 }

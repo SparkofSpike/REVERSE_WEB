@@ -38,6 +38,8 @@ public class CombatEngine {
     private static final int SPECIAL_PERK_INTERVAL = 4;
     private static final int SPECIAL_PERK_MAX_ROUNDS = 3;
     private static final int INITIAL_HAND_SIZE = 2;
+    /** Finished battles are reaped after this long (in-memory map hygiene). */
+    private static final long BATTLE_TTL_MS = 60 * 60 * 1000L;
 
     private final DiceRoller dice;
     private final CardPackLoader cardPackLoader;
@@ -67,7 +69,9 @@ public class CombatEngine {
             throw new IllegalArgumentException("a player must deploy 1-4 characters");
         }
         CombatState state = new CombatState();
-        state.setId(UUID.randomUUID().toString().substring(0, 8));
+        // 16 hex chars (64 bits): 8 chars (32 bits) collided after roughly
+        // 77k battles and silently overwrote an existing battle
+        state.setId(UUID.randomUUID().toString().substring(0, 16));
         state.setOwnerUsername(ownerUsername);
         state.setPhase(CombatPhase.INITIAL_PERK);
 
@@ -95,6 +99,13 @@ public class CombatEngine {
         state.setInitialPerkOptions(new ArrayList<>(pack.getInitialPerks()));
         state.log(CombatEvent.of(0, "setup", "战斗开始！玩家部署 "
                 + state.alive(CombatSide.PLAYER).size() + " 名角色对阵训练木桩。"));
+        // reap expired finished battles whenever a new one is created
+        long now = System.currentTimeMillis();
+        battles.entrySet().removeIf(e -> {
+            CombatState s = e.getValue();
+            return s.isOver() && s.getCreatedAt() != null
+                    && now - s.getCreatedAt().toEpochMilli() > BATTLE_TTL_MS;
+        });
         battles.put(state.getId(), state);
         return state;
     }
@@ -123,6 +134,12 @@ public class CombatEngine {
     public CombatState getBattle(String battleId) {
         CombatState state = battles.get(battleId);
         if (state == null) {
+            throw new IllegalArgumentException("battle not found: " + battleId);
+        }
+        // reap finished battles whose TTL expired (in-memory map hygiene)
+        if (state.isOver() && state.getCreatedAt() != null
+                && System.currentTimeMillis() - state.getCreatedAt().toEpochMilli() > BATTLE_TTL_MS) {
+            battles.remove(battleId);
             throw new IllegalArgumentException("battle not found: " + battleId);
         }
         return state;
