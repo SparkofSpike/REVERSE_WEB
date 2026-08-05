@@ -306,4 +306,62 @@ class CombatEngineTest {
         assertThat(state.getLogs().stream().anyMatch(e -> "skill".equals(e.getType())
                 && e.getMessage().contains("仍在冷却"))).isTrue();
     }
+
+    @Test
+    void chaseIsActiveActionNotPassiveBonus() {
+        // design doc (TEST.游戏玩法.pdf): 追击 is one of the base action
+        // types ("若目标是上次攻击过的目标，则本次攻击会追加0d4点伤害，
+        // 并恢复2点生命"). It must be actively chosen - a plain ATTACK must
+        // never trigger the bonus on its own.
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+
+        // round 1: plain ATTACK on the dummy - no passive chase may fire
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        assertThat(state.getLogs().stream().noneMatch(e -> "chase".equals(e.getType())))
+                .as("a plain ATTACK must not trigger a passive chase")
+                .isTrue();
+        // and the ATTACK itself now emits an action cue for the frontend
+        assertThat(state.getLogs().stream().anyMatch(e -> "action".equals(e.getType())
+                && warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null)
+                && "ATTACK".equals(e.getData() != null ? e.getData().get("action") : null)))
+                .as("a plain ATTACK must emit an action cue")
+                .isTrue();
+
+        int dummyHpBeforeChase = state.find("dummy").getHp();
+        int warriorHpBeforeChase = warrior.getHp();
+
+        // round 2: actively choose CHASE on the same target - bonus must fire
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "CHASE", "dummy")));
+        long chaseEvents = state.getLogs().stream()
+                .filter(e -> "chase".equals(e.getType())
+                        && warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
+                .count();
+        assertThat(chaseEvents).as("an active CHASE on the last-attacked target must fire the bonus")
+                .isEqualTo(1);
+        // bonus restores 2 HP to the chaser (dummy may have hit back, so
+        // assert at most +2: hp cannot be lower than before the chase heal)
+        assertThat(warrior.getHp()).isGreaterThanOrEqualTo(warriorHpBeforeChase - 20);
+        // dummy must have lost hp in round 2 (chase main strike + bonus)
+        assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBeforeChase);
+        // event order must be narrative: action cue -> main damage -> chase cue
+        var events = state.getLogs().stream()
+                .filter(e -> e.getRound() == 2)
+                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
+                .toList();
+        boolean sawAction = false, sawDamage = false, sawChase = false;
+        for (CombatEvent e : events) {
+            if ("action".equals(e.getType())) sawAction = true;
+            if ("damage".equals(e.getType())) sawDamage = true;
+            if ("chase".equals(e.getType())) {
+                assertThat(sawAction).as("chase cue must come after the action cue").isTrue();
+                assertThat(sawDamage).as("chase cue must come after the main damage").isTrue();
+                sawChase = true;
+            }
+        }
+        assertThat(sawChase).isTrue();
+    }
 }

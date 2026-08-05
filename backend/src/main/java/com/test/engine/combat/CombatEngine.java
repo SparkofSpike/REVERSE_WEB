@@ -249,7 +249,7 @@ public class CombatEngine {
             return;
         }
         switch (action) {
-            case ATTACK -> executeAttack(state, actor, decision, preRolled, true);
+            case ATTACK -> executeAttack(state, actor, decision, preRolled, "ATTACK", true);
             case DEFEND -> executeDefend(state, actor);
             case DODGE -> executeDodge(state, actor);
             case GUARD -> executeGuard(state, actor, decision);
@@ -259,11 +259,13 @@ public class CombatEngine {
         }
     }
 
-    private void executeAttack(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled, boolean clashEnabled) {
+    private void executeAttack(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled,
+                               String actionName, boolean clashEnabled) {
         Combatant target = state.find(decision.getTargetId());
         if (target == null || target.isDead()) {
-            state.log(CombatEvent.of(state.getRound(), "action", actor.getName() + " 的攻击落空（目标已不在）。")
-                .with("actorId", actor.getId()).with("targetId", decision.getTargetId()).with("action", "ATTACK"));
+            state.log(CombatEvent.of(state.getRound(), "action", actor.getName() + " 的"
+                    + ("CHASE".equals(actionName) ? "追击" : "攻击") + "落空（目标已不在）。")
+                .with("actorId", actor.getId()).with("targetId", decision.getTargetId()).with("action", actionName));
             return;
         }
 
@@ -307,13 +309,13 @@ public class CombatEngine {
             if (attackSpeed <= target.getDodgeValue()) {
                 state.log(CombatEvent.of(state.getRound(), "dodge",
                         target.getName() + " 成功闪避了 " + actor.getName() + " 的攻击！")
-                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "ATTACK"));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", actionName));
                 grantAttackEnergy(state, actor);
                 return;
             }
             state.log(CombatEvent.of(state.getRound(), "dodge",
                     target.getName() + " 闪避失败，" + actor.getName() + " 的攻击命中。")
-                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", "ATTACK"));
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", actionName));
         }
 
         // counter: a countering target strikes back immediately
@@ -328,7 +330,14 @@ public class CombatEngine {
             }
         }
 
-        deliverAttackDamage(state, actor, target, raw, absorber, "ATTACK");
+        // attack cue: gives the frontend a proper action animation for a
+        // plain hit (label, lunge, zoom); clash/dodge/counter log their own
+        // events and return earlier
+        state.log(CombatEvent.of(state.getRound(), "action",
+                actor.getName() + " 对 " + target.getName() + " 发动"
+                        + ("CHASE".equals(actionName) ? "追击" : "攻击") + "。")
+            .with("actorId", actor.getId()).with("targetId", target.getId()).with("action", actionName));
+        deliverAttackDamage(state, actor, target, raw, absorber, actionName);
         grantAttackEnergy(state, actor);
     }
 
@@ -386,16 +395,6 @@ public class CombatEngine {
             }
         }
 
-        // chase bonus: extra damage when hitting the last attacked target
-        if (attacker.getBaseActions().contains(ActionType.CHASE)
-                && target.getId().equals(attacker.getLastAttackedTarget())) {
-            int bonus = dice.roll("0d4").total();
-            damageResolver.dealDamage(target, bonus, DamageType.PHYSICAL, state, attacker, "CHASE");
-            effectExecutor.heal(attacker, 2);
-            state.log(CombatEvent.of(state.getRound(), "chase",
-                    attacker.getName() + " 追击追加 " + bonus + " 伤害并恢复 2 点生命。")
-                .with("actorId", attacker.getId()).with("targetId", target.getId()).with("amount", bonus).with("action", "CHASE"));
-        }
         attacker.setLastAttackedTarget(target.getId());
 
         if (receiver.getHp() <= 0) {
@@ -472,8 +471,30 @@ public class CombatEngine {
     }
 
     private void executeChase(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
+        Combatant target = state.find(decision.getTargetId());
+        if (target == null || target.isDead()) {
+            state.log(CombatEvent.of(state.getRound(), "action",
+                    actor.getName() + " 的追击落空（目标已不在）。")
+                .with("actorId", actor.getId()).with("targetId", decision.getTargetId()).with("action", "CHASE"));
+            return;
+        }
         // chase is a unilateral follow-up strike: it never clashes
-        executeAttack(state, actor, decision, preRolled, false);
+        executeAttack(state, actor, decision, preRolled, "CHASE", false);
+        // design doc: when the chase strikes the same target as the last
+        // attack, it adds 0d4 damage and restores 2 HP
+        if (target.getId().equals(actor.getLastAttackedTarget())) {
+            int bonus = dice.roll("0d4").total();
+            state.log(CombatEvent.of(state.getRound(), "chase",
+                    actor.getName() + " 追击追加 " + bonus + " 伤害并恢复 2 点生命。")
+                .with("actorId", actor.getId()).with("targetId", target.getId()).with("amount", bonus).with("action", "CHASE"));
+            if (bonus > 0) {
+                damageResolver.dealDamage(target, bonus, DamageType.PHYSICAL, state, actor, "CHASE");
+            }
+            effectExecutor.heal(actor, 2);
+            if (target.getHp() <= 0) {
+                handlePotentialDeath(state, target);
+            }
+        }
     }
 
     private void executePray(CombatState state, Combatant actor) {
