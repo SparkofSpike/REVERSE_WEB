@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -186,11 +187,17 @@ public class CombatEngine {
         if (decisions == null || decisions.isEmpty()) {
             throw new IllegalArgumentException("at least one extra action decision required");
         }
+        // count decisions per combatant within this batch: every submitted
+        // decision claims one charge up front, so a single batch can never
+        // spend more extra actions than the character actually holds
+        Map<String, Integer> batchSpend = new HashMap<>();
         for (ActionDecision d : decisions) {
             Combatant c = state.find(d.getCombatantId());
-            if (c == null || c.isDead() || c.getExtraActionsThisTurn() <= 0) {
+            int claimed = batchSpend.getOrDefault(d.getCombatantId(), 0);
+            if (c == null || c.isDead() || c.getExtraActionsThisTurn() - claimed <= 0) {
                 throw new IllegalArgumentException("no extra actions left for " + d.getCombatantId());
             }
+            batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
         // no speed re-roll for extra actions: resolve per decision in

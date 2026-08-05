@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * End-to-end dummy battle flow: deploy, initial perk, decision rounds,
@@ -413,5 +414,41 @@ class CombatEngineTest {
         assertThat(state.getRound()).isEqualTo(3);
         // the skipped charges are not auto-spent
         assertThat(warrior.getExtraActionsThisTurn()).isZero();
+    }
+
+    @Test
+    void extraActionBatchCannotExceedRemainingCharges() {
+        // regression: the validation loop only checked the current charge
+        // count, so one batch could submit more decisions than charges and
+        // every one of them would still execute (charges only decrement).
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(3);
+
+        int dummyHpBefore = state.find("dummy").getHp();
+        // 4 decisions in one batch with only 3 charges: the batch must be rejected
+        assertThatThrownBy(() -> engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        // nothing was spent or executed
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(3);
+        assertThat(state.find("dummy").getHp()).isEqualTo(dummyHpBefore);
+
+        // an exact-fit batch (3 decisions, 3 charges) still works
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy"),
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        assertThat(warrior.getExtraActionsThisTurn()).isZero();
+        assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBefore);
     }
 }
