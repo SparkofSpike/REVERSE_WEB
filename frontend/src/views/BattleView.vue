@@ -654,7 +654,14 @@ async function submitDecisions() {
       battle.value = await decide(battle.value!.id, decisions)
     }
     await nextTick()
-    playCurtainNow('rise', () => unlockCurtainWindow())
+    playCurtainNow('rise', () => {
+      // the submit curtain may have overridden the round_start fall whose
+      // callback normally releases the performance gate; always release
+      // and flush here so buffered action events can never get stuck
+      perfGate = false
+      flushPerf()
+      unlockCurtainWindow()
+    })
   } catch (e) {
     message.error(errorMessage(e))
     // release the gate/lock armed before the request on failure
