@@ -741,4 +741,31 @@ class CombatEngineTest {
                 .as("dodged chase must not trigger the bonus")
                 .isTrue();
     }
+
+    @Test
+    void cardKillSettlesVictoryImmediately() {
+        // regression: playGenericSkill never ran the victory check, so a card
+        // that killed the last combatant of a side left the battle in DECISION
+        // with a dead side still "in play" and no record persisted
+        CombatState state = engine.createDummyBattle("test-1", List.of("mage"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant mage = state.alive(CombatSide.PLAYER).get(0);
+        mage.setHp(5);
+
+        // put 团队奉献 (hp_cost 10 on an ally) into hand and play it on the mage
+        GenericSkillTemplate card = state.getPlayerDeck().stream()
+                .filter(c -> "g-team-sacrifice".equals(c.getId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("team sacrifice not in deck"));
+        if (state.getPlayerHand().stream().noneMatch(c -> c.getId().equals(card.getId()))) {
+            state.getPlayerHand().add(card);
+        }
+        engine.playGenericSkill(state.getId(), card.getId(), mage.getId());
+
+        // the mage died from the hp cost -> player team wiped -> ENEMY wins
+        assertThat(mage.isDead()).isTrue();
+        assertThat(state.isOver()).isTrue();
+        assertThat(state.getWinner()).isEqualTo("ENEMY");
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.FINISHED);
+    }
 }

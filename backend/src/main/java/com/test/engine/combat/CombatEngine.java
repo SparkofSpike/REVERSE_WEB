@@ -823,7 +823,10 @@ public class CombatEngine {
         if (card.isConsumed()) {
             state.getPlayerDeck().remove(card);
         }
-        if (state.isOver()) {
+        // a card can kill the last enemy (or the last ally via hp_cost):
+        // settle victory immediately so the battle does not linger in
+        // DECISION with a dead side still "in play"
+        if (checkVictory(state)) {
             return state;
         }
         return state;

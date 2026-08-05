@@ -81,6 +81,7 @@ public class CombatService {
     public CombatView playCard(String username, String battleId, String skillId, String targetId) {
         CombatState state = owned(username, battleId);
         engine.playGenericSkill(battleId, skillId, targetId);
+        persistIfFinished(state);
         return toView(state);
     }
 
