@@ -54,7 +54,11 @@ let consumedLogs = 0
 // ---------------- performance animation state ----------------
 const performing = ref<Record<string, boolean>>({})
 const approaching = ref<Record<string, boolean>>({})
+// clash: both fighters charge further in and meet mid-field
+const clashing = ref<Record<string, boolean>>({})
 const shaking = ref<Record<string, boolean>>({})
+// impact burst shown at the point where the two fighters collide
+const clashBurst = ref<{ seq: number } | null>(null)
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
 const displayHp = ref<Record<string, number>>({})
@@ -70,14 +74,21 @@ let floatSeq = 0
 const anyPerforming = computed(() => Object.values(performing.value).some(Boolean))
 
 // camera focus: the whole scene (background + units) zooms in, anchored on
-// the acting unit's side so it reads as a real dolly-in, not a sprite grow
+// the acting unit's side so it reads as a real dolly-in, not a sprite grow.
+// During a clash both sides perform at once, so the camera stays centered
+// on the mid-field collision point.
 const zoomOrigin = computed(() => {
-  if (!battle.value) return '50% 65%'
-  const acting = Object.keys(performing.value).find((id) => performing.value[id])
-  const side = battle.value.combatants.find((c) => c.id === acting)?.side
-  if (side === 'ENEMY') return '66% 62%'
-  if (side === 'PLAYER') return '34% 62%'
-  return '50% 65%'
+  if (!battle.value) return '50% 62%'
+  const acting = Object.keys(performing.value).filter((id) => performing.value[id])
+  if (acting.length === 0) return '50% 62%'
+  const sides = new Set(
+    acting.map((id) => battle.value!.combatants.find((c) => c.id === id)?.side)
+  )
+  if (sides.size > 1) return '50% 62%'
+  const side = battle.value.combatants.find((c) => c.id === acting[0])?.side
+  if (side === 'ENEMY') return '66% 60%'
+  if (side === 'PLAYER') return '34% 60%'
+  return '50% 62%'
 })
 
 const players = computed(() =>
@@ -308,13 +319,18 @@ function consumePerformanceEvent(ev: CombatEvent) {
 // action cue ahead of it for the same actor gets an implicit lunge of its
 // own so the attacker visibly moves before the hit lands.
 interface QueuedStep {
-  kind: 'action' | 'settle' | 'heal'
+  kind: 'action' | 'clash' | 'settle' | 'heal'
   ev: CombatEvent
 }
 
 const ACTION_STEP = 1050 // label + lunge + pulse complete
 const SETTLE_STEP = 620 // shake + damage number + hp sync complete
 const HEAL_STEP = 680 // label + heal number + hp sync complete
+// clash: both fighters charge toward each other, collide at the midpoint
+// (impact flash + stagger), then run back to their own spot
+const CLASH_IMPACT = 620 // charge-in duration; the collision moment
+const CLASH_HOLD = 900 // stay engaged before running back
+const CLASH_STEP = 1400 // whole clash cue (charge + impact + return)
 const animQueue: QueuedStep[] = []
 let pumpRunning = false
 // while the fall curtain plays (right after submitting), queued steps wait
@@ -351,6 +367,23 @@ async function pumpQueue() {
 
 async function playStep(step: QueuedStep) {
   const d = (step.ev.data ?? {}) as Record<string, unknown>
+  if (step.kind === 'clash') {
+    // mutual attack: BOTH fighters charge into each other, collide at the
+    // midpoint (impact burst + stagger), then run back to their own spot
+    const actorId = d.actorId as string | undefined
+    const targetId = d.targetId as string | undefined
+    if (!actorId || !targetId) return
+    pulseActor(actorId)
+    pulseActor(targetId)
+    clashApproach(actorId)
+    clashApproach(targetId)
+    await sleep(CLASH_IMPACT)
+    clashBurst.value = { seq: (clashBurst.value?.seq ?? 0) + 1 }
+    shakeTarget(actorId)
+    shakeTarget(targetId)
+    await sleep(CLASH_STEP - CLASH_IMPACT)
+    return
+  }
   if (step.kind === 'action') {
     const actorId = d.actorId as string | undefined
     const action = d.action as string | undefined
@@ -417,6 +450,10 @@ function applyPerformance(ev: CombatEvent) {
   const d = (ev.data ?? {}) as Record<string, unknown>
   const actorId = d.actorId as string | undefined
 
+  if (ev.type === 'clash') {
+    enqueueStep({ kind: 'clash', ev })
+    return
+  }
   if (ev.type === 'damage') {
     enqueueStep({ kind: 'settle', ev })
     return
@@ -443,6 +480,14 @@ function approachTarget(id: string) {
   window.setTimeout(() => {
     approaching.value[id] = false
   }, 860)
+}
+
+function clashApproach(id: string) {
+  // deeper charge than a plain lunge: both fighters meet mid-field
+  clashing.value[id] = true
+  window.setTimeout(() => {
+    clashing.value[id] = false
+  }, CLASH_HOLD)
 }
 
 function shakeTarget(id: string) {
@@ -774,6 +819,7 @@ function statusText(c: CombatantView): string {
               dead: c.dead,
               performing: performing[c.id],
               approaching: approaching[c.id],
+              clashing: clashing[c.id],
               shaking: shaking[c.id]
             }"
           >
@@ -828,6 +874,7 @@ function statusText(c: CombatantView): string {
               dead: c.dead,
               performing: performing[c.id],
               approaching: approaching[c.id],
+              clashing: clashing[c.id],
               shaking: shaking[c.id]
             }"
           >
@@ -881,6 +928,11 @@ function statusText(c: CombatantView): string {
         <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
+        </div>
+
+        <!-- clash impact burst: both fighters collide mid-field -->
+        <div v-if="clashBurst" :key="clashBurst.seq" class="clash-burst">
+          <span class="clash-text">Clash!</span>
         </div>
         </div>
       </div>
@@ -1122,12 +1174,13 @@ function statusText(c: CombatantView): string {
 }
 
 .stage-scene.zoomed {
-  transform: scale(1.16);
+  transform: scale(1.18);
 }
 
 .stage-scene.dimmed .unit:not(.performing):not(.dead) {
+  /* focus is expressed by darkening only - every unit stays at its size so
+     the camera dolly reads as a real zoom on the whole scene */
   opacity: 0.45;
-  transform: scale(0.92);
 }
 
 .side-col {
@@ -1162,10 +1215,11 @@ function statusText(c: CombatantView): string {
 }
 
 .unit.performing {
+  /* no solo scale here: the whole scene zooms in (camera dolly), so all
+     units grow together - scaling only one unit reads as sprite growth */
   border-color: rgba(76, 194, 255, 0.85);
   box-shadow: 0 0 28px rgba(76, 194, 255, 0.4);
   z-index: 3;
-  transform: scale(1.22);
 }
 
 .side-player .unit.approaching {
@@ -1176,12 +1230,13 @@ function statusText(c: CombatantView): string {
   transform: translateX(-100px);
 }
 
-.side-player .unit.performing.approaching {
-  transform: translateX(100px) scale(1.22);
+/* clash: both fighters charge further in and meet mid-field */
+.side-player .unit.clashing {
+  transform: translateX(150px);
 }
 
-.side-enemy .unit.performing.approaching {
-  transform: translateX(-100px) scale(1.22);
+.side-enemy .unit.clashing {
+  transform: translateX(-150px);
 }
 
 .portrait-wrap {
@@ -1431,6 +1486,74 @@ function statusText(c: CombatantView): string {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* ---------- clash impact burst (mid-field collision flash) ---------- */
+
+.clash-burst {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 7;
+  animation: clash-pop 0.7s ease-out forwards;
+}
+
+.clash-burst::before {
+  content: '';
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.95),
+    rgba(76, 194, 255, 0.55) 42%,
+    transparent 72%
+  );
+  animation: clash-ring 0.7s ease-out forwards;
+}
+
+.clash-text {
+  position: relative;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(76, 194, 255, 0.95), 0 0 38px rgba(76, 194, 255, 0.55);
+}
+
+@keyframes clash-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes clash-ring {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
 }
 
 /* burst: expand outward from the center while fading out fast */
