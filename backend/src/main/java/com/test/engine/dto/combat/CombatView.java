@@ -26,6 +26,7 @@ public class CombatView {
     private List<Perk> initialPerkOptions;
     private List<Perk> specialPerkOptions;
     private int specialPerkRoundsTaken;
+    private boolean extraActionRound;
 
     private List<CombatantView> combatants;
     private List<CombatEvent> logs;

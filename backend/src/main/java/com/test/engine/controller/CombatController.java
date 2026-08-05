@@ -49,6 +49,17 @@ public class CombatController {
         return combatService.decide(authentication.getName(), battleId, decisions);
     }
 
+    @PostMapping("/{battleId}/extra-decide")
+    public CombatView decideExtraActions(Authentication authentication, @PathVariable String battleId,
+                                          @RequestBody List<ActionDecision> decisions) {
+        return combatService.decideExtraActions(authentication.getName(), battleId, decisions);
+    }
+
+    @PostMapping("/{battleId}/skip-extra")
+    public CombatView skipExtraActions(Authentication authentication, @PathVariable String battleId) {
+        return combatService.skipExtraActions(authentication.getName(), battleId);
+    }
+
     @PostMapping("/{battleId}/card")
     public CombatView playCard(Authentication authentication, @PathVariable String battleId,
                                @RequestBody Map<String, String> body) {

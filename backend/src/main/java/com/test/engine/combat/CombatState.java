@@ -43,6 +43,8 @@ public class CombatState {
     private Integer firstStrikeSide;
     private List<ActionDecision> pendingDecisions = new ArrayList<>();
     private Map<String, Integer> roundSpeed = new LinkedHashMap<>();
+    /** True while the player may spend extra base actions (连续奔袭 etc.). */
+    private boolean extraActionRound;
 
     private String winner;
     private List<CombatEvent> logs = new ArrayList<>();

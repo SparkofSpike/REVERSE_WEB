@@ -64,6 +64,20 @@ public class CombatService {
         return toView(state);
     }
 
+    public CombatView decideExtraActions(String username, String battleId, List<ActionDecision> decisions) {
+        CombatState state = owned(username, battleId);
+        engine.decideExtraActions(battleId, decisions);
+        persistIfFinished(state);
+        return toView(state);
+    }
+
+    public CombatView skipExtraActions(String username, String battleId) {
+        CombatState state = owned(username, battleId);
+        engine.skipExtraActions(battleId);
+        persistIfFinished(state);
+        return toView(state);
+    }
+
     public CombatView playCard(String username, String battleId, String skillId, String targetId) {
         CombatState state = owned(username, battleId);
         engine.playGenericSkill(battleId, skillId, targetId);
@@ -107,6 +121,7 @@ public class CombatService {
         view.setInitialPerkOptions(state.getInitialPerkOptions());
         view.setSpecialPerkOptions(state.getSpecialPerkOptions());
         view.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken());
+        view.setExtraActionRound(state.isExtraActionRound());
         view.setLogs(state.getLogs());
         view.setCombatants(state.getCombatants().stream().map(this::toCombatantView).toList());
         return view;
@@ -146,6 +161,7 @@ public class CombatService {
         v.setStatusEffects(c.getStatusEffects());
         v.setCooldowns(c.getCooldowns());
         v.setBonusDamage(c.getBonusDamage());
+        v.setExtraActionsThisTurn(c.getExtraActionsThisTurn());
         v.setSkills(c.getSkills().stream().map(this::toSkillView).toList());
         if (c.getTemplate() != null) {
             if (c.getTemplate().getCorePassive() != null) {

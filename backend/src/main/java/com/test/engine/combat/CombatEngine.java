@@ -173,6 +173,61 @@ public class CombatEngine {
         return state;
     }
 
+    /**
+     * Extra-action round: the player submits decisions for characters that
+     * still hold extra base actions (连续奔袭). Each submitted decision
+     * consumes one extra action; when none are left the round finalizes.
+     */
+    public CombatState decideExtraActions(String battleId, List<ActionDecision> decisions) {
+        CombatState state = getBattle(battleId);
+        if (state.getPhase() != CombatPhase.DECISION || !state.isExtraActionRound()) {
+            throw new IllegalStateException("battle is not in an extra-action round");
+        }
+        if (decisions == null || decisions.isEmpty()) {
+            throw new IllegalArgumentException("at least one extra action decision required");
+        }
+        for (ActionDecision d : decisions) {
+            Combatant c = state.find(d.getCombatantId());
+            if (c == null || c.isDead() || c.getExtraActionsThisTurn() <= 0) {
+                throw new IllegalArgumentException("no extra actions left for " + d.getCombatantId());
+            }
+        }
+        state.setPendingDecisions(new ArrayList<>(decisions));
+        // no speed re-roll for extra actions: resolve in team order
+        executeActions(state, state.allAlive());
+        for (ActionDecision d : decisions) {
+            Combatant c = state.find(d.getCombatantId());
+            if (c != null && c.getExtraActionsThisTurn() > 0) {
+                c.setExtraActionsThisTurn(c.getExtraActionsThisTurn() - 1);
+            }
+        }
+        if (checkVictory(state)) {
+            return state;
+        }
+        boolean extraPending = state.alive(CombatSide.PLAYER).stream()
+                .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
+        if (extraPending) {
+            state.setPhase(CombatPhase.DECISION);
+            state.log(CombatEvent.of(state.getRound(), "extra",
+                    "仍有额外行动可继续（或跳过）。"));
+            return state;
+        }
+        state.setExtraActionRound(false);
+        endRound(state);
+        return state;
+    }
+
+    /** Ends the extra-action window early and finalizes the round. */
+    public CombatState skipExtraActions(String battleId) {
+        CombatState state = getBattle(battleId);
+        if (!state.isExtraActionRound()) {
+            throw new IllegalStateException("battle is not in an extra-action round");
+        }
+        state.setExtraActionRound(false);
+        endRound(state);
+        return state;
+    }
+
     private void resolveRound(CombatState state) {
         state.setPhase(CombatPhase.SPEED);
         List<Combatant> alive = state.allAlive();
@@ -186,6 +241,17 @@ public class CombatEngine {
         executeActions(state, speedOrder);
 
         if (state.isOver()) {
+            return;
+        }
+        // extra base actions (连续奔袭 etc.): the player freely spends them
+        // in follow-up decision rounds before the round is finalized
+        boolean extraPending = state.alive(CombatSide.PLAYER).stream()
+                .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
+        if (extraPending) {
+            state.setExtraActionRound(true);
+            state.setPhase(CombatPhase.DECISION);
+            state.log(CombatEvent.of(state.getRound(), "extra",
+                    "获得额外行动的角色可以继续行动（或跳过）。"));
             return;
         }
         // special perk rounds: normally every 4 rounds; the clock-accelerate
@@ -245,7 +311,10 @@ public class CombatEngine {
      * decision contributes nothing itself - it only grants the count.
      */
     private void executeExtraActions(CombatState state, Combatant c, ActionDecision main) {
-        int runs = c.getExtraActionsThisTurn() + (c.isPermanentExtraAction() ? 1 : 0);
+        // 冷漠实现: a permanently held extra action auto-strikes the last
+        // target each round; 连续奔袭 extra actions are player-chosen via
+        // the extra-action round instead
+        int runs = c.isPermanentExtraAction() ? 1 : 0;
         if (runs <= 0) {
             return;
         }

@@ -54,4 +54,5 @@ public class CombatantView {
     private List<StatusEffect> statusEffects;
     private Map<String, Integer> cooldowns;
     private int bonusDamage;
+    private int extraActionsThisTurn;
 }

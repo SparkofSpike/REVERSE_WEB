@@ -366,48 +366,46 @@ class CombatEngineTest {
     }
 
     @Test
-    void extraActionsGrantBonusBaseActions() {
+    void extraActionsArePlayerChosenFollowUpRounds() {
         // 连续奔袭 (warrior-s3): "使用后，获得仅限本回合使用的3次额外基础行动"
-        // The extra-action counter was previously set but never consumed -
-        // the skill did nothing. Now the extra attacks must fire this round.
+        // The player must be able to freely choose each extra action, not
+        // have the engine auto-attack three times.
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
         Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
         warrior.setEnergy(100);
 
-        // control: a plain ATTACK round deals exactly one warrior hit
+        // round 1: plain ATTACK - exactly one hit, no extra-action round
         engine.decide(state.getId(), List.of(
                 ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
-        long attacksRound1 = state.getLogs().stream()
-                .filter(e -> "damage".equals(e.getType()))
-                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
-                .count();
-        assertThat(attacksRound1).as("a plain round deals exactly one warrior hit")
-                .isEqualTo(1);
+        assertThat(state.isExtraActionRound()).as("plain round must not open an extra-action round")
+                .isFalse();
 
-        // round 2: 连续奔袭 grants 3 extra base actions -> 3 extra attacks
-        int dummyHpBefore = state.find("dummy").getHp();
+        // round 2: 连续奔袭 opens the extra-action round with 3 charges
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
-        long attacksRound2 = state.getLogs().stream()
-                .filter(e -> e.getRound() == 2)
-                .filter(e -> "damage".equals(e.getType()))
-                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
-                .count();
-        assertThat(attacksRound2).as("连续奔袭 must grant 3 extra attacks (skill itself deals none)")
-                .isEqualTo(3);
-        assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBefore);
+        assertThat(state.isExtraActionRound()).as("连续奔袭 must open an extra-action round")
+                .isTrue();
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(3);
+        int dummyHpBefore = state.find("dummy").getHp();
+        assertThat(state.find("dummy").getHp()).isEqualTo(dummyHpBefore);
 
-        // round 3: the extra actions were round-scoped and must be gone
-        int dummyHpBeforeR3 = state.find("dummy").getHp();
-        engine.decide(state.getId(), List.of(
-                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
-        long attacksRound3 = state.getLogs().stream()
-                .filter(e -> e.getRound() == 3)
-                .filter(e -> "damage".equals(e.getType()))
-                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
-                .count();
-        assertThat(attacksRound3).as("extra actions must expire at round end")
-                .isEqualTo(1);
+        // extra action 1: free choice - spend it on a CHASE
+        engine.decideExtraActions(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "CHASE", "dummy")));
+        assertThat(warrior.getExtraActionsThisTurn()).isEqualTo(2);
+        assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBefore);
+        // the extra action must be a real, freely chosen action: a CHASE on
+        // the last-attacked target fires its bonus cue
+        assertThat(state.getLogs().stream().anyMatch(e -> "chase".equals(e.getType()))).isTrue();
+
+        // skip the remaining two charges: the round must finalize
+        engine.skipExtraActions(state.getId());
+        assertThat(state.isExtraActionRound()).isFalse();
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        assertThat(state.getRound()).isEqualTo(3);
+        // the skipped charges are not auto-spent
+        assertThat(warrior.getExtraActionsThisTurn()).isZero();
     }
 }
