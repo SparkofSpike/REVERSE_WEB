@@ -123,7 +123,7 @@ function ensureImageLoaded(url: string): Promise<void> {
 
 function preloadAssets() {
   const urls = [
-    '/assets/fight_background.webp',
+    '/assets/fight_background.webp?v=2',
     '/assets/curtain_rise.webp',
     '/assets/curtain_fall.webp',
     '/assets/last_dash.webp',
@@ -210,34 +210,28 @@ function unlockCurtainWindow() {
 }
 
 function handleRoundEnd() {
-  // lock through the whole curtain window (delay + animation), so the
-  // panel never unlocks between the cues ending and the fall starting
-  lockCurtainWindow()
+  // the fall curtain already played the moment the player submitted their
+  // decisions (the decision round ended); round_end merely marks the end
+  // of the settlement, so nothing further happens here
   window.clearTimeout(fallTimer)
-  fallTimer = window.setTimeout(() => playCurtainNow('fall', () => unlockCurtainWindow()), 2600)
+  window.clearTimeout(riseTimer)
 }
 
 function handleRoundStart() {
-  // lock through the whole curtain chain (fall delay + fall + rise);
-  // the lock is shared with the adjacent round_end so it counts once
+  // a new decision round begins: raise the curtain so the player sees the
+  // stage before issuing orders
   lockCurtainWindow()
   window.clearTimeout(fallTimer)
   perfGate = true
-  fallTimer = window.setTimeout(() => {
-    playCurtainNow('fall')
-    window.clearTimeout(riseTimer)
-    riseTimer = window.setTimeout(() => {
-      playCurtainNow('rise', () => {
-        perfGate = false
-        flushPerf()
-        // round-start sync: any HP change without a cue settles now
-        for (const c of battle.value?.combatants ?? []) {
-          displayHp.value[c.id] = c.hp
-        }
-        unlockCurtainWindow()
-      })
-    }, 1900)
-  }, 2600)
+  playCurtainNow('rise', () => {
+    perfGate = false
+    flushPerf()
+    // round-start sync: any HP change without a cue settles now
+    for (const c of battle.value?.combatants ?? []) {
+      displayHp.value[c.id] = c.hp
+    }
+    unlockCurtainWindow()
+  })
 }
 
 let dashCooldownUntil = 0
@@ -312,11 +306,110 @@ function flushPerf() {
   for (const ev of batch) applyPerformance(ev)
 }
 
-// Per-actor serial performance: a unit's actions play one after another
-// (Attack! fully finishes, then Chase! starts), and each damage number
-// lands after the action it belongs to - never simultaneously.
-const ACTION_STEP = 1150
-const actorQueueDepth: Record<string, number> = {}
+// Global serial action queue: every action (attack, chase, clash, counter,
+// skill, card, heal) plays to completion - label, lunge, hit, damage
+// settlement - before the next one starts, regardless of actor. Damage
+// events settle right after the action they belong to; a damage with no
+// action cue ahead of it for the same actor gets an implicit lunge of its
+// own so the attacker visibly moves before the hit lands.
+interface QueuedStep {
+  kind: 'action' | 'settle' | 'heal'
+  ev: CombatEvent
+}
+
+const ACTION_STEP = 1050 // label + lunge + pulse complete
+const SETTLE_STEP = 620 // shake + damage number + hp sync complete
+const HEAL_STEP = 680 // label + heal number + hp sync complete
+const animQueue: QueuedStep[] = []
+let pumpRunning = false
+// while the fall curtain plays (right after submitting), queued steps wait
+let curtainGateUntil = 0
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms))
+}
+
+function enqueueStep(step: QueuedStep) {
+  if (step.kind === 'settle') {
+    const d = (step.ev.data ?? {}) as Record<string, unknown>
+    const actorId = d.actorId as string | undefined
+    const action = d.action as string | undefined
+    const last = animQueue[animQueue.length - 1]
+    const lastActor = last?.ev.data
+      ? (last.ev.data as Record<string, unknown>).actorId
+      : undefined
+    const attackLike = action === 'ATTACK' || action === 'CHASE' || action === 'COUNTER'
+    if (actorId && attackLike && !(last?.kind === 'action' && lastActor === actorId)) {
+      animQueue.push({ kind: 'action', ev: step.ev })
+    }
+  }
+  animQueue.push(step)
+  void pumpQueue()
+}
+
+async function pumpQueue() {
+  if (pumpRunning) return
+  pumpRunning = true
+  animStart()
+  try {
+    while (animQueue.length > 0) {
+      while (Date.now() < curtainGateUntil) {
+        await sleep(100)
+      }
+      const step = animQueue.shift()!
+      await playStep(step)
+    }
+  } finally {
+    animEnd()
+    pumpRunning = false
+  }
+}
+
+async function playStep(step: QueuedStep) {
+  const d = (step.ev.data ?? {}) as Record<string, unknown>
+  if (step.kind === 'action') {
+    const actorId = d.actorId as string | undefined
+    const action = d.action as string | undefined
+    const targetId = d.targetId as string | undefined
+    if (!actorId) return
+    if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
+    pulseActor(actorId)
+    const offensive =
+      step.ev.type === 'clash' ||
+      step.ev.type === 'chase' ||
+      step.ev.type === 'counter' ||
+      (step.ev.type === 'action' && (action === 'ATTACK' || action === 'CHASE'))
+    if (offensive && targetId && targetId !== actorId) {
+      approachTarget(actorId)
+    }
+    await sleep(ACTION_STEP)
+    return
+  }
+  if (step.kind === 'settle') {
+    const t = d.target as string | undefined
+    const amount = (d.hpDamage ?? d.raw ?? 0) as number
+    if (t) shakeTarget(t)
+    if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
+    // HP bar settles together with the damage cue, not all at once
+    if (t) {
+      const real = battle.value?.combatants.find((c) => c.id === t)?.hp
+      if (real !== undefined) displayHp.value[t] = real
+    }
+    await sleep(SETTLE_STEP)
+    return
+  }
+  // heal
+  const targetId = d.targetId as string | undefined
+  if (targetId) {
+    const healAction = d.action as string | undefined
+    if (healAction) addActionLabel(targetId, ACTION_LABELS[healAction] ?? healAction)
+    await sleep(340)
+    if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
+    const real = battle.value?.combatants.find((c) => c.id === targetId)?.hp
+    if (real !== undefined) displayHp.value[targetId] = real
+  }
+  await sleep(HEAL_STEP - 340)
+}
 
 // While any animation is running (action cues, curtains, last dash) the
 // decision panel stays locked, so a new submission can never interleave
@@ -341,70 +434,17 @@ function applyPerformance(ev: CombatEvent) {
   const actorId = d.actorId as string | undefined
 
   if (ev.type === 'damage') {
-    queueDamage(ev)
+    enqueueStep({ kind: 'settle', ev })
     return
   }
   if (ev.type === 'heal') {
-    const targetId = d.targetId as string | undefined
-    if (targetId) {
-      const healAction = d.action as string | undefined
-      if (healAction) addActionLabel(targetId, ACTION_LABELS[healAction] ?? healAction)
-      window.setTimeout(() => {
-        if (d.amount) addFloat(targetId, `+${d.amount}`, 'heal')
-        const real = battle.value?.combatants.find((c) => c.id === targetId)?.hp
-        if (real !== undefined) displayHp.value[targetId] = real
-      }, 450)
-    }
+    enqueueStep({ kind: 'heal', ev })
     return
   }
-  // action / skill / clash / chase / counter / card: serialized per actor
+  // action / skill / clash / chase / counter / card: serialized globally
   if (actorId) {
-    enqueueActorAction(actorId, ev)
+    enqueueStep({ kind: 'action', ev })
   }
-}
-
-function enqueueActorAction(actorId: string, ev: CombatEvent) {
-  const depth = actorQueueDepth[actorId] ?? 0
-  actorQueueDepth[actorId] = depth + 1
-  const startAt = depth * ACTION_STEP
-  animStart()
-  window.setTimeout(() => playActionNow(ev), startAt)
-  window.setTimeout(() => {
-    actorQueueDepth[actorId] = Math.max(0, (actorQueueDepth[actorId] ?? 1) - 1)
-    animEnd()
-  }, startAt + ACTION_STEP + 250)
-}
-
-function playActionNow(ev: CombatEvent) {
-  const d = (ev.data ?? {}) as Record<string, unknown>
-  const actorId = d.actorId as string | undefined
-  const action = d.action as string | undefined
-  const targetId = d.targetId as string | undefined
-  if (!actorId) return
-  if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
-  pulseActor(actorId)
-  if ((ev.type === 'clash' || ev.type === 'chase' || ev.type === 'counter') && targetId) {
-    approachTarget(actorId)
-  }
-}
-
-function queueDamage(ev: CombatEvent) {
-  const d = (ev.data ?? {}) as Record<string, unknown>
-  const actorId = d.actorId as string | undefined
-  const t = d.target as string | undefined
-  const amount = (d.hpDamage ?? d.raw ?? 0) as number
-  // damage belongs to the last action queued for this actor
-  const depth = actorId ? (actorQueueDepth[actorId] ?? 0) : 0
-  const delay = Math.max(0, depth - 1) * ACTION_STEP + 900
-  window.setTimeout(() => {
-    if (t) shakeTarget(t)
-    if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
-    // HP bar settles together with the damage cue, not all at once
-    if (t) {
-      const real = battle.value?.combatants.find((c) => c.id === t)?.hp
-      if (real !== undefined) displayHp.value[t] = real
-    }
-  }, delay)
 }
 
 function pulseActor(id: string) {
@@ -578,6 +618,11 @@ async function submitDecisions() {
   submitting.value = true
   try {
     battle.value = await decide(battle.value!.id, decisions)
+    // decision round over: drop the curtain, then gate the settlement
+    // animations behind it (the queue waits until the fall has played)
+    lockCurtainWindow()
+    curtainGateUntil = Date.now() + 1900
+    playCurtainNow('fall', () => unlockCurtainWindow())
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -1031,7 +1076,7 @@ function statusText(c: CombatantView): string {
   padding: 18px 30px 24px;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
-    url('/assets/fight_background.webp') center / cover no-repeat;
+    url('/assets/fight_background.webp?v=2') center / cover no-repeat;
   transition: transform 0.5s ease;
   will-change: transform;
 }
