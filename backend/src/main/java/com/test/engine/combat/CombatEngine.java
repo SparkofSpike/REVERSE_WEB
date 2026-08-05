@@ -301,16 +301,8 @@ public class CombatEngine {
         if (state.isOver()) {
             return;
         }
-        // special perk rounds: normally every 4 rounds; the clock-accelerate
-        // generic card advances the next offer by one round (mod 4 == 3)
-        boolean specialPerkDue = state.getRound() % SPECIAL_PERK_INTERVAL == 0
-                || (state.isSpecialPerkAdvancePending()
-                    && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1);
-        if (specialPerkDue && state.getSpecialPerkRoundsTaken() < SPECIAL_PERK_MAX_ROUNDS) {
-            state.setSpecialPerkAdvancePending(false);
-            offerSpecialPerks(state);
-            return;
-        }
+        // special-perk handling lives inside endRound so EVERY round-ending
+        // path - plain rounds and extra-action rounds alike - offers the perk
         endRound(state);
     }
 
@@ -894,6 +886,7 @@ public class CombatEngine {
     private void startRound(CombatState state) {
         state.setPhase(CombatPhase.ROUND_START);
         state.setRound(state.getRound() + 1);
+        state.setSpecialPerkOffered(false);
         state.log(CombatEvent.of(state.getRound(), "round_start",
                 "第 " + state.getRound() + " 回合开始，帷幕升起。"));
 
@@ -1068,6 +1061,21 @@ public class CombatEngine {
         }
 
         if (checkVictory(state)) {
+            return;
+        }
+        // special perk rounds: normally every 4 rounds; the clock-accelerate
+        // generic card advances the next offer by one round (mod 4 == 3).
+        // Checked here so extra-action rounds cannot skip the offer;
+        // specialPerkOffered guards against re-offering when the perk round
+        // itself finalizes (select/skip also land in endRound).
+        boolean specialPerkDue = state.getRound() % SPECIAL_PERK_INTERVAL == 0
+                || (state.isSpecialPerkAdvancePending()
+                    && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1);
+        if (specialPerkDue && !state.isSpecialPerkOffered()
+                && state.getSpecialPerkRoundsTaken() < SPECIAL_PERK_MAX_ROUNDS) {
+            state.setSpecialPerkOffered(true);
+            state.setSpecialPerkAdvancePending(false);
+            offerSpecialPerks(state);
             return;
         }
         startRound(state);

@@ -615,4 +615,38 @@ class CombatEngineTest {
         assertThat(warrior.getExtraGuardsThisTurn()).isZero();
         assertThat(warrior.getGuardTargetId()).isEqualTo(warrior.getId());
     }
+
+    @Test
+    void extraActionRoundStillOffersSpecialPerk() {
+        // regression: an extra-action round landing on the perk round
+        // (round % 4 == 0) skipped the special perk offer entirely - the
+        // extra path returned before the old check and the extra-round
+        // finale went straight to endRound, permanently losing that offer
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        // rounds 1-3: plain attacks
+        for (int i = 1; i <= 3; i++) {
+            engine.decide(state.getId(), List.of(
+                    ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+            if (state.getPhase() == CombatPhase.SPECIAL_PERK) {
+                engine.skipSpecialPerk(state.getId());
+            }
+        }
+        // round 4: 连续奔袭 opens the extra-action round on the perk round
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+        assertThat(state.isExtraActionRound()).isTrue();
+        // skipping the extra actions must still land in the perk offer
+        engine.skipExtraActions(state.getId());
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.SPECIAL_PERK);
+        assertThat(state.getSpecialPerkOptions()).isNotEmpty();
+
+        // picking the perk finalizes cleanly into the next round (no re-offer)
+        engine.selectSpecialPerk(state.getId(), state.getSpecialPerkOptions().get(0).getId());
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        assertThat(state.getRound()).isEqualTo(5);
+    }
 }

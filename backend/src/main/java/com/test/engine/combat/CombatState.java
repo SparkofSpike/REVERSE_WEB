@@ -38,6 +38,8 @@ public class CombatState {
     private int specialPerkRoundsTaken;
     private boolean specialPerkAdvancePending;
     private boolean perkSkipped;
+    /** True once the perk offer fired for the current round (re-entry guard). */
+    private boolean specialPerkOffered;
 
     // round flow
     private Integer firstStrikeSide;
