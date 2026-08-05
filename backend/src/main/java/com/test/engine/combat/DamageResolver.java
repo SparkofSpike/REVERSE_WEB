@@ -58,6 +58,16 @@ public class DamageResolver {
             int shieldDamage = (int) Math.round(rawDamage * BREAK_SHIELD_MULTIPLIER);
             absorbWithShield(target, shieldDamage, outcome);
             outcome.setShieldAbsorbed(Math.min(shieldDamage, target.getShield() + outcome.getShieldAbsorbed()));
+            // any intent that overflows the shield hits HP at the unshielded
+            // BREAK rate (0.5x) scaled by resistance - exactly like a
+            // shield-less BREAK hit - instead of at full value
+            int overflow = shieldDamage - outcome.getShieldAbsorbed();
+            if (overflow > 0) {
+                double resistance = (type == DamageType.MAGIC)
+                        ? target.effectiveMagicResistance()
+                        : target.effectivePhysicalResistance();
+                outcome.setHpDamage((int) Math.round(overflow * BREAK_HP_FRACTION * resistance));
+            }
         } else {
             double resistance = (type == DamageType.MAGIC)
                     ? target.effectiveMagicResistance()

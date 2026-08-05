@@ -92,6 +92,34 @@ class DamageResolverTest {
     }
 
     @Test
+    void breakOverflowBeyondShieldHalvesLikeUnshielded() {
+        // regression: damage intent overflowing the shield used to hit HP at
+        // full value; it must use the unshielded BREAK rate (0.5x * resistance)
+        Combatant t = target(100, 1.0, 1.0);
+        t.setShield(50);
+        CombatState state = new CombatState();
+        // raw 100 -> shield intent 200; shield (50 * 1.2 = 60) absorbs 60,
+        // the remaining 140 intent hits HP at 0.5x * 1.0 resistance = 70
+        DamageResolver.DamageOutcome o = resolver.dealDamage(t, 100, DamageType.BREAK, state);
+        assertThat(o.getShieldAbsorbed()).isEqualTo(60);
+        assertThat(o.getHpDamage()).isEqualTo(70);
+        assertThat(t.getHp()).isEqualTo(30);
+        assertThat(t.getShield()).isZero();
+    }
+
+    @Test
+    void breakOverflowScalesWithResistance() {
+        // a low-resistance target takes 0.5x * 0.5 = 0.25x of the overflow
+        Combatant t = target(100, 0.5, 0.5);
+        t.setShield(50);
+        CombatState state = new CombatState();
+        DamageResolver.DamageOutcome o = resolver.dealDamage(t, 100, DamageType.BREAK, state);
+        // 140 intent * 0.5 * 0.5 = 35
+        assertThat(o.getHpDamage()).isEqualTo(35);
+        assertThat(t.getHp()).isEqualTo(65);
+    }
+
+    @Test
     void breakDamageHalvesWithoutShield() {
         Combatant t = target(100, 1.0, 1.0);
         CombatState state = new CombatState();
