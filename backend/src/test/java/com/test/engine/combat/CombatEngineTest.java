@@ -794,4 +794,44 @@ class CombatEngineTest {
         assertThat(engine.getBattle(fresh.getId())).isNotNull();
         assertThat(fresh.getId()).isNotEqualTo(state.getId());
     }
+
+    @Test
+    void concurrentActionsDoNotCorruptTheBattle() throws Exception {
+        // smoke test: two threads slam the same battle at once; the
+        // synchronized entry points serialize them, so no interleaved log
+        // writes, duplicated AI decisions or ConcurrentModificationException
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        int roundsBefore = state.getRound();
+        int logsBefore = state.getLogs().size();
+
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                try {
+                    engine.decide(state.getId(), List.of(
+                            ActionDecision.base(state.alive(CombatSide.PLAYER).get(0).getId(),
+                                    "ATTACK", "dummy")));
+                } catch (IllegalStateException | IllegalArgumentException e) {
+                    // exactly one thread wins the decide; the other is
+                    // rejected cleanly because the phase already moved on
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (java.util.concurrent.Future<?> f : futures) {
+            f.get();
+        }
+        pool.shutdown();
+
+        // the state advanced deterministically (round +1, logs grew), and no
+        // exception escaped the threads
+        assertThat(state.getRound()).isEqualTo(roundsBefore + 1);
+        assertThat(state.getLogs().size()).isGreaterThan(logsBefore);
+    }
 }

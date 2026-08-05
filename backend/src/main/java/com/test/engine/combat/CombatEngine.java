@@ -147,7 +147,7 @@ public class CombatEngine {
 
     // ===================== initial perk =====================
 
-    public CombatState selectInitialPerk(String battleId, String perkId) {
+    public synchronized CombatState selectInitialPerk(String battleId, String perkId) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.INITIAL_PERK) {
             throw new IllegalStateException("not in initial perk phase");
@@ -174,7 +174,7 @@ public class CombatEngine {
 
     // ===================== decision & round execution =====================
 
-    public CombatState decide(String battleId, List<ActionDecision> playerDecisions) {
+    public synchronized CombatState decide(String battleId, List<ActionDecision> playerDecisions) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION || state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in decision phase");
@@ -196,7 +196,7 @@ public class CombatEngine {
      * still hold extra base actions (连续奔袭). Each submitted decision
      * consumes one extra action; when none are left the round finalizes.
      */
-    public CombatState decideExtraActions(String battleId, List<ActionDecision> decisions) {
+    public synchronized CombatState decideExtraActions(String battleId, List<ActionDecision> decisions) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION || !state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in an extra-action round");
@@ -266,7 +266,7 @@ public class CombatEngine {
     }
 
     /** Ends the extra-action window early and finalizes the round. */
-    public CombatState skipExtraActions(String battleId) {
+    public synchronized CombatState skipExtraActions(String battleId) {
         CombatState state = getBattle(battleId);
         if (!state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in an extra-action round");
@@ -820,7 +820,7 @@ public class CombatEngine {
 
     // ===================== generic skills =====================
 
-    public CombatState playGenericSkill(String battleId, String skillId, String targetId) {
+    public synchronized CombatState playGenericSkill(String battleId, String skillId, String targetId) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION) {
             throw new IllegalStateException("generic skills can only be played during decision phase");
@@ -870,7 +870,7 @@ public class CombatEngine {
         state.log(CombatEvent.of(state.getRound(), "perk", "特殊词条轮！请选择一项词条。"));
     }
 
-    public CombatState selectSpecialPerk(String battleId, String perkId) {
+    public synchronized CombatState selectSpecialPerk(String battleId, String perkId) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.SPECIAL_PERK) {
             throw new IllegalStateException("not in special perk phase");
@@ -894,7 +894,7 @@ public class CombatEngine {
         return state;
     }
 
-    public CombatState skipSpecialPerk(String battleId) {
+    public synchronized CombatState skipSpecialPerk(String battleId) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.SPECIAL_PERK) {
             throw new IllegalStateException("not in special perk phase");
