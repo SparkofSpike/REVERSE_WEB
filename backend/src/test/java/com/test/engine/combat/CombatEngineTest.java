@@ -694,4 +694,51 @@ class CombatEngineTest {
         assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
         assertThat(state.getRound()).isEqualTo(5);
     }
+
+    @Test
+    void chaseWithoutPriorAttackGetsNoBonus() {
+        // regression: lastAttackedTarget was overwritten by the chase's own
+        // executeAttack, so the same-target condition was always true and a
+        // chase on a brand-new target still granted the 0d4 bonus + 2 HP
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        int warriorHpBefore = warrior.getHp();
+
+        // first action of the whole fight is a CHASE: no prior attack target
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "CHASE", "dummy")));
+        assertThat(state.getLogs().stream().noneMatch(e -> "chase".equals(e.getType())))
+                .as("no chase bonus cue without a prior attack on the target")
+                .isTrue();
+        assertThat(warrior.getHp()).isEqualTo(warriorHpBefore);
+    }
+
+    @Test
+    void chaseBonusSkippedWhenTargetDodges() {
+        // regression: a chase whose strike was dodged still granted the 0d4
+        // bonus (dealing damage that bypassed the dodge) plus 2 HP
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+
+        // round 1: plain attack so the dummy becomes the last-attacked target
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        Combatant dummy = state.find("dummy");
+        assertThat(warrior.getLastAttackedTarget()).isEqualTo("dummy");
+
+        // round 2: the dummy dodges everything; the chase must whiff
+        int dummyHpBefore = dummy.getHp();
+        dummy.setDodging(true);
+        dummy.setDodgeValue(999);
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "CHASE", "dummy")));
+
+        // the chase itself was dodged: no damage, no bonus cue, no heal
+        assertThat(dummy.getHp()).isEqualTo(dummyHpBefore);
+        assertThat(state.getLogs().stream().noneMatch(e -> "chase".equals(e.getType())))
+                .as("dodged chase must not trigger the bonus")
+                .isTrue();
+    }
 }
