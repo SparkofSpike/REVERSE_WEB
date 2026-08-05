@@ -120,7 +120,9 @@ public class Combatant {
         if (countering) {
             r -= 0.1;
         }
-        return r;
+        // never negative: a negative multiplier would zero out (or invert)
+        // all incoming damage and make defending a total immunity
+        return Math.max(0, r);
     }
 
     public double effectiveMagicResistance() {
@@ -131,7 +133,8 @@ public class Combatant {
         if (countering) {
             r -= 0.1;
         }
-        return r;
+        // never negative (see effectivePhysicalResistance)
+        return Math.max(0, r);
     }
 
     /** Effective speed for this round, including permanent and round boosts. */

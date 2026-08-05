@@ -48,6 +48,24 @@ class SpeedAdjudicatorTest {
     }
 
     @Test
+    void modifiedDiceExpressionsResolveWithoutCrashing() {
+        // regression: "2d6+2" failed the naive parseInt after the 'd',
+        // collapsing to a 1-sided die and forcing every duel into last dash
+        CombatState state = new CombatState();
+        List<Combatant> alive = new ArrayList<>();
+        alive.add(combatant("a", "2d6+2"));
+        alive.add(combatant("b", "2d6+2"));
+
+        List<Combatant> ordered = adjudicator.resolve(alive, state);
+
+        assertThat(ordered).hasSize(2);
+        assertThat(state.getRoundSpeed()).containsKeys("a", "b");
+        // range is 8 (6 sides + 2 modifier): no forced last dash, speeds distinct
+        assertThat(state.getRoundSpeed().get("a")).isNotEqualTo(state.getRoundSpeed().get("b"));
+        assertThat(allDistinct(ordered, state)).isTrue();
+    }
+
+    @Test
     void twoCombatantsTiedTriggerLastDash() {
         // two identical 1d4 combatants: tie guaranteed, last dash decides
         CombatState state = new CombatState();

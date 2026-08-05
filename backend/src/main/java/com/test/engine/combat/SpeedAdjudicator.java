@@ -139,7 +139,9 @@ public class SpeedAdjudicator {
     private int diceSides(String expression) {
         String[] parts = expression.trim().toLowerCase().split("d");
         try {
-            return Integer.parseInt(parts[parts.length - 1]);
+            // "2d6+2" -> 6 (only the leading integer after the 'd' counts)
+            String sides = parts[parts.length - 1].replaceAll("\\D.*", "");
+            return Integer.parseInt(sides);
         } catch (Exception e) {
             return 1;
         }

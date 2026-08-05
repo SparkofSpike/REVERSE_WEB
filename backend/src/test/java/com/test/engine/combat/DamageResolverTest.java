@@ -129,6 +129,19 @@ class DamageResolverTest {
     }
 
     @Test
+    void resistanceNeverGoesNegativeWhileDefending() {
+        // regression: a low base resistance could go negative while
+        // defending/countering, zeroing (or inverting) all incoming damage
+        Combatant t = target(100, 0.05, 0.05);
+        t.setDefending(true);
+        CombatState state = new CombatState();
+        DamageResolver.DamageOutcome o = resolver.dealDamage(t, 10, DamageType.PHYSICAL, state);
+        // effective resistance = max(0, 0.05 - 0.2 - 0.1) = 0 -> no damage
+        assertThat(o.getHpDamage()).isZero();
+        assertThat(t.getHp()).isEqualTo(100);
+    }
+
+    @Test
     void pierceDamageHitsHpDirectly() {
         Combatant t = target(100, 1.0, 1.0);
         t.setShield(10);
