@@ -44,11 +44,6 @@ const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
 let curtainSeq = 0
 let curtainTimer = 0
 let fallTimer = 0
-// Performance gate: while the curtain chain (fall -> rise) is playing,
-// incoming performance cues are buffered and released after the rise ends,
-// so action labels never pop on top of a curtain.
-let perfGate = false
-const perfBuffer: CombatEvent[] = []
 const dashOverlay = ref<{ seq: number } | null>(null)
 
 // Log consumption: the first load is only a baseline (never replays old
@@ -230,10 +225,7 @@ function handleRoundStart() {
   // orders again
   lockCurtainWindow()
   window.clearTimeout(fallTimer)
-  perfGate = true
   playCurtainNow('fall', () => {
-    perfGate = false
-    flushPerf()
     // decision-round sync: any HP change without a cue settles now
     for (const c of battle.value?.combatants ?? []) {
       displayHp.value[c.id] = c.hp
@@ -303,17 +295,11 @@ function addActionLabel(unitId: string, text: string) {
 }
 
 function consumePerformanceEvent(ev: CombatEvent) {
-  if (perfGate) {
-    perfBuffer.push(ev)
-    return
-  }
+  // no buffering: every event goes straight into the serial queue, which
+  // is gated by the curtain window (curtainGateUntil) - buffering here was
+  // the source of rounds playing without animation when a curtain callback
+  // was overridden, and of multi-round event pile-ups
   applyPerformance(ev)
-}
-
-function flushPerf() {
-  if (perfBuffer.length === 0) return
-  const batch = perfBuffer.splice(0, perfBuffer.length)
-  for (const ev of batch) applyPerformance(ev)
 }
 
 // Global serial action queue: every action (attack, chase, clash, counter,
@@ -655,11 +641,6 @@ async function submitDecisions() {
     }
     await nextTick()
     playCurtainNow('rise', () => {
-      // the submit curtain may have overridden the round_start fall whose
-      // callback normally releases the performance gate; always release
-      // and flush here so buffered action events can never get stuck
-      perfGate = false
-      flushPerf()
       unlockCurtainWindow()
     })
   } catch (e) {
