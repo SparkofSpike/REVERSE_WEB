@@ -233,6 +233,40 @@ public class CombatEngine {
             } else {
                 executeBaseAction(state, c, d, preRolled.get(c.getId()));
             }
+            executeExtraActions(state, c, d);
+        }
+    }
+
+    /**
+     * Consumes this round's extra base actions (连续奔袭 etc.): after the
+     * main decision the combatant automatically strikes the chosen target
+     * (falling back to the last attacked target, then the first alive foe)
+     * once per extra action. Extra actions are base actions, so a skill
+     * decision contributes nothing itself - it only grants the count.
+     */
+    private void executeExtraActions(CombatState state, Combatant c, ActionDecision main) {
+        int runs = c.getExtraActionsThisTurn() + (c.isPermanentExtraAction() ? 1 : 0);
+        if (runs <= 0) {
+            return;
+        }
+        String targetId = main.getTargetId();
+        if (targetId == null) {
+            targetId = c.getLastAttackedTarget();
+        }
+        if (targetId == null) {
+            List<Combatant> foes = state.alive(c.isPlayerSide() ? CombatSide.ENEMY : CombatSide.PLAYER);
+            if (!foes.isEmpty()) {
+                targetId = foes.get(0).getId();
+            }
+        }
+        if (targetId == null) {
+            return;
+        }
+        for (int i = 0; i < runs; i++) {
+            if (c.isDead() || state.isOver()) {
+                return;
+            }
+            executeAttack(state, c, ActionDecision.base(c.getId(), "ATTACK", targetId), null, "ATTACK", true);
         }
     }
 

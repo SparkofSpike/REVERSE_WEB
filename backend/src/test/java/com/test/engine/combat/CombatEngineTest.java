@@ -364,4 +364,50 @@ class CombatEngineTest {
         }
         assertThat(sawChase).isTrue();
     }
+
+    @Test
+    void extraActionsGrantBonusBaseActions() {
+        // 连续奔袭 (warrior-s3): "使用后，获得仅限本回合使用的3次额外基础行动"
+        // The extra-action counter was previously set but never consumed -
+        // the skill did nothing. Now the extra attacks must fire this round.
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setEnergy(100);
+
+        // control: a plain ATTACK round deals exactly one warrior hit
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        long attacksRound1 = state.getLogs().stream()
+                .filter(e -> "damage".equals(e.getType()))
+                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
+                .count();
+        assertThat(attacksRound1).as("a plain round deals exactly one warrior hit")
+                .isEqualTo(1);
+
+        // round 2: 连续奔袭 grants 3 extra base actions -> 3 extra attacks
+        int dummyHpBefore = state.find("dummy").getHp();
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+        long attacksRound2 = state.getLogs().stream()
+                .filter(e -> e.getRound() == 2)
+                .filter(e -> "damage".equals(e.getType()))
+                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
+                .count();
+        assertThat(attacksRound2).as("连续奔袭 must grant 3 extra attacks (skill itself deals none)")
+                .isEqualTo(3);
+        assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBefore);
+
+        // round 3: the extra actions were round-scoped and must be gone
+        int dummyHpBeforeR3 = state.find("dummy").getHp();
+        engine.decide(state.getId(), List.of(
+                ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
+        long attacksRound3 = state.getLogs().stream()
+                .filter(e -> e.getRound() == 3)
+                .filter(e -> "damage".equals(e.getType()))
+                .filter(e -> warrior.getId().equals(e.getData() != null ? e.getData().get("actorId") : null))
+                .count();
+        assertThat(attacksRound3).as("extra actions must expire at round end")
+                .isEqualTo(1);
+    }
 }
