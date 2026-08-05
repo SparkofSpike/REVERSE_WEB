@@ -1,6 +1,7 @@
 package com.test.engine.combat;
 
 import com.test.engine.model.CardPackLoader;
+import com.test.engine.model.EffectSpec;
 import com.test.engine.model.GenericSkillTemplate;
 import com.test.engine.utils.DiceRoller;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -450,5 +451,73 @@ class CombatEngineTest {
                 ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
         assertThat(warrior.getExtraActionsThisTurn()).isZero();
         assertThat(state.find("dummy").getHp()).isLessThan(dummyHpBefore);
+    }
+
+    private EffectExecutor newExecutor() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        CardPackLoader loader = new CardPackLoader(mapper);
+        return new EffectExecutor(new DiceRoller(1L), new DamageResolver(new DiceRoller(1L)), loader);
+    }
+
+    @Test
+    void effectDamageKillRespectsUndying() throws Exception {
+        // regression: effect-executor kills bypassed the engine's undying
+        // check, so lethal skill damage ignored 宁死不屈 entirely
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setHp(5);
+
+        EffectSpec spec = new EffectSpec();
+        spec.setType("damage");
+        spec.setAmount(999);
+        spec.setTarget("ally");
+
+        EffectExecutor executor = newExecutor();
+        executor.execute(spec, warrior, state, warrior.getId());
+        // first lethal hit: undying triggers, HP reset to 1, still alive
+        assertThat(warrior.isDead()).isFalse();
+        assertThat(warrior.getHp()).isEqualTo(1);
+        assertThat(warrior.isUndyingUsed()).isTrue();
+
+        executor.execute(spec, warrior, state, warrior.getId());
+        // second lethal hit: the undying rounds absorb it
+        assertThat(warrior.isDead()).isFalse();
+        assertThat(warrior.getHp()).isEqualTo(1);
+
+        executor.execute(spec, warrior, state, warrior.getId());
+        // third lethal hit: undying is spent, the warrior finally dies
+        assertThat(warrior.isDead()).isTrue();
+        assertThat(state.getLogs().stream().anyMatch(e -> "death".equals(e.getType()))).isTrue();
+    }
+
+    @Test
+    void sacrificeBuffNeverLeavesZeroHpZombies() throws Exception {
+        // regression: 冷漠实现 could drive an ally to 0 HP without death
+        // handling, leaving a "living" zombie that kept acting and could
+        // receive the permanent extra action
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior", "mage"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        Combatant mage = state.alive(CombatSide.PLAYER).get(1);
+        warrior.setHp(3);
+        mage.setHp(50);
+
+        EffectSpec spec = new EffectSpec();
+        spec.setType("sacrifice_buff");
+        spec.setAmount(10);
+        spec.setCount(30);
+        spec.setTarget("allies");
+
+        EffectExecutor executor = newExecutor();
+        executor.execute(spec, warrior, state, null); // warrior 3 -> 0 (undying -> 1)
+        executor.execute(spec, warrior, state, null); // warrior 1 -> 0 (undying rounds -> 0, hp 1)
+        executor.execute(spec, warrior, state, null); // warrior 1 -> 0 (no undying left -> dead)
+
+        assertThat(warrior.isDead()).isTrue();
+        assertThat(mage.isDead()).isFalse();
+        assertThat(mage.getHp()).isEqualTo(20);
+        // the permanent extra action goes to the lowest ALIVE ally
+        assertThat(mage.isPermanentExtraAction()).isTrue();
     }
 }

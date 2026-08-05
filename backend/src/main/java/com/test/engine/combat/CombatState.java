@@ -77,6 +77,34 @@ public class CombatState {
         return phase == CombatPhase.FINISHED || winner != null;
     }
 
+    /**
+     * Central death adjudication shared by every damage source (plain
+     * attacks, skills, cards, hp costs): undying (宁死不屈) keeps the
+     * combatant alive, otherwise the combatant dies and logs a death event.
+     */
+    public void resolvePotentialDeath(Combatant c) {
+        if (c.getHp() > 0 || c.isDead()) {
+            return;
+        }
+        // undying: 宁死不屈 keeps the combatant alive for this and next round
+        if (c.getTemplate() != null && c.getTemplate().getCorePassive() != null
+                && "undying".equals(c.getTemplate().getCorePassive().getType()) && !c.isUndyingUsed()) {
+            c.setUndyingUsed(true);
+            c.setHp(1);
+            c.setUndyingRounds(2);
+            log(CombatEvent.of(getRound(), "performance",
+                    c.getName() + " 宁死不屈！本回合和下回合不会倒下。"));
+            return;
+        }
+        if (c.getUndyingRounds() > 0) {
+            c.setHp(1);
+            c.setUndyingRounds(c.getUndyingRounds() - 1);
+            return;
+        }
+        c.setDead(true);
+        log(CombatEvent.of(getRound(), "death", c.getName() + " 倒下了！"));
+    }
+
     public void addDrawEnergy(int amount) {
         playerDrawEnergy = Math.min(10, playerDrawEnergy + amount);
     }

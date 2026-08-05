@@ -96,7 +96,7 @@ public class EffectExecutor {
             }
             damageResolver.dealDamage(t, damage, type, state, caster, "SKILL");
             if (t.getHp() <= 0 && !t.isDead()) {
-                handleDeath(t, state);
+                state.resolvePotentialDeath(t);
             }
         }
     }
@@ -247,7 +247,7 @@ public class EffectExecutor {
             state.log(CombatEvent.of(state.getRound(), "damage",
                     t.getName() + " 损失 " + cost + " 点生命（奉献）。"));
             if (t.getHp() <= 0) {
-                handleDeath(t, state);
+                state.resolvePotentialDeath(t);
             }
         }
     }
@@ -276,6 +276,9 @@ public class EffectExecutor {
             t.setEnergy(Math.min(t.getMaxEnergy(), t.getEnergy() + spec.getCount()));
             state.log(CombatEvent.of(state.getRound(), "status",
                     t.getName() + " 失去 " + cost + " HP，获得 " + spec.getCount() + " 精力（冷漠实现）。"));
+            if (t.getHp() <= 0) {
+                state.resolvePotentialDeath(t);
+            }
         }
         // lowest HP ally keeps a permanent extra action
         targets.stream().filter(t -> !t.isDead()).min(java.util.Comparator.comparingInt(Combatant::getHp))
@@ -432,11 +435,6 @@ public class EffectExecutor {
             default -> result.add(caster);
         }
         return result;
-    }
-
-    private void handleDeath(Combatant target, CombatState state) {
-        target.setDead(true);
-        state.log(CombatEvent.of(state.getRound(), "death", target.getName() + " 倒下了！"));
     }
 
     private void applyMaxHpBonus(EffectSpec spec, Combatant caster, CombatState state) {
