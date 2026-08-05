@@ -488,6 +488,15 @@ function needsGuardTarget(action: string): boolean {
   return action === 'GUARD'
 }
 
+function onActionTypeChange(c: CombatantView, action: string) {
+  if (action === 'SKILL') return
+  // leaving SKILL must clear the pending skill, otherwise the skill tag
+  // stays highlighted and the old skill leaks into the next decision
+  const p = pending.value[c.id]
+  p.skillId = null
+  p.targetId = needsTarget(action) ? targetDummy.value : null
+}
+
 function selectSkill(c: CombatantView, s: SkillView) {
   if ((c.cooldowns[s.id] ?? 0) > 0) {
     message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
@@ -511,7 +520,7 @@ function skillNeedsTarget(s: SkillView | null): boolean {
 }
 
 function skillTagClass(c: CombatantView, s: SkillView): string {
-  const active = pending.value[c.id]?.skillId === s.id ? ' active' : ''
+  const active = pending.value[c.id]?.actionType === 'SKILL' && pending.value[c.id]?.skillId === s.id ? ' active' : ''
   const cooldown = (c.cooldowns[s.id] ?? 0) > 0 ? ' cooldown' : ''
   return 'skill-tag' + active + cooldown
 }
@@ -810,6 +819,7 @@ function statusText(c: CombatantView): string {
           <span class="actor-name">{{ c.name }}</span>
           <n-select
             v-model:value="pending[c.id].actionType"
+            @update:value="onActionTypeChange(c, $event)"
             :options="actionOptions(c)"
             size="small"
             style="width: 120px"
