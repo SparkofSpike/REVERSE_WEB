@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class DiceRoller {
 
-    private static final Pattern DICE_PATTERN = Pattern.compile("^\\s*(\\d+)\\s*[dD]\\s*(\\d+)\\s*$");
+    private static final Pattern DICE_PATTERN =
+            Pattern.compile("^\\s*(\\d+)\\s*[dD]\\s*(\\d+)\\s*([+-]\\s*\\d+)?\\s*$");
 
     private final Random random;
 
@@ -46,7 +47,16 @@ public class DiceRoller {
         }
         int count = Integer.parseInt(m.group(1));
         int sides = Integer.parseInt(m.group(2));
-        return roll(count, sides);
+        int modifier = 0;
+        if (m.group(3) != null) {
+            modifier = Integer.parseInt(m.group(3).replaceAll("\\s+", ""));
+        }
+        if (modifier == 0) {
+            return roll(count, sides);
+        }
+        // modified expression: base roll plus a flat +/- modifier
+        DiceResult base = roll(count, sides);
+        return new DiceResult(expression.trim(), count, sides, base.rolls(), base.total() + modifier);
     }
 
     /**

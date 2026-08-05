@@ -19,6 +19,21 @@ class DiceRollerTest {
     }
 
     @Test
+    void modifiedExpressionsApplyFlatModifier() {
+        DiceRoller loop = new DiceRoller();
+        for (int i = 0; i < 2000; i++) {
+            DiceResult r = loop.roll("2d6+2");
+            assertThat(r.count()).isEqualTo(2);
+            assertThat(r.sides()).isEqualTo(6);
+            assertThat(r.total()).isBetween(4, 14);
+        }
+        for (int i = 0; i < 2000; i++) {
+            DiceResult r = loop.roll("1d6-1");
+            assertThat(r.total()).isBetween(0, 5);
+        }
+    }
+
+    @Test
     void standardDiceStayInRange() {
         DiceRoller loop = new DiceRoller();
         for (int i = 0; i < 2000; i++) {
