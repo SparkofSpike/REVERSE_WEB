@@ -305,7 +305,16 @@ public class EffectExecutor {
                 }
             }
             if (idx >= 0) {
+                // carry any pending cooldown over to the upgraded skill id:
+                // cooldowns are keyed by skill id, and the upgraded entry has
+                // a new id (e.g. warrior-s3 -> warrior-s3-up). Without the
+                // transfer the new id never matches a cooldown key, so the
+                // upgraded skill ignores its cooldown entirely.
+                Integer pending = caster.getCooldowns().remove(r.id());
                 caster.getSkills().set(idx, r.upgraded());
+                if (pending != null && pending > 0) {
+                    caster.setCooldown(r.upgraded().getId(), pending);
+                }
             }
         }
         state.log(CombatEvent.of(state.getRound(), "performance",

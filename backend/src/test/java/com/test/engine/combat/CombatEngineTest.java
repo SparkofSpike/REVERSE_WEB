@@ -270,4 +270,40 @@ class CombatEngineTest {
                 .map(CombatEvent::getRound)
                 .orElse(0)).isGreaterThanOrEqualTo(1);
     }
+
+    @Test
+    void skillCooldownCarriesOverThroughUpgrade() {
+        // regression: the hp_below performance upgrades warrior skills
+        // (warrior-s3 -> warrior-s3-up). Cooldowns were keyed by the old id,
+        // so the upgraded skill never matched a cooldown entry and could be
+        // cast again every round despite CD 3.
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
+        warrior.setHp(35); // below 40: the next skill use triggers the performance
+        warrior.setEnergy(100);
+
+        // 连续奔袭: cost 25, cooldown 3, self target; the cast also triggers
+        // the hp_below performance, which upgrades all three warrior skills
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
+
+        assertThat(warrior.isSkillsUpgraded()).isTrue();
+        assertThat(warrior.findSkill("warrior-s3-up")).isNotNull();
+        // the pending cooldown must have moved to the upgraded id
+        assertThat(warrior.hasCooldown("warrior-s3-up")).isTrue();
+        assertThat(warrior.hasCooldown("warrior-s3")).isFalse();
+
+        int energyAfterFirstCast = warrior.getEnergy();
+
+        // next round (phase is back to DECISION): casting the upgraded skill
+        // while on cooldown must be rejected and must not consume energy
+        engine.decide(state.getId(), List.of(
+                ActionDecision.skill(warrior.getId(), "warrior-s3-up", null)));
+
+        assertThat(warrior.getEnergy()).isEqualTo(energyAfterFirstCast);
+        assertThat(state.getLogs().stream().anyMatch(e -> "skill".equals(e.getType())
+                && e.getMessage().contains("仍在冷却"))).isTrue();
+    }
 }

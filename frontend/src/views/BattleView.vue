@@ -489,8 +489,8 @@ function needsGuardTarget(action: string): boolean {
 }
 
 function selectSkill(c: CombatantView, s: SkillView) {
-  if (s.cooldown > 0) {
-    message.warning(`${s.name} 冷却中（还需 ${s.cooldown} 回合）`)
+  if ((c.cooldowns[s.id] ?? 0) > 0) {
+    message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
     return
   }
   pending.value[c.id] = {
@@ -512,7 +512,7 @@ function skillNeedsTarget(s: SkillView | null): boolean {
 
 function skillTagClass(c: CombatantView, s: SkillView): string {
   const active = pending.value[c.id]?.skillId === s.id ? ' active' : ''
-  const cooldown = s.cooldown > 0 ? ' cooldown' : ''
+  const cooldown = (c.cooldowns[s.id] ?? 0) > 0 ? ' cooldown' : ''
   return 'skill-tag' + active + cooldown
 }
 
@@ -844,7 +844,7 @@ function statusText(c: CombatantView): string {
           />
           <div class="skill-hint">
             <span v-for="s in c.skills" :key="s.id" :class="skillTagClass(c, s)" @click="selectSkill(c, s)">
-              {{ s.name }}({{ s.energyCost }}){{ s.cooldown > 0 ? ' CD' + s.cooldown : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
+              {{ s.name }}({{ s.energyCost }}){{ (c.cooldowns[s.id] ?? 0) > 0 ? ' CD' + (c.cooldowns[s.id] ?? 0) : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
             </span>
           </div>
           <div v-if="pending[c.id].actionType === 'SKILL' && selectedSkill(c)" class="skill-detail">
