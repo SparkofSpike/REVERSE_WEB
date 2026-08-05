@@ -17,6 +17,14 @@ export function decide(battleId: string, decisions: ActionDecision[]): Promise<C
   return http.post(`/combat/${battleId}/decide`, decisions).then((r) => r.data)
 }
 
+export function decideExtraActions(battleId: string, decisions: ActionDecision[]): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/extra-decide`, decisions).then((r) => r.data)
+}
+
+export function skipExtraActions(battleId: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/skip-extra`, {}).then((r) => r.data)
+}
+
 export function playCard(battleId: string, skillId: string, targetId?: string): Promise<CombatView> {
   return http.post(`/combat/${battleId}/card`, { skillId, targetId }).then((r) => r.data)
 }

@@ -7,6 +7,8 @@ import {
   getBattle,
   selectInitialPerk,
   decide,
+  decideExtraActions,
+  skipExtraActions,
   playCard,
   selectSpecialPerk,
   skipSpecialPerk
@@ -95,6 +97,11 @@ const isFinished = computed(() => battle.value?.phase === 'FINISHED')
 const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
+const inExtraRound = computed(() => battle.value?.extraActionRound ?? false)
+const extraActors = computed(() => alivePlayers.value.filter((c) => c.extraActionsThisTurn > 0))
+// main rounds decide for every alive player; extra rounds only for those
+// who still hold extra base actions
+const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : alivePlayers.value))
 
 onMounted(() => {
   // fire-and-forget warm-up: never blocks the battle screen
@@ -210,23 +217,23 @@ function unlockCurtainWindow() {
 }
 
 function handleRoundEnd() {
-  // the fall curtain already played the moment the player submitted their
-  // decisions (the decision round ended); round_end merely marks the end
-  // of the settlement, so nothing further happens here
+  // round_end merely marks the end of the settlement; the curtains are
+  // driven by the decision-round boundaries (rise on submit, fall when a
+  // new decision round begins), so nothing further happens here
   window.clearTimeout(fallTimer)
   window.clearTimeout(riseTimer)
 }
 
 function handleRoundStart() {
-  // a new decision round begins: raise the curtain so the player sees the
-  // stage before issuing orders
+  // a new decision round begins: drop the curtain so the player can issue
+  // orders again
   lockCurtainWindow()
   window.clearTimeout(fallTimer)
   perfGate = true
-  playCurtainNow('rise', () => {
+  playCurtainNow('fall', () => {
     perfGate = false
     flushPerf()
-    // round-start sync: any HP change without a cue settles now
+    // decision-round sync: any HP change without a cue settles now
     for (const c of battle.value?.combatants ?? []) {
       displayHp.value[c.id] = c.hp
     }
@@ -581,7 +588,7 @@ function skillTargetOptions(skillTargetType: string, c: CombatantView) {
 
 async function submitDecisions() {
   const decisions: ActionDecision[] = []
-  for (const c of alivePlayers.value) {
+  for (const c of decisionActors.value) {
     const p = pending.value[c.id]
     if (!p) continue
     if (p.actionType === 'SKILL') {
@@ -611,18 +618,33 @@ async function submitDecisions() {
       })
     }
   }
-  if (decisions.length !== alivePlayers.value.length) {
-    message.warning('请为所有存活角色下达指令')
+  if (decisions.length !== decisionActors.value.length) {
+    message.warning(inExtraRound.value ? '请为拥有额外行动的角色下达指令' : '请为所有存活角色下达指令')
     return
   }
   submitting.value = true
   try {
-    battle.value = await decide(battle.value!.id, decisions)
-    // decision round over: drop the curtain, then gate the settlement
-    // animations behind it (the queue waits until the fall has played)
-    lockCurtainWindow()
-    curtainGateUntil = Date.now() + 1900
-    playCurtainNow('fall', () => unlockCurtainWindow())
+    if (inExtraRound.value) {
+      battle.value = await decideExtraActions(battle.value!.id, decisions)
+    } else {
+      battle.value = await decide(battle.value!.id, decisions)
+      // decision round over: raise the curtain, then gate the settlement
+      // animations behind it (the queue waits until the rise has played)
+      lockCurtainWindow()
+      curtainGateUntil = Date.now() + 1900
+      playCurtainNow('rise', () => unlockCurtainWindow())
+    }
+  } catch (e) {
+    message.error(errorMessage(e))
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function skipExtra() {
+  submitting.value = true
+  try {
+    battle.value = await skipExtraActions(battle.value!.id)
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -858,9 +880,13 @@ function statusText(c: CombatantView): string {
         </div>
       </div>
 
-      <!-- decision panel: one control row per alive player -->
+      <!-- decision panel: one control row per alive player (extra-action
+           rounds only show characters that still hold extra actions) -->
       <div v-if="inDecision" class="panel decision-panel" :class="{ locked: animating }">
-        <div v-for="c in alivePlayers" :key="c.id" class="decision-unit">
+        <div v-if="inExtraRound" class="extra-round-hint">
+          ⚡ 额外行动轮：{{ extraActors.map((a) => `${a.name}（剩余 ${a.extraActionsThisTurn}）`).join('、') }}
+        </div>
+        <div v-for="c in decisionActors" :key="c.id" class="decision-unit">
           <span class="actor-name">{{ c.name }}</span>
           <n-select
             v-model:value="pending[c.id].actionType"
@@ -914,8 +940,17 @@ function statusText(c: CombatantView): string {
             />
           </div>
         </div>
+        <n-button
+          v-if="inExtraRound"
+          quaternary
+          size="small"
+          :disabled="animating || submitting"
+          @click="skipExtra"
+        >
+          跳过剩余额外行动
+        </n-button>
         <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
-          提交指令
+          {{ inExtraRound ? '执行额外行动' : '提交指令' }}
         </n-button>
       </div>
 
@@ -1129,19 +1164,19 @@ function statusText(c: CombatantView): string {
 }
 
 .side-player .unit.approaching {
-  transform: translateX(56px);
+  transform: translateX(100px);
 }
 
 .side-enemy .unit.approaching {
-  transform: translateX(-56px);
+  transform: translateX(-100px);
 }
 
 .side-player .unit.performing.approaching {
-  transform: translateX(56px) scale(1.22);
+  transform: translateX(100px) scale(1.22);
 }
 
 .side-enemy .unit.performing.approaching {
-  transform: translateX(-56px) scale(1.22);
+  transform: translateX(-100px) scale(1.22);
 }
 
 .portrait-wrap {
@@ -1467,6 +1502,13 @@ function statusText(c: CombatantView): string {
   font-size: 14px;
   font-weight: 600;
   min-width: 90px;
+}
+
+.extra-round-hint {
+  font-size: 13px;
+  color: var(--accent, #4cc2ff);
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 
 .skill-hint {

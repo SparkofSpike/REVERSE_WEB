@@ -185,6 +185,7 @@ export interface CombatantView {
   statusEffects: StatusEffect[]
   cooldowns: Record<string, number>
   bonusDamage: number
+  extraActionsThisTurn: number
 }
 
 export interface SkillView {
@@ -231,6 +232,7 @@ export interface CombatView {
   initialPerkOptions: Perk[]
   specialPerkOptions: Perk[]
   specialPerkRoundsTaken: number
+  extraActionRound: boolean
   combatants: CombatantView[]
   logs: CombatEvent[]
 }
