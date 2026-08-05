@@ -158,7 +158,7 @@ public class CombatEngine {
 
     public CombatState decide(String battleId, List<ActionDecision> playerDecisions) {
         CombatState state = getBattle(battleId);
-        if (state.getPhase() != CombatPhase.DECISION) {
+        if (state.getPhase() != CombatPhase.DECISION || state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in decision phase");
         }
         List<Combatant> players = state.alive(CombatSide.PLAYER);
@@ -193,15 +193,24 @@ public class CombatEngine {
             }
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
-        // no speed re-roll for extra actions: resolve in team order
-        executeActions(state, state.allAlive());
+        // no speed re-roll for extra actions: resolve per decision in
+        // submission order; a charge is consumed only when the action
+        // actually executes (a skill on cooldown / unaffordable must not
+        // burn an extra action)
         for (ActionDecision d : decisions) {
             Combatant c = state.find(d.getCombatantId());
-            if (c != null && c.getExtraActionsThisTurn() > 0) {
+            if (c == null) {
+                continue;
+            }
+            boolean executed = d.isSkill()
+                    ? executeSkill(state, c, d)
+                    : executeBaseAction(state, c, d, null);
+            if (executed && c.getExtraActionsThisTurn() > 0) {
                 c.setExtraActionsThisTurn(c.getExtraActionsThisTurn() - 1);
             }
         }
         if (checkVictory(state)) {
+            state.setExtraActionRound(false);
             return state;
         }
         boolean extraPending = state.alive(CombatSide.PLAYER).stream()
@@ -339,7 +348,7 @@ public class CombatEngine {
         }
     }
 
-    private void executeBaseAction(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
+    private boolean executeBaseAction(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
         ActionType action;
         try {
             action = ActionType.valueOf(decision.getActionType());
@@ -349,7 +358,7 @@ public class CombatEngine {
         if (!actor.getBaseActions().contains(action)) {
             state.log(CombatEvent.of(state.getRound(), "action",
                     actor.getName() + " 尝试使用未装配的行动 " + action.label() + "。").with("actorId", actor.getId()).with("action", action.name()));
-            return;
+            return false;
         }
         switch (action) {
             case ATTACK -> executeAttack(state, actor, decision, preRolled, "ATTACK", true);
@@ -360,6 +369,7 @@ public class CombatEngine {
             case CHASE -> executeChase(state, actor, decision, preRolled);
             case PRAY -> executePray(state, actor);
         }
+        return true;
     }
 
     private void executeAttack(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled,
@@ -624,7 +634,7 @@ public class CombatEngine {
 
     // ===================== skills =====================
 
-    private void executeSkill(CombatState state, Combatant caster, ActionDecision decision) {
+    private boolean executeSkill(CombatState state, Combatant caster, ActionDecision decision) {
         SkillTemplate skill = caster.findSkill(decision.getSkillId());
         if (skill == null) {
             throw new IllegalArgumentException("unknown skill: " + decision.getSkillId());
@@ -633,14 +643,14 @@ public class CombatEngine {
             state.log(CombatEvent.of(state.getRound(), "skill",
                     caster.getName() + " 的技能 " + skill.getName() + " 仍在冷却。")
                 .with("actorId", caster.getId()).with("action", "SKILL"));
-            return;
+            return false;
         }
         int cost = Math.max(0, skill.getEnergyCost() - energyDiscount(caster));
         if (caster.getEnergy() < cost) {
             state.log(CombatEvent.of(state.getRound(), "skill",
                     caster.getName() + " 精力不足，无法使用 " + skill.getName() + "。")
                 .with("actorId", caster.getId()));
-            return;
+            return false;
         }
         caster.setEnergy(caster.getEnergy() - cost);
         if (skill.getCooldown() > 0) {
@@ -656,6 +666,7 @@ public class CombatEngine {
             handlePotentialDeath(state, caster);
         }
         checkPerformance(state, caster);
+        return true;
     }
 
     private int energyDiscount(Combatant caster) {

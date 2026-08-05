@@ -295,6 +295,12 @@ class CombatEngineTest {
         assertThat(warrior.hasCooldown("warrior-s3-up")).isTrue();
         assertThat(warrior.hasCooldown("warrior-s3")).isFalse();
 
+        // 连续奔袭 grants extra actions, opening the extra-action round;
+        // skip it so the round finalizes before the next main decision
+        if (state.isExtraActionRound()) {
+            engine.skipExtraActions(state.getId());
+        }
+
         int energyAfterFirstCast = warrior.getEnergy();
 
         // next round (phase is back to DECISION): casting the upgraded skill

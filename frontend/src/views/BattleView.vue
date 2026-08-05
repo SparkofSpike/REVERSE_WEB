@@ -535,6 +535,16 @@ function needsGuardTarget(action: string): boolean {
   return action === 'GUARD'
 }
 
+// entering the extra-action round resets every extra actor's selection:
+// a stale skill choice (e.g. the just-used 连续奔袭, now on cooldown) must
+// never be re-submitted and burn a charge doing nothing
+watch(inExtraRound, (on) => {
+  if (!on) return
+  for (const c of extraActors.value) {
+    pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
+  }
+})
+
 function onActionTypeChange(c: CombatantView, action: string) {
   if (action === 'SKILL') return
   // leaving SKILL must clear the pending skill, otherwise the skill tag
