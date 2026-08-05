@@ -112,4 +112,16 @@ async function onSubmit() {
 .auth-footer a {
   margin-left: 6px;
 }
+
+/* ---------- mobile: card fills the viewport width ---------- */
+@media (max-width: 768px) {
+  .auth-page {
+    padding: 16px;
+  }
+  .auth-card {
+    width: 100%;
+    max-width: 380px;
+    padding: 24px 20px;
+  }
+}
 </style>

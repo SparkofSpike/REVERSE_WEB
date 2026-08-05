@@ -1777,4 +1777,128 @@ function statusText(c: CombatantView): string {
 .log-message {
   flex: 1;
 }
+
+/* ---------- mobile: compact battle stage and stacked decision panel ---------- */
+@media (max-width: 768px) {
+  .container {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .head-info {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .stage {
+    min-height: 300px;
+  }
+  .stage-scene {
+    gap: 2%;
+    padding: 12px 8px 14px;
+  }
+  .side-col {
+    gap: 6px;
+  }
+  .unit {
+    width: 84px;
+    padding: 6px;
+    gap: 4px;
+  }
+  .portrait-wrap {
+    width: 64px;
+    height: 84px;
+  }
+  .portrait-placeholder {
+    font-size: 28px;
+  }
+  .unit .info .name {
+    font-size: 12px;
+  }
+  .hp-bar,
+  .energy-bar {
+    height: 6px;
+  }
+  .bar-label {
+    font-size: 10px;
+  }
+  .bar-num {
+    font-size: 10px;
+  }
+  .unit-status {
+    font-size: 10px;
+    text-align: center;
+  }
+  .side-player .unit.approaching {
+    transform: translateX(70px);
+  }
+  .side-enemy .unit.approaching {
+    transform: translateX(-70px);
+  }
+  .side-player .unit.clashing {
+    transform: translateX(100px);
+  }
+  .side-enemy .unit.clashing {
+    transform: translateX(-100px);
+  }
+  .clash-text {
+    font-size: 26px;
+  }
+  .clash-burst::before {
+    width: 140px;
+    height: 140px;
+  }
+  .float-num {
+    font-size: 13px;
+  }
+
+  .decision-unit {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(18, 23, 32, 0.55);
+  }
+  .decision-unit .actor-name {
+    min-width: 0;
+    font-size: 15px;
+  }
+  .decision-unit .n-select {
+    width: 100% !important;
+  }
+  .skill-detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .skill-detail .n-select {
+    width: 100% !important;
+  }
+  .skill-hint {
+    gap: 8px;
+  }
+  .skill-tag {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .hand .card {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .log-row {
+    align-items: flex-start;
+  }
+  .log-message {
+    font-size: 12px;
+    min-width: 0;
+    word-break: break-word;
+  }
+}
 </style>

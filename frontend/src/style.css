@@ -34,6 +34,8 @@ body {
   font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  /* never show a horizontal scrollbar on narrow screens */
+  overflow-x: hidden;
 }
 
 a {

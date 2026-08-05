@@ -129,7 +129,7 @@ function characterName(id: string): string {
       </div>
     </main>
 
-    <n-modal v-model:show="showModal" preset="card" :title="editing ? '编辑构筑' : '新建构筑'" style="width: 520px">
+    <n-modal v-model:show="showModal" preset="card" :title="editing ? '编辑构筑' : '新建构筑'" style="width: min(520px, 94vw)">
       <div class="form">
         <label>构筑名称</label>
         <n-input v-model:value="name" placeholder="例如：极限爆发队" />
@@ -220,5 +220,23 @@ function characterName(id: string): string {
   font-size: 13px;
   color: var(--text-dim);
   margin-top: 8px;
+}
+
+/* ---------- mobile: card lists stack, dialogs fill the screen ---------- */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+  .build-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .build-info {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .build-name {
+    word-break: break-word;
+  }
 }
 </style>

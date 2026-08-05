@@ -84,7 +84,7 @@ function characterName(id: string): string {
               multiple
               :options="characters.map((c) => ({ label: c.name, value: c.id }))"
               placeholder="选择出战角色（1-4）"
-              style="width: 320px"
+              style="width: min(320px, 100%)"
             />
             <n-button type="primary" :loading="starting" @click="quickStart">
               快速开战
@@ -288,5 +288,23 @@ function characterName(id: string): string {
 .build-name {
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ---------- mobile: single-column cards, tighter container ---------- */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+    gap: 16px;
+  }
+  .char-grid {
+    grid-template-columns: 1fr;
+  }
+  .pack-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .pack-actions .n-select {
+    flex: 1 1 100%;
+  }
 }
 </style>

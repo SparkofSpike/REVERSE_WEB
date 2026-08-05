@@ -110,4 +110,27 @@ function logout() {
   gap: 8px;
   font-size: 13px;
 }
+
+/* ---------- mobile: compact top bar ---------- */
+@media (max-width: 768px) {
+  .nav {
+    gap: 10px;
+    padding: 0 12px;
+    height: 48px;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .nav-links {
+    gap: 2px;
+  }
+  .nav-links a {
+    padding: 6px 8px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .nav-user span {
+    display: none;
+  }
+}
 </style>

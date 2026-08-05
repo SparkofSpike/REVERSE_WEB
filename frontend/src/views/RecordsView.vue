@@ -145,4 +145,29 @@ function formatDate(iso: string): string {
 .record-time {
   font-size: 12px;
 }
+
+/* ---------- mobile: rows wrap instead of overflowing ---------- */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+  .record-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .record-main {
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+  .record-top {
+    flex-wrap: wrap;
+  }
+  .record-stats {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .record-chars {
+    word-break: break-word;
+  }
+}
 </style>

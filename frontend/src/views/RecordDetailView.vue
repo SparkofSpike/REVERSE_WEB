@@ -192,5 +192,25 @@ function formatDate(iso: string): string {
 
 .log-message {
   flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* ---------- mobile: logs wrap, grid goes single column ---------- */
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+  .summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .log-row {
+    gap: 6px;
+  }
+  .log-message {
+    font-size: 12px;
+    min-width: 0;
+    word-break: break-word;
+  }
 }
 </style>
