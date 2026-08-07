@@ -79,6 +79,30 @@ let diceSlowTimer = 0
 const actionBarText = ref('')
 // bottom speed track: current-round speed order (fastest first)
 const speedOrder = ref<{ id: string; name: string; roll: number }[]>([])
+// per-unit speed bar value for the current round
+const currentSpeed = ref<Record<string, number>>({})
+
+// min/max possible values of a combatant's speed dice, e.g. "2d6+2" -> [4, 14]
+function speedRange(c: CombatantView | undefined): [number, number] {
+  const m = /^(\d+)d(\d+)([+-]\d+)?$/.exec(c?.speedDice ?? '')
+  if (!m) return [1, 20]
+  const count = Number(m[1])
+  const sides = Number(m[2])
+  const mod = Number(m[3] ?? 0)
+  return [count + mod, count * sides + mod]
+}
+
+function randSpeed(c: CombatantView | undefined): number {
+  const [min, max] = speedRange(c)
+  return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+function speedFill(c: CombatantView): string {
+  const v = currentSpeed.value[c.id]
+  if (v === undefined) return '0%'
+  const [, max] = speedRange(c)
+  return `${Math.min(100, Math.round((v / max) * 100))}%`
+}
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
 const displayHp = ref<Record<string, number>>({})
@@ -443,14 +467,14 @@ async function playStep(step: QueuedStep) {
       diceAnims.value[c.id] = {
         seq: (prev?.seq ?? 0) + 1,
         roll: 0,
-        live: 1 + Math.floor(Math.random() * 20)
+        live: randSpeed(c)
       }
     }
     window.clearInterval(diceFastTimer)
     diceFastTimer = window.setInterval(() => {
       const next = { ...diceAnims.value }
       for (const id of Object.keys(next)) {
-        next[id] = { ...next[id], live: 1 + Math.floor(Math.random() * 20) }
+        next[id] = { ...next[id], live: randSpeed(battle.value?.combatants.find((x) => x.id === id)) }
       }
       diceAnims.value = next
     }, 60)
@@ -462,7 +486,9 @@ async function playStep(step: QueuedStep) {
       const next = { ...diceAnims.value }
       for (const id of ids) {
         const cur = next[id]
-        if (cur) next[id] = { ...cur, live: 1 + Math.floor(Math.random() * 20) }
+        if (cur) {
+          next[id] = { ...cur, live: randSpeed(battle.value?.combatants.find((x) => x.id === id)) }
+        }
       }
       diceAnims.value = next
     }, 300)
@@ -472,6 +498,7 @@ async function playStep(step: QueuedStep) {
   if (step.kind === 'speed') {
     const speeds = d.speeds as Record<string, number> | undefined
     if (speeds) {
+      currentSpeed.value = { ...speeds }
       // speed track: fastest first
       speedOrder.value = Object.entries(speeds)
         .map(([id, roll]) => ({
@@ -1106,6 +1133,12 @@ function statusText(c: CombatantView): string {
                   <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
                 </div>
               </div>
+              <div class="bar-row">
+                <div class="speed-bar">
+                  <div :style="{ width: speedFill(c) }"></div>
+                  <span class="bar-inline">{{ currentSpeed[c.id] ?? '–' }}</span>
+                </div>
+              </div>
               <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
             </div>
           </div>
@@ -1173,6 +1206,12 @@ function statusText(c: CombatantView): string {
                 <div class="energy-bar">
                   <div :style="{ width: energyPercent(c) }"></div>
                   <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
+                </div>
+              </div>
+              <div class="bar-row">
+                <div class="speed-bar">
+                  <div :style="{ width: speedFill(c) }"></div>
+                  <span class="bar-inline">{{ currentSpeed[c.id] ?? '–' }}</span>
                 </div>
               </div>
               <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
