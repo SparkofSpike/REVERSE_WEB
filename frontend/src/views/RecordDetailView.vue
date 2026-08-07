@@ -15,6 +15,14 @@ const message = useMessage()
 const record = ref<BattleRecordDetail | null>(null)
 const packs = ref<CardPack[]>([])
 
+// log type -> extra class. The raw type string is NEVER used as a class:
+// it collides with page classes (e.g. "card", "round") and pollutes the row.
+const LOG_TYPE_CLASS: Record<string, string> = {
+  damage: 'log-damage',
+  heal: 'log-heal',
+  performance: 'log-perf'
+}
+
 onMounted(async () => {
   try {
     const id = Number(route.params.id)
@@ -83,7 +91,7 @@ function formatDate(iso: string): string {
           <div class="log-list">
             <div v-for="(log, i) in record.logs" :key="i" class="log-row">
               <span class="log-round dim">R{{ log.round }}</span>
-              <span class="log-type" :class="log.type">{{ log.type }}</span>
+              <span class="log-type" :class="LOG_TYPE_CLASS[log.type]">{{ log.type }}</span>
               <span class="log-message">{{ log.message }}</span>
             </div>
           </div>
@@ -178,15 +186,15 @@ function formatDate(iso: string): string {
   text-transform: uppercase;
 }
 
-.log-type.damage {
+.log-type.log-damage {
   color: var(--danger);
 }
 
-.log-type.heal {
+.log-type.log-heal {
   color: var(--ok);
 }
 
-.log-type.performance {
+.log-type.log-perf {
   color: var(--warn);
 }
 
