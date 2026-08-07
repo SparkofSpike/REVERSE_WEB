@@ -57,9 +57,11 @@ const approaching = ref<Record<string, boolean>>({})
 // clash: both fighters charge further in and meet mid-field
 const clashing = ref<Record<string, boolean>>({})
 const shaking = ref<Record<string, boolean>>({})
+// "Clash!" label popped at the collision point (flash ring removed)
+const clashBurst = ref<{ seq: number } | null>(null)
 // precise lunge/clash offsets (px): computed per unit from the live layout
-// so a fighter always lands on the stage center (clash) or in front of its
-// locked target (attack), no matter how many units are deployed
+// so a fighter always lands in front of its locked target (attack) or on the
+// front-line engagement point (clash), no matter how many units are deployed
 const animDx = ref<Record<string, number>>({})
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
@@ -377,9 +379,12 @@ async function playStep(step: QueuedStep) {
     if (!actorId || !targetId) return
     pulseActor(actorId)
     pulseActor(targetId)
-    clashApproach(actorId)
-    clashApproach(targetId)
+    // engagement point between the player's front line and the locked enemy
+    const clashX = clashPointX(actorId, targetId)
+    clashApproach(actorId, clashX)
+    clashApproach(targetId, clashX)
     await sleep(CLASH_IMPACT)
+    clashBurst.value = { seq: (clashBurst.value?.seq ?? 0) + 1 }
     // impact shake: the clash keyframes keep the fighters ON the collision
     // spot (via --clash-x), so the shake reads as a real hit, not a jump
     // back home
@@ -491,11 +496,13 @@ function approachTarget(id: string, targetId?: string) {
   }, 860)
 }
 
-function clashApproach(id: string) {
-  // deeper charge than a plain lunge: both fighters meet exactly at the
-  // stage center and collide (they overlap at the collision point)
-  const dx = dxToCenter(id)
-  if (dx !== null) animDx.value[id] = dx
+function clashApproach(id: string, clashX: number | null) {
+  // deeper charge: both fighters meet at the engagement point (between the
+  // player's frontmost unit and the locked enemy) and collide there
+  if (clashX !== null) {
+    const dx = dxToPoint(id, clashX)
+    if (dx !== null) animDx.value[id] = dx
+  }
   clashing.value[id] = true
   window.setTimeout(() => {
     clashing.value[id] = false
@@ -511,18 +518,36 @@ function unitEl(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.unit[data-unit-id="${id}"]`)
 }
 
-function sceneWidthOf(el: HTMLElement): number | null {
-  const scene = el.closest<HTMLElement>('.stage-scene')
-  return scene ? scene.clientWidth : null
+// engagement point for a clash: the midpoint between the player's frontmost
+// living unit (closest to the enemy line) and the locked enemy. With a wide
+// player formation the fight happens at the front line, not deep inside the
+// player's own ranks (the stage center would land in the player's formation).
+function clashPointX(actorId: string, targetId: string): number | null {
+  const all = battle.value?.combatants ?? []
+  // the enemy participant in this clash (the locked enemy)
+  const enemyId =
+    all.find((c) => c.id === targetId)?.side === 'ENEMY' ? targetId : actorId
+  const enemyEl = unitEl(enemyId)
+  if (!enemyEl) return null
+  // the player's frontmost living unit: the one closest to the enemy line
+  let frontEl: HTMLElement | null = null
+  for (const c of all) {
+    if (c.side !== 'PLAYER' || c.dead) continue
+    const el = unitEl(c.id)
+    if (!el) continue
+    if (!frontEl || el.offsetLeft > frontEl.offsetLeft) frontEl = el
+  }
+  if (!frontEl) return null
+  const fx = frontEl.offsetLeft + frontEl.offsetWidth / 2
+  const ex = enemyEl.offsetLeft + enemyEl.offsetWidth / 2
+  return (fx + ex) / 2
 }
 
-// horizontal offset (px) that moves the unit's center onto the stage center
-function dxToCenter(id: string): number | null {
+// horizontal offset (px) that moves the unit's center onto the given x
+function dxToPoint(id: string, x: number): number | null {
   const el = unitEl(id)
   if (!el) return null
-  const w = sceneWidthOf(el)
-  if (w === null) return null
-  return w / 2 - (el.offsetLeft + el.offsetWidth / 2)
+  return x - (el.offsetLeft + el.offsetWidth / 2)
 }
 
 // horizontal offset (px) that places the unit right in front of the target,
@@ -992,6 +1017,11 @@ function statusText(c: CombatantView): string {
         <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
+        </div>
+
+        <!-- clash label: "Clash!" pops at the collision point -->
+        <div v-if="clashBurst" :key="clashBurst.seq" class="clash-burst">
+          <span class="clash-text">Clash!</span>
         </div>
         </div>
       </div>
@@ -1581,6 +1611,46 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
+/* ---------- clash label: "Clash!" pops at the collision point ---------- */
+/* (the white flash ring was removed on purpose - text only) */
+
+.clash-burst {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 7;
+  animation: clash-pop 0.7s ease-out forwards;
+}
+
+.clash-text {
+  position: relative;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(76, 194, 255, 0.95), 0 0 38px rgba(76, 194, 255, 0.55);
+}
+
+@keyframes clash-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 /* burst: expand outward from the center while fading out fast */
 @keyframes dash-burst {
   0% {
@@ -1871,6 +1941,9 @@ function statusText(c: CombatantView): string {
   .side-enemy .unit.clashing {
     --clash-x: var(--anim-dx, -120px);
     transform: translateX(var(--clash-x));
+  }
+  .clash-text {
+    font-size: 26px;
   }
   .float-num {
     font-size: 13px;

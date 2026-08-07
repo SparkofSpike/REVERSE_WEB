@@ -28,6 +28,9 @@ public class SpaErrorController implements ErrorController {
             // reset to 200 before forwarding, otherwise the original 404
             // status leaks through to the SPA response
             response.setStatus(HttpServletResponse.SC_OK);
+            // never cache the SPA shell: after a deploy the browser must
+            // re-fetch index.html to pick up the new hashed asset URLs
+            response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
             return "forward:/index.html";
         }
         response.setStatus(status);
