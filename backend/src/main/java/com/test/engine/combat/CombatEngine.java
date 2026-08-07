@@ -300,7 +300,10 @@ public class CombatEngine {
 
         state.log(CombatEvent.of(state.getRound(), "speed", "速度裁定完成："
                 + speedOrder.stream().map(c -> c.getName() + "(" + state.getRoundSpeed().get(c.getId()) + ")")
-                .reduce((a, b) -> a + " > " + b).orElse("")));
+                .reduce((a, b) -> a + " > " + b).orElse(""))
+                // structured rolls: combatant id -> resolved speed (drives the
+                // frontend dice pop animation)
+                .with("speeds", new LinkedHashMap<>(state.getRoundSpeed())));
 
         state.setPhase(CombatPhase.EXECUTION);
         // A round whose player decisions include an extra-action skill

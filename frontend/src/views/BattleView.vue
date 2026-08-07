@@ -329,7 +329,7 @@ function consumePerformanceEvent(ev: CombatEvent) {
 // action cue ahead of it for the same actor gets an implicit lunge of its
 // own so the attacker visibly moves before the hit lands.
 interface QueuedStep {
-  kind: 'action' | 'clash' | 'settle' | 'heal'
+  kind: 'action' | 'clash' | 'settle' | 'heal' | 'speed' | 'dash'
   ev: CombatEvent
 }
 
@@ -402,6 +402,30 @@ async function playStep(step: QueuedStep) {
     await sleep(CLASH_STEP - CLASH_IMPACT)
     return
   }
+  if (step.kind === 'dash') {
+    // last-dash duel process: after the overlay fades, the tied fighters
+    // show a dice-duel cue on their heads before the rolls settle
+    const participants = d.participants as string[] | undefined
+    await sleep(400) // let the last-dash overlay finish first
+    for (const id of participants ?? []) {
+      pushFloat(id, '🎲 ⚔️', 'action', 34, 1000)
+    }
+    await sleep(1000)
+    return
+  }
+  if (step.kind === 'speed') {
+    // speed rolls settle: every combatant pops its resolved speed on its
+    // head (dice emoji is a placeholder until the artist delivers the dice
+    // icon asset)
+    const speeds = d.speeds as Record<string, number> | undefined
+    if (speeds) {
+      for (const [id, roll] of Object.entries(speeds)) {
+        pushFloat(id, `🎲${roll}`, 'action', 26, 1200)
+      }
+    }
+    await sleep(1200)
+    return
+  }
   if (step.kind === 'action') {
     const actorId = d.actorId as string | undefined
     const action = d.action as string | undefined
@@ -470,6 +494,16 @@ function applyPerformance(ev: CombatEvent) {
 
   if (ev.type === 'clash') {
     enqueueStep({ kind: 'clash', ev })
+    return
+  }
+  if (ev.type === 'last_dash') {
+    // the overlay (triggerDash) is the one-shot cue; this step plays the
+    // duel process animation
+    enqueueStep({ kind: 'dash', ev })
+    return
+  }
+  if (ev.type === 'speed') {
+    enqueueStep({ kind: 'speed', ev })
     return
   }
   if (ev.type === 'damage') {

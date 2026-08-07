@@ -52,22 +52,36 @@ a {
 
 .hp-bar,
 .energy-bar {
-  height: 8px;
-  border-radius: 4px;
-  background: #1c2434;
+  height: 10px;
+  border-radius: 5px;
+  /* grooved track: dark base with a faint vertical texture */
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 2px, transparent 2px 5px),
+    #141a26;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.65);
   overflow: hidden;
   position: relative;
 }
 
 .hp-bar > div {
   height: 100%;
-  background: linear-gradient(90deg, #ff5d6c, #c22f44);
+  /* blood bar: glossy top highlight + red gradient fill */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(90deg, #ff7a85, #e0364f 55%, #a4122c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition: width 0.4s ease;
 }
 
 .energy-bar > div {
   height: 100%;
-  background: linear-gradient(90deg, #5ddb8c, #2ea86a);
+  /* energy bar: diagonal stripes + glossy highlight + green gradient */
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0 4px, transparent 4px 9px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(90deg, #6fe3a0, #2ea86a 55%, #1b7a4a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition: width 0.4s ease;
 }
 
