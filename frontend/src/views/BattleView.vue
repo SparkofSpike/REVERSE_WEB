@@ -1567,7 +1567,7 @@ function statusText(c: CombatantView): string {
   padding: 18px 30px 150px;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
-    url('/assets/fight_background.webp?v=2') center / cover no-repeat;
+    url('/assets/fight_background.webp?v=3') center / cover no-repeat;
   transition: transform 0.5s ease;
   will-change: transform;
 }
