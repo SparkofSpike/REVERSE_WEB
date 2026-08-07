@@ -203,7 +203,10 @@ function processLogs(logs: CombatEvent[]) {
     } else if (ev.type === 'round_end') {
       handleRoundEnd()
     } else if (ev.type === 'last_dash') {
-      triggerDash()
+      // wait for the rise curtain (and the queue gate) to finish before
+      // showing the overlay, otherwise the dash flash overlaps the curtain
+      const delay = Math.max(0, curtainGateUntil - Date.now())
+      window.setTimeout(() => triggerDash(), delay)
     }
     consumePerformanceEvent(ev)
     consumedLogs = i + 1
@@ -431,7 +434,9 @@ async function playStep(step: QueuedStep) {
     const ids = (d.ids as string[] | undefined) ?? []
     dashIds.value = ids
     dashActive.value = true
-    await sleep(400) // let the last-dash overlay finish first
+    // the overlay starts when the queue gate opens (same moment as this
+    // step) and runs 2.1s - wait it out before the scramble
+    await sleep(2100)
     const all = battle.value?.combatants.filter((c) => !c.dead) ?? []
     for (const c of all) {
       const prev = diceAnims.value[c.id]
@@ -1084,16 +1089,6 @@ function statusText(c: CombatantView): string {
               <span class="dice-face">🎲</span>
               <span class="dice-num" :class="diceAnims[c.id].result">{{ diceAnims[c.id].live }}</span>
             </div>
-            <!-- speed-roll dice: pops out, holds, morphs into the number -->
-            <div
-              v-if="diceAnims[c.id]"
-              :key="diceAnims[c.id].seq"
-              class="dice-pop"
-              :class="{ racing: dashActive }"
-            >
-              <span class="dice-face">🎲</span>
-              <span class="dice-num" :class="diceAnims[c.id].result">{{ diceAnims[c.id].live }}</span>
-            </div>
             <div class="info">
               <div class="name">
                 {{ c.name }}
@@ -1152,6 +1147,16 @@ function statusText(c: CombatantView): string {
                 >
                   {{ f.text }}
                 </div>
+            </div>
+            <!-- speed-roll dice: pops out, holds, morphs into the number -->
+            <div
+              v-if="diceAnims[c.id]"
+              :key="diceAnims[c.id].seq"
+              class="dice-pop"
+              :class="{ racing: dashActive }"
+            >
+              <span class="dice-face">🎲</span>
+              <span class="dice-num" :class="diceAnims[c.id].result">{{ diceAnims[c.id].live }}</span>
             </div>
             <div class="info">
               <div class="name">
