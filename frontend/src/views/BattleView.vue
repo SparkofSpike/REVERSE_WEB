@@ -57,8 +57,10 @@ const approaching = ref<Record<string, boolean>>({})
 // clash: both fighters charge further in and meet mid-field
 const clashing = ref<Record<string, boolean>>({})
 const shaking = ref<Record<string, boolean>>({})
-// impact burst shown at the point where the two fighters collide
-const clashBurst = ref<{ seq: number } | null>(null)
+// precise lunge/clash offsets (px): computed per unit from the live layout
+// so a fighter always lands on the stage center (clash) or in front of its
+// locked target (attack), no matter how many units are deployed
+const animDx = ref<Record<string, number>>({})
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
 const displayHp = ref<Record<string, number>>({})
@@ -378,7 +380,6 @@ async function playStep(step: QueuedStep) {
     clashApproach(actorId)
     clashApproach(targetId)
     await sleep(CLASH_IMPACT)
-    clashBurst.value = { seq: (clashBurst.value?.seq ?? 0) + 1 }
     // impact shake: the clash keyframes keep the fighters ON the collision
     // spot (via --clash-x), so the shake reads as a real hit, not a jump
     // back home
@@ -400,7 +401,7 @@ async function playStep(step: QueuedStep) {
     const melee =
       battle.value?.combatants.find((c) => c.id === actorId)?.baseDamageType === 'PHYSICAL'
     if (melee && targetId && targetId !== actorId) {
-      approachTarget(actorId)
+      approachTarget(actorId, targetId)
     }
     await sleep(ACTION_STEP)
     return
@@ -478,7 +479,12 @@ function pulseActor(id: string) {
   }, 980)
 }
 
-function approachTarget(id: string) {
+function approachTarget(id: string, targetId?: string) {
+  // lunge exactly to the locked target's front (plus a small gap), so the
+  // attacker visibly reaches the unit it is hitting - no matter how many
+  // units are deployed on either side
+  const dx = targetId ? dxToFront(id, targetId) : null
+  if (dx !== null) animDx.value[id] = dx
   approaching.value[id] = true
   window.setTimeout(() => {
     approaching.value[id] = false
@@ -486,11 +492,62 @@ function approachTarget(id: string) {
 }
 
 function clashApproach(id: string) {
-  // deeper charge than a plain lunge: both fighters meet mid-field
+  // deeper charge than a plain lunge: both fighters meet exactly at the
+  // stage center and collide (they overlap at the collision point)
+  const dx = dxToCenter(id)
+  if (dx !== null) animDx.value[id] = dx
   clashing.value[id] = true
   window.setTimeout(() => {
     clashing.value[id] = false
   }, CLASH_HOLD)
+}
+
+// ---- layout math ---------------------------------------------------------
+// The unit's offsetParent is the .stage-scene (position: absolute), so
+// offsetLeft/offsetWidth stay in un-zoomed layout coordinates - the scene's
+// camera dolly (transform: scale) never skews the computed travel distance.
+
+function unitEl(id: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`.unit[data-unit-id="${id}"]`)
+}
+
+function sceneWidthOf(el: HTMLElement): number | null {
+  const scene = el.closest<HTMLElement>('.stage-scene')
+  return scene ? scene.clientWidth : null
+}
+
+// horizontal offset (px) that moves the unit's center onto the stage center
+function dxToCenter(id: string): number | null {
+  const el = unitEl(id)
+  if (!el) return null
+  const w = sceneWidthOf(el)
+  if (w === null) return null
+  return w / 2 - (el.offsetLeft + el.offsetWidth / 2)
+}
+
+// horizontal offset (px) that places the unit right in front of the target,
+// leaving a small gap; direction is picked from the actual layout
+function dxToFront(id: string, targetId: string): number | null {
+  const el = unitEl(id)
+  const targetEl = unitEl(targetId)
+  if (!el || !targetEl) return null
+  const GAP = 8
+  const elRight = el.offsetLeft + el.offsetWidth
+  const targetRight = targetEl.offsetLeft + targetEl.offsetWidth
+  if (targetEl.offsetLeft >= elRight) {
+    // target is to the right: stop just left of it
+    return targetEl.offsetLeft - elRight - GAP
+  }
+  if (el.offsetLeft >= targetRight) {
+    // target is to the left: stop just right of it
+    return targetRight - el.offsetLeft + GAP
+  }
+  return null
+}
+
+function unitDxStyle(id: string) {
+  const dx = animDx.value[id]
+  return dx === undefined ? undefined : { '--anim-dx': `${dx}px` }
 }
 
 function shakeTarget(id: string) {
@@ -818,6 +875,8 @@ function statusText(c: CombatantView): string {
             v-for="c in players"
             :key="c.id"
             class="unit"
+            :data-unit-id="c.id"
+            :style="unitDxStyle(c.id)"
             :class="{
               dead: c.dead,
               performing: performing[c.id],
@@ -873,6 +932,8 @@ function statusText(c: CombatantView): string {
             v-for="c in enemies"
             :key="c.id"
             class="unit"
+            :data-unit-id="c.id"
+            :style="unitDxStyle(c.id)"
             :class="{
               dead: c.dead,
               performing: performing[c.id],
@@ -931,11 +992,6 @@ function statusText(c: CombatantView): string {
         <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
-        </div>
-
-        <!-- clash impact burst: both fighters collide mid-field -->
-        <div v-if="clashBurst" :key="clashBurst.seq" class="clash-burst">
-          <span class="clash-text">Clash!</span>
         </div>
         </div>
       </div>
@@ -1225,25 +1281,30 @@ function statusText(c: CombatantView): string {
   z-index: 3;
 }
 
+/* lunge: the exact travel distance is computed per unit from the live
+   layout (unitDxStyle -> --anim-dx), so the fighter always lands in front
+   of its locked target; the fixed values are only a fallback */
 .side-player .unit.approaching {
-  transform: translateX(100px);
+  transform: translateX(var(--anim-dx, 100px));
 }
 
 .side-enemy .unit.approaching {
-  transform: translateX(-100px);
+  transform: translateX(var(--anim-dx, -100px));
 }
 
-/* clash: both fighters charge and stop EXACTLY where they meet -
-   the distance is derived from the stage width, so it never overshoots
-   and never falls short, on any window size */
+/* clash: both fighters charge to the dead center of the stage and overlap
+   at the collision point; the distance is computed per unit (--anim-dx),
+   so they never fall short or cross through each other */
 .side-player .unit.clashing {
-  --clash-x: calc((min(1200px, 100vw) - 242px) / 2);
+  --clash-x: var(--anim-dx, calc((min(1200px, 100vw) - 242px) / 2));
   transform: translateX(var(--clash-x));
+  z-index: 7;
 }
 
 .side-enemy .unit.clashing {
-  --clash-x: calc((min(1200px, 100vw) - 242px) / -2);
+  --clash-x: var(--anim-dx, calc((min(1200px, 100vw) - 242px) / -2));
   transform: translateX(var(--clash-x));
+  z-index: 6;
 }
 
 /* clash impact shake: keeps each fighter on its collision spot instead of
@@ -1518,74 +1579,6 @@ function statusText(c: CombatantView): string {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-/* ---------- clash impact burst (mid-field collision flash) ---------- */
-
-.clash-burst {
-  position: absolute;
-  left: 50%;
-  top: 56%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 7;
-  animation: clash-pop 0.7s ease-out forwards;
-}
-
-.clash-burst::before {
-  content: '';
-  position: absolute;
-  width: 190px;
-  height: 190px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.95),
-    rgba(76, 194, 255, 0.55) 42%,
-    transparent 72%
-  );
-  animation: clash-ring 0.7s ease-out forwards;
-}
-
-.clash-text {
-  position: relative;
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #fff;
-  text-shadow: 0 0 16px rgba(76, 194, 255, 0.95), 0 0 38px rgba(76, 194, 255, 0.55);
-}
-
-@keyframes clash-pop {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.6);
-  }
-  22% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.06);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-
-@keyframes clash-ring {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.2);
-  }
-  25% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(1.5);
-  }
 }
 
 /* burst: expand outward from the center while fading out fast */
@@ -1866,25 +1859,18 @@ function statusText(c: CombatantView): string {
     text-align: center;
   }
   .side-player .unit.approaching {
-    transform: translateX(70px);
+    transform: translateX(var(--anim-dx, 70px));
   }
   .side-enemy .unit.approaching {
-    transform: translateX(-70px);
+    transform: translateX(var(--anim-dx, -70px));
   }
   .side-player .unit.clashing {
-    --clash-x: 120px;
+    --clash-x: var(--anim-dx, 120px);
     transform: translateX(var(--clash-x));
   }
   .side-enemy .unit.clashing {
-    --clash-x: -120px;
+    --clash-x: var(--anim-dx, -120px);
     transform: translateX(var(--clash-x));
-  }
-  .clash-text {
-    font-size: 26px;
-  }
-  .clash-burst::before {
-    width: 140px;
-    height: 140px;
   }
   .float-num {
     font-size: 13px;
