@@ -52,6 +52,8 @@ a {
 
 .hp-bar,
 .energy-bar {
+  flex: 1;
+  min-width: 0;
   height: 10px;
   border-radius: 5px;
   /* grooved track: dark base with a faint vertical texture */

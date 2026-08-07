@@ -61,6 +61,9 @@ const shaking = ref<Record<string, boolean>>({})
 // so a fighter always lands in front of its locked target (attack) or on the
 // front-line engagement point (clash), no matter how many units are deployed
 const animDx = ref<Record<string, number>>({})
+// speed-roll dice: pops out on each combatant's head, holds, then morphs
+// into the resolved number (dice emoji placeholder until the artist asset)
+const diceAnims = ref<Record<string, { seq: number; roll: number }>>({})
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
 const displayHp = ref<Record<string, number>>({})
@@ -420,10 +423,14 @@ async function playStep(step: QueuedStep) {
     const speeds = d.speeds as Record<string, number> | undefined
     if (speeds) {
       for (const [id, roll] of Object.entries(speeds)) {
-        pushFloat(id, `🎲${roll}`, 'action', 26, 1200)
+        const prev = diceAnims.value[id]
+        diceAnims.value[id] = { seq: (prev?.seq ?? 0) + 1, roll }
       }
+      window.setTimeout(() => {
+        diceAnims.value = {}
+      }, 1900)
     }
-    await sleep(1200)
+    await sleep(1900)
     return
   }
   if (step.kind === 'action') {
@@ -985,6 +992,16 @@ function statusText(c: CombatantView): string {
                   {{ f.text }}
                 </div>
             </div>
+            <!-- speed-roll dice: pops out, holds, morphs into the number -->
+            <div v-if="diceAnims[c.id]" :key="diceAnims[c.id].seq" class="dice-pop">
+              <span class="dice-face">🎲</span>
+              <span class="dice-num">{{ diceAnims[c.id].roll }}</span>
+            </div>
+            <!-- speed-roll dice: pops out, holds, morphs into the number -->
+            <div v-if="diceAnims[c.id]" :key="diceAnims[c.id].seq" class="dice-pop">
+              <span class="dice-face">🎲</span>
+              <span class="dice-num">{{ diceAnims[c.id].roll }}</span>
+            </div>
             <div class="info">
               <div class="name">
                 {{ c.name }}
@@ -1503,6 +1520,83 @@ function statusText(c: CombatantView): string {
   letter-spacing: 1px;
   text-shadow: 0 0 14px rgba(255, 200, 87, 0.7), 0 2px 6px rgba(0, 0, 0, 0.95);
   animation: action-pop 1.1s ease-out forwards;
+}
+
+/* ---------- speed-roll dice: pops out, holds, morphs into the number ---------- */
+.dice-pop {
+  position: absolute;
+  top: -62px;
+  left: 50%;
+  width: 36px;
+  height: 36px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.dice-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  line-height: 1;
+  animation: dice-roll 1.7s ease forwards;
+}
+
+.dice-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(76, 194, 255, 0.9);
+  animation: dice-reveal 1.7s ease forwards;
+}
+
+@keyframes dice-roll {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(-40deg);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1.2) rotate(12deg);
+  }
+  28% {
+    transform: scale(1) rotate(0deg);
+  }
+  58% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes dice-reveal {
+  0%,
+  66% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes action-pop {
