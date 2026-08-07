@@ -1548,7 +1548,7 @@ function statusText(c: CombatantView): string {
 
 .stage {
   position: relative;
-  min-height: 400px;
+  min-height: 450px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -1563,7 +1563,8 @@ function statusText(c: CombatantView): string {
   align-items: flex-end;
   justify-content: center;
   gap: 6%;
-  padding: 18px 30px 24px;
+  /* tall bottom padding reserves the hand-card zone inside the field */
+  padding: 18px 30px 150px;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
     url('/assets/fight_background.webp?v=2') center / cover no-repeat;
@@ -1673,7 +1674,7 @@ function statusText(c: CombatantView): string {
 .portrait-wrap {
   position: relative;
   width: 96px;
-  height: 126px;
+  height: 100px;
   display: flex;
   align-items: center;
   justify-content: center;
