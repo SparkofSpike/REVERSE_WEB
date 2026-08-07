@@ -85,6 +85,30 @@ const selectedCombatant = computed(
 function toggleSelect(id: string) {
   selectedId.value = selectedId.value === id ? null : id
 }
+// skill panel position: anchored inside the stage scene, next to the unit
+const skillPanelPos = ref<{ left?: string; right?: string; top: string } | null>(null)
+watch(selectedId, () => {
+  if (!selectedId.value) {
+    skillPanelPos.value = null
+    return
+  }
+  nextTick(() => {
+    const el = document.querySelector(`.unit[data-unit-id="${selectedId.value}"]`) as HTMLElement | null
+    const scene = document.querySelector('.stage-scene') as HTMLElement | null
+    if (!el || !scene) return
+    const left = el.offsetLeft
+    const top = el.offsetTop
+    const w = el.offsetWidth
+    const panelW = 138 * 3 + 16 + 20
+    if (left + w + 12 + panelW <= scene.clientWidth) {
+      // plenty of room on the right: panel opens to the right of the unit
+      skillPanelPos.value = { left: `${left + w + 12}px`, top: `${Math.max(8, top)}px` }
+    } else {
+      // unit near the right edge: panel opens to its left
+      skillPanelPos.value = { right: `${scene.clientWidth - left + 12}px`, top: `${Math.max(8, top)}px` }
+    }
+  })
+})
 // bottom speed track: current-round speed order (fastest first)
 const speedOrder = ref<{ id: string; name: string; roll: number }[]>([])
 // per-unit speed bar value for the current round
@@ -1248,39 +1272,74 @@ function statusText(c: CombatantView): string {
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
         </div>
-        </div>
-      </div>
 
-      <!-- selected-combatant skill cards (fixed right panel) -->
-      <div v-if="selectedCombatant" class="skill-panel">
-        <div class="skill-panel-head">
-          <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
-          <span class="skill-panel-close" @click="selectedId = null">✕</span>
-        </div>
-        <div class="skill-cards">
+        <!-- generic skill hand: overlaid at the bottom of the battlefield -->
+        <div v-if="inDecision" class="hand-overlay">
           <div
-            v-for="sk in selectedCombatant.skills"
-            :key="sk.id"
-            class="card-face skill"
-            :class="{ upgraded: sk.upgraded }"
+            v-for="card in battle.playerHand"
+            :key="card.id"
+            class="card-face generic"
+            @click="playCardFromHand(card.id)"
           >
-            <img
-              class="face-img"
-              :src="sk.upgraded ? '/assets/advanced_skill.webp' : '/assets/skill_card.webp'"
-              alt=""
-            />
-            <div class="face-text">
-              <div class="face-name">
-                {{ sk.name }}
-                <span class="face-cost">{{ sk.energyCost }}EP</span>
-                <span v-if="(selectedCombatant.cooldowns[sk.id] ?? 0) > 0" class="face-cd">
-                  CD{{ selectedCombatant.cooldowns[sk.id] }}
-                </span>
-                <span v-if="sk.upgraded" class="face-up">升变</span>
-              </div>
-              <div class="face-desc">{{ sk.description }}</div>
+            <img class="face-img" src="/assets/generic_skill_card.webp" alt="" />
+            <div class="face-text dark">
+              <div class="face-name">{{ card.name }}</div>
+              <div class="face-desc">{{ card.description }}</div>
             </div>
           </div>
+          <span v-if="battle.playerHand.length === 0" class="dim hand-empty">无手牌</span>
+        </div>
+
+        <!-- special perk offers: centered on the battlefield (middle card out) -->
+        <div v-if="inSpecialPerk" class="perk-overlay">
+          <div
+            v-for="p in battle.specialPerkOptions"
+            :key="p.id"
+            class="card-face perk"
+            @click="chooseSpecialPerk(p.id)"
+          >
+            <img class="face-img" src="/assets/core_perk.webp" alt="" />
+            <div class="face-text">
+              <div class="face-name">{{ p.name }}</div>
+              <div class="face-desc">{{ p.description }}</div>
+            </div>
+          </div>
+          <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
+          <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
+        </div>
+
+        <!-- selected-combatant skill cards: anchored next to the unit -->
+        <div v-if="selectedCombatant && skillPanelPos" class="skill-panel" :style="skillPanelPos">
+          <div class="skill-panel-head">
+            <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
+            <span class="skill-panel-close" @click="selectedId = null">✕</span>
+          </div>
+          <div class="skill-cards">
+            <div
+              v-for="sk in selectedCombatant.skills"
+              :key="sk.id"
+              class="card-face skill"
+              :class="{ upgraded: sk.upgraded }"
+            >
+              <img
+                class="face-img"
+                :src="sk.upgraded ? '/assets/advanced_skill.webp' : '/assets/skill_card.webp'"
+                alt=""
+              />
+              <div class="face-text">
+                <div class="face-name">
+                  {{ sk.name }}
+                  <span class="face-cost">{{ sk.energyCost }}EP</span>
+                  <span v-if="(selectedCombatant.cooldowns[sk.id] ?? 0) > 0" class="face-cd">
+                    CD{{ selectedCombatant.cooldowns[sk.id] }}
+                  </span>
+                  <span v-if="sk.upgraded" class="face-up">升变</span>
+                </div>
+                <div class="face-desc">{{ sk.description }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
         </div>
       </div>
 
@@ -1369,42 +1428,7 @@ function statusText(c: CombatantView): string {
         </n-button>
       </div>
 
-      <!-- generic skill hand + special perk offers -->
-      <div v-if="inDecision || inSpecialPerk" class="panel footer-panel">
-        <div v-if="inSpecialPerk" class="hand perk-offers">
-          <span class="dim">特殊词条</span>
-          <div
-            v-for="p in battle.specialPerkOptions"
-            :key="p.id"
-            class="card-face perk"
-            @click="chooseSpecialPerk(p.id)"
-          >
-            <img class="face-img" src="/assets/core_perk.webp" alt="" />
-            <div class="face-text">
-              <div class="face-name">{{ p.name }}</div>
-              <div class="face-desc">{{ p.description }}</div>
-            </div>
-          </div>
-          <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
-          <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
-        </div>
-        <div v-if="inDecision" class="hand hand-cards">
-          <span class="dim">手牌</span>
-          <div
-            v-for="card in battle.playerHand"
-            :key="card.id"
-            class="card-face generic"
-            @click="playCardFromHand(card.id)"
-          >
-            <img class="face-img" src="/assets/generic_skill_card.webp" alt="" />
-            <div class="face-text dark">
-              <div class="face-name">{{ card.name }}</div>
-              <div class="face-desc">{{ card.description }}</div>
-            </div>
-          </div>
-          <span v-if="battle.playerHand.length === 0" class="dim">无手牌</span>
-        </div>
-      </div>
+
 
       <!-- battle log -->
       <section class="panel log-panel">
@@ -2226,17 +2250,14 @@ function statusText(c: CombatantView): string {
 
 /* selected-combatant skill panel */
 .skill-panel {
-  position: fixed;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 40;
+  position: absolute;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
   border-radius: 12px;
-  background: rgba(11, 14, 20, 0.82);
+  background: rgba(11, 14, 20, 0.85);
   border: 1px solid rgba(255, 200, 87, 0.3);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
 }
@@ -2262,11 +2283,56 @@ function statusText(c: CombatantView): string {
 }
 .skill-cards {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: row;
+  gap: 8px;
 }
 .skill-cards .card-face {
   width: 138px;
+}
+
+/* hand overlay: inside the battlefield, bottom center */
+.hand-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  z-index: 20;
+}
+.hand-overlay .card-face {
+  margin-left: -18px;
+}
+.hand-overlay .card-face:first-child {
+  margin-left: 0;
+}
+.hand-empty {
+  padding: 6px 10px;
+  background: rgba(11, 14, 20, 0.6);
+  border-radius: 6px;
+}
+
+/* special perk offers: centered on the battlefield, middle card stands out */
+.perk-overlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  z-index: 25;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(11, 14, 20, 0.6);
+  border: 1px solid rgba(255, 200, 87, 0.25);
+}
+.perk-overlay .card-face {
+  width: 128px;
+}
+.perk-overlay .card-face:nth-child(2) {
+  transform: scale(1.08);
+  z-index: 2;
 }
 
 /* selected unit highlight */
