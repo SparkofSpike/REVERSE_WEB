@@ -87,6 +87,23 @@ a {
   transition: width 0.4s ease;
 }
 
+/* value text drawn inside the bar, centered */
+.bar-inline {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  z-index: 1;
+  white-space: nowrap;
+}
+
 .shield-tag {
   color: var(--shield);
   font-size: 12px;

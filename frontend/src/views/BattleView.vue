@@ -1009,13 +1009,17 @@ function statusText(c: CombatantView): string {
               </div>
               <div class="bar-row">
                 <span class="bar-label">HP</span>
-                <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-                <span class="bar-num">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
+                <div class="hp-bar">
+                  <div :style="{ width: hpPercent(c) }"></div>
+                  <span class="bar-inline">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
+                </div>
               </div>
               <div class="bar-row">
                 <span class="bar-label">EP</span>
-                <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
-                <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
+                <div class="energy-bar">
+                  <div :style="{ width: energyPercent(c) }"></div>
+                  <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
+                </div>
               </div>
               <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
             </div>
@@ -1066,13 +1070,17 @@ function statusText(c: CombatantView): string {
               </div>
               <div class="bar-row">
                 <span class="bar-label">HP</span>
-                <div class="hp-bar"><div :style="{ width: hpPercent(c) }"></div></div>
-                <span class="bar-num">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
+                <div class="hp-bar">
+                  <div :style="{ width: hpPercent(c) }"></div>
+                  <span class="bar-inline">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
+                </div>
               </div>
               <div class="bar-row">
                 <span class="bar-label">EP</span>
-                <div class="energy-bar"><div :style="{ width: energyPercent(c) }"></div></div>
-                <span class="bar-num">{{ c.energy }}/{{ c.maxEnergy }}</span>
+                <div class="energy-bar">
+                  <div :style="{ width: energyPercent(c) }"></div>
+                  <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
+                </div>
               </div>
               <div v-if="statusText(c)" class="unit-status dim">{{ statusText(c) }}</div>
             </div>
@@ -1654,13 +1662,6 @@ function statusText(c: CombatantView): string {
   flex-shrink: 0;
 }
 
-.bar-num {
-  font-size: 10px;
-  min-width: 48px;
-  text-align: right;
-  color: var(--text-dim);
-}
-
 .unit-status {
   font-size: 10px;
   text-align: center;
@@ -2021,9 +2022,6 @@ function statusText(c: CombatantView): string {
     height: 6px;
   }
   .bar-label {
-    font-size: 10px;
-  }
-  .bar-num {
     font-size: 10px;
   }
   .unit-status {
