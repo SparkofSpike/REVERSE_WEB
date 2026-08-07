@@ -77,6 +77,14 @@ let diceFastTimer = 0
 let diceSlowTimer = 0
 // top action bar: text of the action currently playing
 const actionBarText = ref('')
+// selected combatant: click a unit to inspect its skill cards on the right
+const selectedId = ref<string | null>(null)
+const selectedCombatant = computed(
+  () => battle.value?.combatants.find((c) => c.id === selectedId.value) ?? null
+)
+function toggleSelect(id: string) {
+  selectedId.value = selectedId.value === id ? null : id
+}
 // bottom speed track: current-round speed order (fastest first)
 const speedOrder = ref<{ id: string; name: string; roll: number }[]>([])
 // per-unit speed bar value for the current round
@@ -1052,9 +1060,17 @@ function statusText(c: CombatantView): string {
       <section v-if="inInitialPerk" class="panel perk-panel">
         <h3>选择初始词条</h3>
         <div class="perk-grid">
-          <div v-for="p in battle.initialPerkOptions" :key="p.id" class="perk-card" @click="chooseInitialPerk(p.id)">
-            <div class="perk-name accent">{{ p.name }}</div>
-            <div class="perk-desc">{{ p.description }}</div>
+          <div
+            v-for="p in battle.initialPerkOptions"
+            :key="p.id"
+            class="card-face perk-wide"
+            @click="chooseInitialPerk(p.id)"
+          >
+            <img class="face-img" src="/assets/core_perk.webp" alt="" />
+            <div class="face-text">
+              <div class="face-name">{{ p.name }}</div>
+              <div class="face-desc">{{ p.description }}</div>
+            </div>
           </div>
         </div>
       </section>
@@ -1081,8 +1097,10 @@ function statusText(c: CombatantView): string {
               performing: performing[c.id],
               approaching: approaching[c.id],
               clashing: clashing[c.id],
-              shaking: shaking[c.id]
+              shaking: shaking[c.id],
+              selected: selectedId === c.id
             }"
+            @click="toggleSelect(c.id)"
           >
             <div class="portrait-wrap">
               <img
@@ -1156,8 +1174,10 @@ function statusText(c: CombatantView): string {
               performing: performing[c.id],
               approaching: approaching[c.id],
               clashing: clashing[c.id],
-              shaking: shaking[c.id]
+              shaking: shaking[c.id],
+              selected: selectedId === c.id
             }"
+            @click="toggleSelect(c.id)"
           >
             <div class="portrait-wrap">
               <img
@@ -1228,6 +1248,39 @@ function statusText(c: CombatantView): string {
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
         </div>
+        </div>
+      </div>
+
+      <!-- selected-combatant skill cards (fixed right panel) -->
+      <div v-if="selectedCombatant" class="skill-panel">
+        <div class="skill-panel-head">
+          <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
+          <span class="skill-panel-close" @click="selectedId = null">✕</span>
+        </div>
+        <div class="skill-cards">
+          <div
+            v-for="sk in selectedCombatant.skills"
+            :key="sk.id"
+            class="card-face skill"
+            :class="{ upgraded: sk.upgraded }"
+          >
+            <img
+              class="face-img"
+              :src="sk.upgraded ? '/assets/advanced_skill.webp' : '/assets/skill_card.webp'"
+              alt=""
+            />
+            <div class="face-text">
+              <div class="face-name">
+                {{ sk.name }}
+                <span class="face-cost">{{ sk.energyCost }}EP</span>
+                <span v-if="(selectedCombatant.cooldowns[sk.id] ?? 0) > 0" class="face-cd">
+                  CD{{ selectedCombatant.cooldowns[sk.id] }}
+                </span>
+                <span v-if="sk.upgraded" class="face-up">升变</span>
+              </div>
+              <div class="face-desc">{{ sk.description }}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1318,20 +1371,36 @@ function statusText(c: CombatantView): string {
 
       <!-- generic skill hand + special perk offers -->
       <div v-if="inDecision || inSpecialPerk" class="panel footer-panel">
-        <div v-if="inSpecialPerk" class="hand">
+        <div v-if="inSpecialPerk" class="hand perk-offers">
           <span class="dim">特殊词条</span>
-          <div v-for="p in battle.specialPerkOptions" :key="p.id" class="card" @click="chooseSpecialPerk(p.id)" :title="p.description">
-            <div class="card-name accent">{{ p.name }}</div>
-            <div class="card-desc dim">{{ p.description }}</div>
+          <div
+            v-for="p in battle.specialPerkOptions"
+            :key="p.id"
+            class="card-face perk"
+            @click="chooseSpecialPerk(p.id)"
+          >
+            <img class="face-img" src="/assets/core_perk.webp" alt="" />
+            <div class="face-text">
+              <div class="face-name">{{ p.name }}</div>
+              <div class="face-desc">{{ p.description }}</div>
+            </div>
           </div>
           <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
           <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
         </div>
-        <div v-if="inDecision" class="hand">
+        <div v-if="inDecision" class="hand hand-cards">
           <span class="dim">手牌</span>
-          <div v-for="card in battle.playerHand" :key="card.id" class="card" @click="playCardFromHand(card.id)" :title="card.description">
-            <div class="card-name accent">{{ card.name }}</div>
-            <div class="card-desc dim">{{ card.description }}</div>
+          <div
+            v-for="card in battle.playerHand"
+            :key="card.id"
+            class="card-face generic"
+            @click="playCardFromHand(card.id)"
+          >
+            <img class="face-img" src="/assets/generic_skill_card.webp" alt="" />
+            <div class="face-text dark">
+              <div class="face-name">{{ card.name }}</div>
+              <div class="face-desc">{{ card.description }}</div>
+            </div>
           </div>
           <span v-if="battle.playerHand.length === 0" class="dim">无手牌</span>
         </div>
@@ -2038,6 +2107,173 @@ function statusText(c: CombatantView): string {
 
 .skill-desc {
   margin-bottom: 0;
+}
+
+/* ---------- card faces: artist art + bottom text overlay ---------- */
+.card-face {
+  position: relative;
+  width: 112px;
+  aspect-ratio: 4 / 5;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.card-face:hover {
+  transform: translateY(-6px) scale(1.05);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.7);
+  z-index: 3;
+}
+.face-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.face-text {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 7px;
+  border-radius: 6px;
+  color: #fff;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 30%);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+.face-text.dark {
+  color: #191919;
+  text-shadow: none;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.92) 30%);
+}
+.face-name {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.face-desc {
+  font-size: 10px;
+  line-height: 1.35;
+  opacity: 0.92;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.face-cost {
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(30, 136, 229, 0.92);
+  vertical-align: 1px;
+}
+.face-cd {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(229, 57, 53, 0.92);
+  vertical-align: 1px;
+}
+.face-up {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #3b2a00;
+  background: linear-gradient(180deg, #ffe082, #ffb300);
+  vertical-align: 1px;
+}
+
+/* hand: hearthstone-style overlap */
+.hand-cards {
+  display: flex;
+  align-items: flex-end;
+}
+.hand-cards .card-face {
+  margin-left: -18px;
+}
+.hand-cards .card-face:first-child {
+  margin-left: 0;
+}
+
+/* special perk offers: middle card stands out */
+.perk-offers .card-face {
+  width: 128px;
+}
+.perk-offers .card-face:nth-child(2) {
+  transform: scale(1.08);
+  z-index: 2;
+}
+
+/* initial perk cards */
+.perk-wide {
+  width: 150px;
+}
+
+/* selected-combatant skill panel */
+.skill-panel {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(11, 14, 20, 0.82);
+  border: 1px solid rgba(255, 200, 87, 0.3);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+}
+.skill-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.skill-panel-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffe08a;
+}
+.skill-panel-close {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 0 4px;
+}
+.skill-panel-close:hover {
+  color: #fff;
+}
+.skill-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skill-cards .card-face {
+  width: 138px;
+}
+
+/* selected unit highlight */
+.unit.selected {
+  outline: 2px solid rgba(255, 200, 87, 0.85);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 /* ---------- top action bar: text of the running cue ---------- */
