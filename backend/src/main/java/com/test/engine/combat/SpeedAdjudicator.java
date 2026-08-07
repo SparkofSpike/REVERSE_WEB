@@ -151,7 +151,8 @@ public class SpeedAdjudicator {
         List<String> names = dashPool.stream().map(Combatant::getName).toList();
         state.log(CombatEvent.of(state.getRound(), "last_dash",
                 "生死时速！" + String.join("、", names) + " 进行速度对决，一分高下。")
-                .with("participants", names));
+                .with("participants", names)
+                .with("ids", dashPool.stream().map(Combatant::getId).toList()));
     }
 
     /**

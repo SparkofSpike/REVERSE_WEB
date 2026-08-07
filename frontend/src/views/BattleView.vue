@@ -63,7 +63,22 @@ const shaking = ref<Record<string, boolean>>({})
 const animDx = ref<Record<string, number>>({})
 // speed-roll dice: pops out on each combatant's head, holds, then morphs
 // into the resolved number (dice emoji placeholder until the artist asset)
-const diceAnims = ref<Record<string, { seq: number; roll: number }>>({})
+interface DiceAnim {
+  seq: number
+  roll: number
+  live: number
+  result?: 'win' | 'lose'
+}
+const diceAnims = ref<Record<string, DiceAnim>>({})
+// last-dash performance: participant ids + whether the dash show is playing
+const dashIds = ref<string[]>([])
+const dashActive = ref(false)
+let diceFastTimer = 0
+let diceSlowTimer = 0
+// top action bar: text of the action currently playing
+const actionBarText = ref('')
+// bottom speed track: current-round speed order (fastest first)
+const speedOrder = ref<{ id: string; name: string; roll: number }[]>([])
 // the HP bar keeps its old value until the matching damage/heal cue lands,
 // so HP does not drop for every unit at once when the response arrives
 const displayHp = ref<Record<string, number>>({})
@@ -373,6 +388,7 @@ async function pumpQueue() {
       await playStep(step)
     }
   } finally {
+    actionBarText.value = ''
     animEnd()
     pumpRunning = false
   }
@@ -380,6 +396,8 @@ async function pumpQueue() {
 
 async function playStep(step: QueuedStep) {
   const d = (step.ev.data ?? {}) as Record<string, unknown>
+  // action bar mirrors the human-readable message of the running cue
+  actionBarText.value = step.ev.message ?? ''
   if (step.kind === 'clash') {
     // mutual attack: BOTH fighters charge into each other, collide at the
     // midpoint (impact burst + stagger), then run back to their own spot
@@ -406,25 +424,86 @@ async function playStep(step: QueuedStep) {
     return
   }
   if (step.kind === 'dash') {
-    // last-dash duel process: after the overlay fades, the tied fighters
-    // show a dice-duel cue on their heads before the rolls settle
-    const participants = d.participants as string[] | undefined
+    // last-dash performance: after the overlay fades, every combatant's
+    // speed number scrambles fast on its head, then the tied pair slows
+    // down; the following speed step locks the final values (winner green,
+    // loser red). The plain speed-dice animation is untouched.
+    const ids = (d.ids as string[] | undefined) ?? []
+    dashIds.value = ids
+    dashActive.value = true
     await sleep(400) // let the last-dash overlay finish first
-    for (const id of participants ?? []) {
-      pushFloat(id, '🎲 ⚔️', 'action', 34, 1000)
+    const all = battle.value?.combatants.filter((c) => !c.dead) ?? []
+    for (const c of all) {
+      const prev = diceAnims.value[c.id]
+      diceAnims.value[c.id] = {
+        seq: (prev?.seq ?? 0) + 1,
+        roll: 0,
+        live: 1 + Math.floor(Math.random() * 20)
+      }
     }
+    window.clearInterval(diceFastTimer)
+    diceFastTimer = window.setInterval(() => {
+      const next = { ...diceAnims.value }
+      for (const id of Object.keys(next)) {
+        next[id] = { ...next[id], live: 1 + Math.floor(Math.random() * 20) }
+      }
+      diceAnims.value = next
+    }, 60)
     await sleep(1000)
+    // the tied pair slows down
+    window.clearInterval(diceFastTimer)
+    window.clearInterval(diceSlowTimer)
+    diceSlowTimer = window.setInterval(() => {
+      const next = { ...diceAnims.value }
+      for (const id of ids) {
+        const cur = next[id]
+        if (cur) next[id] = { ...cur, live: 1 + Math.floor(Math.random() * 20) }
+      }
+      diceAnims.value = next
+    }, 300)
+    await sleep(1600)
     return
   }
   if (step.kind === 'speed') {
-    // speed rolls settle: every combatant pops its resolved speed on its
-    // head (dice emoji is a placeholder until the artist delivers the dice
-    // icon asset)
     const speeds = d.speeds as Record<string, number> | undefined
     if (speeds) {
+      // speed track: fastest first
+      speedOrder.value = Object.entries(speeds)
+        .map(([id, roll]) => ({
+          id,
+          roll,
+          name: battle.value?.combatants.find((c) => c.id === id)?.name ?? id
+        }))
+        .sort((a, b) => b.roll - a.roll)
+      if (dashIds.value.length > 0) {
+        // dash round: lock the scrambled numbers onto the final rolls;
+        // the tied pair shows winner green / loser red
+        const dash = dashIds.value
+        const winRoll = Math.max(...dash.map((id) => speeds[id] ?? 0))
+        window.clearInterval(diceSlowTimer)
+        const settled: Record<string, DiceAnim> = {}
+        for (const [id, roll] of Object.entries(speeds)) {
+          const prev = diceAnims.value[id]
+          settled[id] = {
+            seq: (prev?.seq ?? 0) + 1,
+            roll,
+            live: roll,
+            result: dash.includes(id) ? (roll === winRoll ? 'win' : 'lose') : undefined
+          }
+        }
+        diceAnims.value = settled
+        window.setTimeout(() => {
+          diceAnims.value = {}
+          dashIds.value = []
+          dashActive.value = false
+        }, 1400)
+        await sleep(1500)
+        return
+      }
+      // normal round: plain dice pop animation (unchanged)
       for (const [id, roll] of Object.entries(speeds)) {
         const prev = diceAnims.value[id]
-        diceAnims.value[id] = { seq: (prev?.seq ?? 0) + 1, roll }
+        diceAnims.value[id] = { seq: (prev?.seq ?? 0) + 1, roll, live: roll }
       }
       window.setTimeout(() => {
         diceAnims.value = {}
@@ -948,6 +1027,9 @@ function statusText(c: CombatantView): string {
         </div>
       </section>
 
+      <!-- top action bar: text of the action currently playing -->
+      <div class="action-bar" :class="{ active: !!actionBarText }">{{ actionBarText }}</div>
+
       <!-- battle stage: face-to-face showdown in the middle of the field -->
       <div class="stage">
         <div
@@ -993,14 +1075,24 @@ function statusText(c: CombatantView): string {
                 </div>
             </div>
             <!-- speed-roll dice: pops out, holds, morphs into the number -->
-            <div v-if="diceAnims[c.id]" :key="diceAnims[c.id].seq" class="dice-pop">
+            <div
+              v-if="diceAnims[c.id]"
+              :key="diceAnims[c.id].seq"
+              class="dice-pop"
+              :class="{ racing: dashActive }"
+            >
               <span class="dice-face">🎲</span>
-              <span class="dice-num">{{ diceAnims[c.id].roll }}</span>
+              <span class="dice-num" :class="diceAnims[c.id].result">{{ diceAnims[c.id].live }}</span>
             </div>
             <!-- speed-roll dice: pops out, holds, morphs into the number -->
-            <div v-if="diceAnims[c.id]" :key="diceAnims[c.id].seq" class="dice-pop">
+            <div
+              v-if="diceAnims[c.id]"
+              :key="diceAnims[c.id].seq"
+              class="dice-pop"
+              :class="{ racing: dashActive }"
+            >
               <span class="dice-face">🎲</span>
-              <span class="dice-num">{{ diceAnims[c.id].roll }}</span>
+              <span class="dice-num" :class="diceAnims[c.id].result">{{ diceAnims[c.id].live }}</span>
             </div>
             <div class="info">
               <div class="name">
@@ -1008,14 +1100,12 @@ function statusText(c: CombatantView): string {
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
               </div>
               <div class="bar-row">
-                <span class="bar-label">HP</span>
                 <div class="hp-bar">
                   <div :style="{ width: hpPercent(c) }"></div>
                   <span class="bar-inline">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
                 </div>
               </div>
               <div class="bar-row">
-                <span class="bar-label">EP</span>
                 <div class="energy-bar">
                   <div :style="{ width: energyPercent(c) }"></div>
                   <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
@@ -1069,14 +1159,12 @@ function statusText(c: CombatantView): string {
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
               </div>
               <div class="bar-row">
-                <span class="bar-label">HP</span>
                 <div class="hp-bar">
                   <div :style="{ width: hpPercent(c) }"></div>
                   <span class="bar-inline">{{ displayHpOf(c) }}/{{ c.maxHp }}</span>
                 </div>
               </div>
               <div class="bar-row">
-                <span class="bar-label">EP</span>
                 <div class="energy-bar">
                   <div :style="{ width: energyPercent(c) }"></div>
                   <span class="bar-inline">{{ c.energy }}/{{ c.maxEnergy }}</span>
@@ -1097,6 +1185,17 @@ function statusText(c: CombatantView): string {
           <img src="/assets/last_dash.webp" alt="决速时刻" />
         </div>
         </div>
+      </div>
+
+      <!-- bottom speed track: current-round speed order -->
+      <div class="speed-track" v-if="speedOrder.length">
+        <template v-for="(sp, i) in speedOrder" :key="sp.id">
+          <span v-if="i > 0" class="speed-arrow">›</span>
+          <div class="speed-node">
+            <span class="speed-name">{{ sp.name }}</span>
+            <span class="speed-roll">{{ sp.roll }}</span>
+          </div>
+        </template>
       </div>
 
       <!-- decision panel: one control row per alive player (extra-action
@@ -1360,11 +1459,11 @@ function statusText(c: CombatantView): string {
   gap: 6px;
   width: 118px;
   padding: 8px;
-  border-radius: 10px;
-  background: rgba(18, 23, 32, 0.66);
-  border: 1px solid rgba(35, 44, 61, 0.85);
-  backdrop-filter: blur(2px);
-  transition: transform 0.55s ease, opacity 0.35s ease, border-color 0.2s;
+  /* no card box around the character: transparent, the battlefield shows
+     through (per design: units stand directly on the field) */
+  background: transparent;
+  border: none;
+  transition: transform 0.55s ease, opacity 0.35s ease;
 }
 
 .unit.dead {
@@ -1379,8 +1478,7 @@ function statusText(c: CombatantView): string {
 .unit.performing {
   /* no solo scale here: the whole scene zooms in (camera dolly), so all
      units grow together - scaling only one unit reads as sprite growth */
-  border-color: rgba(76, 194, 255, 0.85);
-  box-shadow: 0 0 28px rgba(76, 194, 255, 0.4);
+  box-shadow: 0 0 28px rgba(76, 194, 255, 0.45);
   z-index: 3;
 }
 
@@ -1567,6 +1665,25 @@ function statusText(c: CombatantView): string {
   animation: dice-reveal 1.7s ease forwards;
 }
 
+.dice-num.win {
+  color: #5ddb8c;
+  text-shadow: 0 0 12px rgba(93, 219, 140, 0.95);
+}
+
+.dice-num.lose {
+  color: #ff5d6c;
+  text-shadow: 0 0 12px rgba(255, 93, 108, 0.95);
+}
+
+/* dash performance: number visible from the start, dice face hidden */
+.dice-pop.racing .dice-face {
+  display: none;
+}
+.dice-pop.racing .dice-num {
+  animation: none;
+  opacity: 1;
+}
+
 @keyframes dice-roll {
   0% {
     opacity: 0;
@@ -1653,13 +1770,6 @@ function statusText(c: CombatantView): string {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-
-.bar-label {
-  width: 20px;
-  font-size: 10px;
-  color: var(--text-dim);
-  flex-shrink: 0;
 }
 
 .unit-status {
@@ -1886,6 +1996,62 @@ function statusText(c: CombatantView): string {
   margin-bottom: 0;
 }
 
+/* ---------- top action bar: text of the running cue ---------- */
+.action-bar {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffe08a;
+  background: rgba(11, 14, 20, 0.55);
+  border: 1px solid rgba(255, 200, 87, 0.25);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.action-bar.active {
+  opacity: 1;
+}
+
+/* ---------- bottom speed track: current-round speed order ---------- */
+.speed-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(11, 14, 20, 0.55);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.speed-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(76, 194, 255, 0.12);
+  border: 1px solid rgba(76, 194, 255, 0.35);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.speed-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.speed-roll {
+  font-weight: 800;
+  color: #ffe08a;
+}
+.speed-arrow {
+  color: var(--text-dim);
+}
+
 /* ---------- hand / log ---------- */
 
 .footer-panel {
@@ -2020,9 +2186,6 @@ function statusText(c: CombatantView): string {
   .hp-bar,
   .energy-bar {
     height: 6px;
-  }
-  .bar-label {
-    font-size: 10px;
   }
   .unit-status {
     font-size: 10px;
