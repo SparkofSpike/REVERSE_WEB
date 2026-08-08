@@ -1548,7 +1548,8 @@ function statusText(c: CombatantView): string {
 
 .stage {
   position: relative;
-  min-height: 580px;
+  /* full background art: the stage matches the image aspect ratio */
+  aspect-ratio: 1776 / 1314;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
