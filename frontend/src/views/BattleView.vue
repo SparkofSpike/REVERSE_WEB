@@ -129,6 +129,17 @@ function randSpeed(c: CombatantView | undefined): number {
   return min + Math.floor(Math.random() * (max - min + 1))
 }
 
+// hearthstone-style hand: each card fans toward the middle and sits
+// half-hidden until the hand is hovered
+function handCardStyle(i: number, n: number): Record<string, string> {
+  const mid = (n - 1) / 2
+  const angle = Math.max(-14, Math.min(14, (i - mid) * 5))
+  return {
+    '--hand-rot': angle + 'deg',
+    'z-index': String(Math.round(12 - Math.abs(i - mid)))
+  }
+}
+
 function speedFill(c: CombatantView): string {
   const v = currentSpeed.value[c.id]
   if (v === undefined) return '0%'
@@ -1276,9 +1287,10 @@ function statusText(c: CombatantView): string {
         <!-- generic skill hand: overlaid at the bottom of the battlefield -->
         <div v-if="inDecision" class="hand-overlay">
           <div
-            v-for="card in battle.playerHand"
+            v-for="(card, i) in battle.playerHand"
             :key="card.id"
-            class="card-face generic"
+            class="card-face generic hand-card"
+            :style="handCardStyle(i, battle.playerHand.length)"
             @click="playCardFromHand(card.id)"
           >
             <img class="face-img" src="/assets/generic_skill_card.webp" alt="" />
@@ -1548,8 +1560,10 @@ function statusText(c: CombatantView): string {
 
 .stage {
   position: relative;
-  /* full background art: the stage matches the image aspect ratio */
-  aspect-ratio: 1776 / 1314;
+  /* background art mostly fits: the stage is shorter than the image and
+     the background aligns to the BOTTOM, so the top of the art is cropped
+     a bit while the bottom (where units and the hand sit) stays intact */
+  aspect-ratio: 1776 / 1100;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -1568,7 +1582,7 @@ function statusText(c: CombatantView): string {
   padding: 18px 30px 170px;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
-    url('/assets/fight_background.webp?v=3') center / cover no-repeat;
+    url('/assets/fight_background.webp?v=3') bottom / cover no-repeat;
   transition: transform 0.5s ease;
   will-change: transform;
 }
@@ -2296,18 +2310,34 @@ function statusText(c: CombatantView): string {
 .hand-overlay {
   position: absolute;
   left: 50%;
-  bottom: 10px;
+  bottom: 0;
   transform: translateX(-50%);
   display: flex;
   align-items: flex-end;
   z-index: 20;
+  padding-bottom: 8px;
 }
 .hand-overlay .card-face {
   width: 126px;
-  margin-left: -18px;
+  margin-left: -20px;
 }
 .hand-overlay .card-face:first-child {
   margin-left: 0;
+}
+/* hearthstone fan: cards rotate toward the middle, half hidden by default,
+   the whole hand rises when hovered (bottom overflow is cropped by the
+   stage's overflow:hidden, which reads as the cards sliding out of view) */
+.hand-overlay .hand-card {
+  transform-origin: bottom center;
+  transform: translateY(50%) rotate(var(--hand-rot, 0deg));
+  transition: transform 0.22s ease;
+}
+.hand-overlay:hover .hand-card {
+  transform: translateY(0) rotate(var(--hand-rot, 0deg));
+}
+.hand-overlay .hand-card:hover {
+  transform: translateY(-10px) rotate(0deg) scale(1.06);
+  z-index: 30 !important;
 }
 .hand-empty {
   padding: 6px 10px;
