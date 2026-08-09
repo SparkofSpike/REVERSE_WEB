@@ -2097,6 +2097,11 @@ function statusText(c: CombatantView): string {
   transform: scaleX(-1);
 }
 
+/* the hod art sheet faces left: flip it so she looks at the enemy */
+.side-player .portrait[src*="hod_"] {
+  transform: scaleX(-1);
+}
+
 .portrait-placeholder {
   width: 100%;
   height: 100%;
