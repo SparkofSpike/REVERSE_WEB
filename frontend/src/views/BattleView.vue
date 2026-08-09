@@ -977,7 +977,7 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
 // click an action in the selected-combatant panel. Target-requiring
 // actions (attack/guard) enter aim mode; re-clicking the picked action
 // cancels the choice.
-function pickAction(c: CombatantView, action: string) {
+function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
   if (c.side !== 'PLAYER' || animating.value) return
   const cur = pending.value[c.id]
   if (cur?.actionType === action && cur.skillId === null) {
@@ -992,15 +992,20 @@ function pickAction(c: CombatantView, action: string) {
   pending.value[c.id] = { ...p }
   if (actionNeedsTarget(action) || actionNeedsAllyTarget(action)) {
     aimMode.value = { combatantId: c.id, kind: 'action', id: action }
+    // close the tab panel so the stage is fully visible, and draw the
+    // arrow right away (the pointer may not move after the click)
+    selectedId.value = null
+    updateAimLine(ev.clientX, ev.clientY)
   } else {
     cancelAim()
+    selectedId.value = null
   }
 }
 
 // click a skill card: self-targeted skills lock immediately; target
 // skills enter aim mode (click a unit to lock). Re-clicking the picked
 // card cancels the choice.
-function pickSkill(c: CombatantView, s: SkillView) {
+function pickSkill(c: CombatantView, s: SkillView, ev: MouseEvent) {
   if (c.side !== 'PLAYER' || animating.value) return
   if ((c.cooldowns[s.id] ?? 0) > 0) {
     message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
@@ -1017,7 +1022,15 @@ function pickSkill(c: CombatantView, s: SkillView) {
     skillId: s.id,
     targetIds: s.targetType === 'self' ? [c.id] : []
   }
-  aimMode.value = skillNeedsTarget(s) ? { combatantId: c.id, kind: 'skill', id: s.id } : null
+  // close the tab panel so the stage is fully visible; target skills draw
+  // the arrow immediately from the click position
+  selectedId.value = null
+  if (skillNeedsTarget(s)) {
+    aimMode.value = { combatantId: c.id, kind: 'skill', id: s.id }
+    updateAimLine(ev.clientX, ev.clientY)
+  } else {
+    aimMode.value = null
+  }
 }
 
 function skillActive(c: CombatantView, s: SkillView): boolean {
@@ -1061,6 +1074,21 @@ function combatantName(id: string): string {
   return battle.value?.combatants.find((x) => x.id === id)?.name ?? id
 }
 
+// compact per-unit decision tag shown on the battlefield (the tab panel
+// closes after picking, so the unit must carry the locked-target feedback)
+function decisionTagText(c: CombatantView): string {
+  const p = pending.value[c.id]
+  if (!p) return '未下令'
+  const needsTarget =
+    p.actionType === 'SKILL'
+      ? skillNeedsTarget(c.skills.find((x) => x.id === p.skillId) ?? null)
+      : actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)
+  if (!needsTarget) return '已下令'
+  if (p.targetIds.length === 0) return '待目标'
+  const names = p.targetIds.map(combatantName).join('、')
+  return names.length > 8 ? `→${names.slice(0, 8)}…` : `→${names}`
+}
+
 function decisionSummary(c: CombatantView): string {
   const p = pending.value[c.id]
   if (!p) return '未下达指令'
@@ -1092,6 +1120,13 @@ function onAimMove(ev: MouseEvent) {
     aimLine.value = null
     return
   }
+  updateAimLine(ev.clientX, ev.clientY)
+}
+
+// draws the guide line from the character's unit toward the given pointer
+// position (stage-local coordinates)
+function updateAimLine(clientX: number, clientY: number) {
+  if (!aimMode.value) return
   const scene = document.querySelector('.stage-scene') as HTMLElement | null
   const unit = unitEl(aimMode.value.combatantId)
   if (!scene || !unit) return
@@ -1100,8 +1135,8 @@ function onAimMove(ev: MouseEvent) {
   aimLine.value = {
     x1: ur.left - sr.left + ur.width / 2,
     y1: ur.top - sr.top + ur.height / 2,
-    x2: ev.clientX - sr.left,
-    y2: ev.clientY - sr.top
+    x2: clientX - sr.left,
+    y2: clientY - sr.top
   }
 }
 
@@ -1475,7 +1510,7 @@ function statusText(c: CombatantView): string {
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
-                  {{ !hasDecision(c) ? '未下令' : decisionReady(c) ? '已下令' : '待目标' }}
+                  {{ decisionTagText(c) }}
                 </span>
               </div>
               <div class="bar-row">
@@ -1560,7 +1595,7 @@ function statusText(c: CombatantView): string {
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
-                  {{ !hasDecision(c) ? '未下令' : decisionReady(c) ? '已下令' : '待目标' }}
+                  {{ decisionTagText(c) }}
                 </span>
               </div>
               <div class="bar-row">
@@ -1687,7 +1722,7 @@ function statusText(c: CombatantView): string {
               class="action-chip"
               :class="{ active: pending[selectedCombatant.id]?.actionType === a }"
               :disabled="selectedCombatant.side !== 'PLAYER' || animating"
-              @click="pickAction(selectedCombatant, a)"
+              @click="pickAction(selectedCombatant, a, $event)"
             >
               {{ actionLabel(a) }}
             </button>
@@ -1714,7 +1749,7 @@ function statusText(c: CombatantView): string {
                   selectedCombatant.side !== 'PLAYER' ||
                   animating
               }"
-              @click="pickSkill(selectedCombatant, sk)"
+              @click="pickSkill(selectedCombatant, sk, $event)"
             >
               <img
                 class="face-img"
@@ -2754,6 +2789,10 @@ function statusText(c: CombatantView): string {
   vertical-align: 1px;
   color: var(--warn, #ffc857);
   border: 1px solid rgba(255, 200, 87, 0.5);
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tag-decision.ready {
