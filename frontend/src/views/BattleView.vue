@@ -2845,7 +2845,9 @@ function statusText(c: CombatantView): string {
   border-radius: 6px;
 }
 
-/* special perk offers: centered on the battlefield, middle card stands out */
+/* special perk offers: centered on the battlefield, middle card stands out.
+   No backdrop panel - the cards float directly on the field with room to
+   breathe between them. */
 .perk-overlay {
   position: absolute;
   left: 50%;
@@ -2853,12 +2855,8 @@ function statusText(c: CombatantView): string {
   transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 28px;
   z-index: 25;
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: rgba(11, 14, 20, 0.6);
-  border: 1px solid rgba(255, 200, 87, 0.25);
 }
 .perk-overlay .card-face {
   width: 128px;
