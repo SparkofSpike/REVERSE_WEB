@@ -969,8 +969,14 @@ function skillNeedsTarget(s: SkillView | null): boolean {
 
 function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): boolean {
   if (s.targetType === 'self') return t.id === c.id
-  if (s.targetType.includes('enemy')) return t.side === 'ENEMY' && !t.dead
-  if (s.targetType.includes('ally')) return t.side === 'PLAYER' && !t.dead
+  // note: exact selectors only - "enemies" does NOT contain the substring
+  // "enemy" (it is e-n-e-m-i-e-s), so includes() would silently fail
+  if (s.targetType === 'enemy' || s.targetType === 'enemies') {
+    return t.side === 'ENEMY' && !t.dead
+  }
+  if (s.targetType === 'ally' || s.targetType === 'allies' || s.targetType === 'random_ally') {
+    return t.side === 'PLAYER' && !t.dead
+  }
   return false
 }
 
@@ -1506,7 +1512,7 @@ function statusText(c: CombatantView): string {
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
                 <span
-                  v-if="inDecision && !c.dead"
+                  v-if="inDecision && !c.dead && c.side === 'PLAYER'"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
@@ -1591,7 +1597,7 @@ function statusText(c: CombatantView): string {
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
                 <span
-                  v-if="inDecision && !c.dead"
+                  v-if="inDecision && !c.dead && c.side === 'PLAYER'"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
