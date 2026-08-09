@@ -1693,9 +1693,8 @@ function statusText(c: CombatantView): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.16), rgba(11, 14, 20, 0.6));
+  /* no backdrop: the character art stands directly on the battlefield */
+  background: transparent;
   transition: transform 0.45s ease;
 }
 
@@ -1719,8 +1718,8 @@ function statusText(c: CombatantView): string {
   justify-content: center;
   font-size: 44px;
   font-weight: 700;
-  color: rgba(215, 224, 238, 0.35);
-  background: radial-gradient(circle at 50% 30%, rgba(76, 194, 255, 0.12), rgba(11, 14, 20, 0.7));
+  color: rgba(215, 224, 238, 0.75);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
 }
 
 .tag-perform {
