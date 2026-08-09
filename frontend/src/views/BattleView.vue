@@ -1693,7 +1693,9 @@ function statusText(c: CombatantView): string {
             <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
             <span class="skill-panel-close" @click="selectedId = null">✕</span>
           </div>
-          <div class="panel-tabs">
+          <!-- order tabs only exist for player combatants; the enemy panel
+               is read-only (skill info only, no order controls) -->
+          <div v-if="selectedCombatant.side === 'PLAYER'" class="panel-tabs">
             <button
               class="panel-tab"
               :class="{ active: panelTab === 'actions' }"
@@ -1725,20 +1727,19 @@ function statusText(c: CombatantView): string {
           </div>
 
           <!-- skills tab (default): click to use, drag onto units to lock -->
-          <div v-else class="skill-cards">
+          <div v-else class="skill-cards" :class="{ readonly: selectedCombatant.side !== 'PLAYER' }">
             <div
               v-for="sk in selectedCombatant.skills"
               :key="sk.id"
               class="card-face skill"
               :class="{
                 upgraded: sk.upgraded,
-                active: skillActive(selectedCombatant, sk),
+                active: selectedCombatant.side === 'PLAYER' && skillActive(selectedCombatant, sk),
                 disabled:
-                  (selectedCombatant.cooldowns[sk.id] ?? 0) > 0 ||
-                  selectedCombatant.side !== 'PLAYER' ||
-                  animating
+                  selectedCombatant.side === 'PLAYER' &&
+                  ((selectedCombatant.cooldowns[sk.id] ?? 0) > 0 || animating)
               }"
-              @click="pickSkill(selectedCombatant, sk, $event)"
+              @click="selectedCombatant.side === 'PLAYER' && pickSkill(selectedCombatant, sk, $event)"
             >
               <img
                 class="face-img"
@@ -1769,8 +1770,12 @@ function statusText(c: CombatantView): string {
             </div>
           </div>
 
-          <!-- current decision summary -->
-          <div class="decision-summary" :class="{ ready: decisionReady(selectedCombatant) }">
+          <!-- current decision summary (player only) -->
+          <div
+            v-if="selectedCombatant.side === 'PLAYER'"
+            class="decision-summary"
+            :class="{ ready: decisionReady(selectedCombatant) }"
+          >
             <span>{{ decisionSummary(selectedCombatant) }}</span>
             <span
               v-if="hasDecision(selectedCombatant)"
@@ -2695,6 +2700,12 @@ function statusText(c: CombatantView): string {
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
+}
+
+/* enemy panel cards are read-only info: no hover lift, no clicks */
+.skill-cards.readonly .card-face {
+  cursor: default;
+  pointer-events: none;
 }
 
 /* selected card highlight + cooldown look */
