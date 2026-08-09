@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, useMessage } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
@@ -34,9 +34,9 @@ interface PendingDecision {
 const pending = ref<Record<string, PendingDecision>>({})
 // selected-combatant panel tabs: default to the skills page
 const panelTab = ref<'actions' | 'skills'>('skills')
-// drag-to-lock state: which chosen item is being dragged onto a unit
-const dragPayload = ref<{ combatantId: string; kind: 'action' | 'skill'; id: string } | null>(null)
-const dragOverUnit = ref<string | null>(null)
+// aim-to-lock state: which chosen item is being aimed at a unit
+const aimMode = ref<{ combatantId: string; kind: 'action' | 'skill'; id: string } | null>(null)
+const aimLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
 // portrait images: /assets/{templateId}.png, falling back to a placeholder
 const portraitFailed = ref<Record<string, boolean>>({})
@@ -88,10 +88,9 @@ const selectedCombatant = computed(
   () => battle.value?.combatants.find((c) => c.id === selectedId.value) ?? null
 )
 function toggleSelect(id: string) {
+  cancelAim()
   if (selectedId.value === id) {
     selectedId.value = null
-    dragPayload.value = null
-    dragOverUnit.value = null
   } else {
     selectedId.value = id
     // the tab panel always opens on the skills page by default
@@ -209,9 +208,16 @@ const extraActors = computed(() => alivePlayers.value.filter((c) => c.extraActio
 const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : alivePlayers.value))
 
 onMounted(() => {
+  window.addEventListener('mousemove', onAimMove)
+  window.addEventListener('keydown', onKeydown)
   // fire-and-forget warm-up: never blocks the battle screen
   preloadAssets()
   load()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onAimMove)
+  window.removeEventListener('keydown', onKeydown)
 })
 
 function loadImage(url: string): Promise<void> {
@@ -968,18 +974,32 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
   return false
 }
 
-// click an action in the selected-combatant panel
+// click an action in the selected-combatant panel. Target-requiring
+// actions (attack/guard) enter aim mode; re-clicking the picked action
+// cancels the choice.
 function pickAction(c: CombatantView, action: string) {
   if (c.side !== 'PLAYER' || animating.value) return
+  const cur = pending.value[c.id]
+  if (cur?.actionType === action && cur.skillId === null) {
+    pending.value[c.id] = newPending()
+    cancelAim()
+    return
+  }
   const p = pending.value[c.id] ?? newPending()
   p.actionType = action
   p.skillId = null
   p.targetIds = []
   pending.value[c.id] = { ...p }
+  if (actionNeedsTarget(action) || actionNeedsAllyTarget(action)) {
+    aimMode.value = { combatantId: c.id, kind: 'action', id: action }
+  } else {
+    cancelAim()
+  }
 }
 
-// click a skill card: select it (self-targeted auto-locks); clicking the
-// already selected one cancels the choice
+// click a skill card: self-targeted skills lock immediately; target
+// skills enter aim mode (click a unit to lock). Re-clicking the picked
+// card cancels the choice.
 function pickSkill(c: CombatantView, s: SkillView) {
   if (c.side !== 'PLAYER' || animating.value) return
   if ((c.cooldowns[s.id] ?? 0) > 0) {
@@ -989,6 +1009,7 @@ function pickSkill(c: CombatantView, s: SkillView) {
   const cur = pending.value[c.id]
   if (cur?.actionType === 'SKILL' && cur.skillId === s.id) {
     pending.value[c.id] = newPending()
+    cancelAim()
     return
   }
   pending.value[c.id] = {
@@ -996,6 +1017,7 @@ function pickSkill(c: CombatantView, s: SkillView) {
     skillId: s.id,
     targetIds: s.targetType === 'self' ? [c.id] : []
   }
+  aimMode.value = skillNeedsTarget(s) ? { combatantId: c.id, kind: 'skill', id: s.id } : null
 }
 
 function skillActive(c: CombatantView, s: SkillView): boolean {
@@ -1046,12 +1068,12 @@ function decisionSummary(c: CombatantView): string {
     const s = c.skills.find((x) => x.id === p.skillId)
     if (!s) return '未下达指令'
     const t = p.targetIds.map(combatantName).join('、')
-    return t ? `${s.name} → ${t}` : `${s.name}${skillNeedsTarget(s) ? '（拖拽锁定目标）' : ''}`
+    return t ? `${s.name} → ${t}` : `${s.name}${skillNeedsTarget(s) ? '（点击目标锁定）' : ''}`
   }
   const label = actionLabel(p.actionType)
   if (actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)) {
     const t = p.targetIds.map(combatantName).join('、')
-    return t ? `${label} → ${t}` : `${label}（拖拽锁定目标）`
+    return t ? `${label} → ${t}` : `${label}（点击目标锁定）`
   }
   return label
 }
@@ -1060,26 +1082,40 @@ function clearDecision(c: CombatantView) {
   pending.value[c.id] = newPending()
 }
 
-// ---- drag-to-lock: drag the chosen action/skill card onto a unit ----
-function onDragStart(c: CombatantView, kind: 'action' | 'skill', id: string, ev: DragEvent) {
-  // dragging also selects the action/skill first
-  if (kind === 'action') {
-    if ((pending.value[c.id]?.actionType ?? '') !== id) pickAction(c, id)
-  } else {
-    const s = c.skills.find((x) => x.id === id)
-    if (s && !skillActive(c, s)) pickSkill(c, s)
+// ---- aim-to-lock: click a target-requiring card, then click a unit ----
+// A dashed line follows the pointer from the character; clicking a valid
+// unit locks it (multi-target skills accept one click per target until the
+// cap is reached). ESC, clicking an invalid unit, or clicking the picked
+// card again cancels aiming without dropping the choice.
+function onAimMove(ev: MouseEvent) {
+  if (!aimMode.value) {
+    aimLine.value = null
+    return
   }
-  dragPayload.value = { combatantId: c.id, kind, id }
-  ev.dataTransfer!.effectAllowed = 'copy'
+  const scene = document.querySelector('.stage-scene') as HTMLElement | null
+  const unit = unitEl(aimMode.value.combatantId)
+  if (!scene || !unit) return
+  const sr = scene.getBoundingClientRect()
+  const ur = unit.getBoundingClientRect()
+  aimLine.value = {
+    x1: ur.left - sr.left + ur.width / 2,
+    y1: ur.top - sr.top + ur.height / 2,
+    x2: ev.clientX - sr.left,
+    y2: ev.clientY - sr.top
+  }
 }
 
-function onDragEnd() {
-  dragPayload.value = null
-  dragOverUnit.value = null
+function onKeydown(ev: KeyboardEvent) {
+  if (ev.key === 'Escape') cancelAim()
 }
 
-function canAcceptDrop(t: CombatantView): boolean {
-  const p = dragPayload.value
+function cancelAim() {
+  aimMode.value = null
+  aimLine.value = null
+}
+
+function canLockTarget(t: CombatantView): boolean {
+  const p = aimMode.value
   if (!p) return false
   const c = battle.value?.combatants.find((x) => x.id === p.combatantId)
   if (!c || c.dead) return false
@@ -1092,20 +1128,9 @@ function canAcceptDrop(t: CombatantView): boolean {
   return false
 }
 
-function onDragOverUnit(ev: DragEvent, t: CombatantView) {
-  if (!dragPayload.value) return
-  ev.preventDefault()
-  if (canAcceptDrop(t)) {
-    ev.dataTransfer!.dropEffect = 'copy'
-    dragOverUnit.value = t.id
-  }
-}
-
-function onDropUnit(t: CombatantView) {
-  const p = dragPayload.value
-  dragOverUnit.value = null
-  dragPayload.value = null
-  if (!p || !canAcceptDrop(t)) return
+function lockTarget(t: CombatantView) {
+  const p = aimMode.value
+  if (!p || !canLockTarget(t)) return
   const c = battle.value?.combatants.find((x) => x.id === p.combatantId)
   if (!c) return
   const dec = pending.value[c.id]
@@ -1123,10 +1148,26 @@ function onDropUnit(t: CombatantView) {
       return
     }
     dec.targetIds.push(t.id)
+    // multi-target skills keep aiming until the cap is reached
+    if (dec.targetIds.length >= cap) cancelAim()
   } else {
     dec.targetIds = [t.id]
+    cancelAim()
   }
   pending.value[c.id] = { ...dec }
+}
+
+function onUnitClick(c: CombatantView) {
+  if (aimMode.value) {
+    if (canLockTarget(c)) {
+      lockTarget(c)
+      return
+    }
+    // clicking an invalid unit cancels aiming but keeps the choice
+    cancelAim()
+    return
+  }
+  toggleSelect(c.id)
 }
 
 function removeLockedTarget(c: CombatantView, idx: number) {
@@ -1160,7 +1201,7 @@ async function submitDecisions() {
       }
       const s = c.skills.find((x) => x.id === p.skillId)
       if (s && skillNeedsTarget(s) && p.targetIds.length === 0) {
-        message.warning(`${c.name} 的技能 ${s.name} 需要拖拽锁定目标`)
+        message.warning(`${c.name} 的技能 ${s.name} 需要点击目标锁定`)
         return
       }
       decisions.push({
@@ -1367,6 +1408,7 @@ function statusText(c: CombatantView): string {
           class="stage-scene"
           :class="{ dimmed: anyPerforming, zoomed: anyPerforming }"
           :style="{ transformOrigin: zoomOrigin }"
+          @click="cancelAim"
         >
         <div class="side-col side-player">
           <div
@@ -1382,11 +1424,9 @@ function statusText(c: CombatantView): string {
               clashing: clashing[c.id],
               shaking: shaking[c.id],
               selected: selectedId === c.id,
-              'drag-target': dragOverUnit === c.id
+              'aim-target': aimMode && canLockTarget(c)
             }"
-            @click="toggleSelect(c.id)"
-            @dragover="onDragOverUnit($event, c)"
-            @drop="onDropUnit(c)"
+            @click.stop="onUnitClick(c)"
           >
             <div class="portrait-wrap">
               <img
@@ -1469,11 +1509,9 @@ function statusText(c: CombatantView): string {
               clashing: clashing[c.id],
               shaking: shaking[c.id],
               selected: selectedId === c.id,
-              'drag-target': dragOverUnit === c.id
+              'aim-target': aimMode && canLockTarget(c)
             }"
-            @click="toggleSelect(c.id)"
-            @dragover="onDragOverUnit($event, c)"
-            @drop="onDropUnit(c)"
+            @click.stop="onUnitClick(c)"
           >
             <div class="portrait-wrap">
               <img
@@ -1541,6 +1579,22 @@ function statusText(c: CombatantView): string {
             </div>
           </div>
         </div>
+
+        <!-- aim line: dashed guide from the character to the pointer -->
+        <svg v-if="aimLine" class="aim-line">
+          <defs>
+            <marker id="aim-arrow-head" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 Z" fill="rgba(255,200,87,0.95)" />
+            </marker>
+          </defs>
+          <line
+            :x1="aimLine.x1"
+            :y1="aimLine.y1"
+            :x2="aimLine.x2"
+            :y2="aimLine.y2"
+            marker-end="url(#aim-arrow-head)"
+          />
+        </svg>
 
         <!-- natural curtain overlay inside the stage -->
         <div v-if="curtain" :key="curtain.seq" class="curtain" :class="curtain.kind">
@@ -1622,18 +1676,15 @@ function statusText(c: CombatantView): string {
               class="action-chip"
               :class="{ active: pending[selectedCombatant.id]?.actionType === a }"
               :disabled="selectedCombatant.side !== 'PLAYER' || animating"
-              :draggable="!animating && inDecision && selectedCombatant.side === 'PLAYER'"
               @click="pickAction(selectedCombatant, a)"
-              @dragstart="onDragStart(selectedCombatant, 'action', a, $event)"
-              @dragend="onDragEnd"
             >
               {{ actionLabel(a) }}
             </button>
             <div v-if="selectedNeedsTarget(selectedCombatant)" class="panel-hint">
               {{
                 pending[selectedCombatant.id]?.actionType === 'GUARD'
-                  ? '拖拽到要守护的队友上锁定目标'
-                  : '拖拽到敌方单位上锁定目标'
+                  ? '点击要守护的队友锁定目标'
+                  : '点击敌方单位锁定目标'
               }}
             </div>
           </div>
@@ -1652,15 +1703,7 @@ function statusText(c: CombatantView): string {
                   selectedCombatant.side !== 'PLAYER' ||
                   animating
               }"
-              :draggable="
-                !animating &&
-                inDecision &&
-                selectedCombatant.side === 'PLAYER' &&
-                skillNeedsTarget(sk)
-              "
               @click="pickSkill(selectedCombatant, sk)"
-              @dragstart="onDragStart(selectedCombatant, 'skill', sk.id, $event)"
-              @dragend="onDragEnd"
             >
               <img
                 class="face-img"
@@ -1687,7 +1730,7 @@ function statusText(c: CombatantView): string {
                     <b @click.stop="removeLockedTarget(selectedCombatant, ti)">✕</b>
                   </span>
                   <span v-if="!(pending[selectedCombatant.id]?.targetIds ?? []).length" class="dim">
-                    拖拽到目标上锁定
+                    点击目标锁定
                   </span>
                 </div>
               </div>
@@ -1715,22 +1758,6 @@ function statusText(c: CombatantView): string {
       <div v-if="inDecision" class="panel decision-panel" :class="{ locked: animating }">
         <div v-if="inExtraRound" class="extra-round-hint">
           ⚡ 额外行动轮：{{ extraActors.map((a) => `${a.name}（剩余 ${a.extraActionsThisTurn}）`).join('、') }}
-        </div>
-        <div class="decision-status">
-          <div
-            v-for="c in decisionActors"
-            :key="c.id"
-            class="decision-unit"
-            @click="toggleSelect(c.id)"
-          >
-            <span class="actor-name" :class="{ decided: decisionReady(c) }">{{ c.name }}</span>
-            <span
-              class="decision-text"
-              :class="{ undecided: !hasDecision(c), waiting: hasDecision(c) && !decisionReady(c) }"
-            >
-              {{ decisionSummary(c) }}
-            </span>
-          </div>
         </div>
         <div class="decision-actions">
           <n-button
@@ -2387,62 +2414,11 @@ function statusText(c: CombatantView): string {
   pointer-events: none;
 }
 
-.decision-unit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.actor-name {
-  font-size: 14px;
-  font-weight: 600;
-  min-width: 90px;
-}
-
 .extra-round-hint {
   font-size: 13px;
   color: var(--accent, #4cc2ff);
   margin-bottom: 8px;
   font-weight: 600;
-}
-
-.decision-status {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.decision-unit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-}
-
-.decision-unit:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.actor-name.decided {
-  color: #7ce0a3;
-}
-
-.decision-text {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.decision-text.undecided {
-  color: var(--warn, #ffc857);
-  font-weight: 600;
-}
-
-.decision-text.waiting {
-  color: #ffe08a;
 }
 
 .decision-actions {
@@ -2734,11 +2710,28 @@ function statusText(c: CombatantView): string {
   color: var(--danger);
 }
 
-/* unit drag highlight + per-unit decision tag */
-.unit.drag-target {
-  outline: 2px dashed rgba(76, 194, 255, 0.8);
+/* unit aim highlight: valid target while locking */
+.unit.aim-target {
+  outline: 2px solid rgba(255, 200, 87, 0.9);
   outline-offset: 2px;
   border-radius: 10px;
+  cursor: crosshair;
+}
+
+/* aim guide line: dashed, follows the pointer */
+.aim-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 45;
+}
+
+.aim-line line {
+  stroke: rgba(255, 200, 87, 0.9);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
 }
 
 .tag-decision {
@@ -3053,19 +3046,6 @@ function statusText(c: CombatantView): string {
     font-size: 13px;
   }
 
-  .decision-unit {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(18, 23, 32, 0.55);
-  }
-  .decision-unit .actor-name {
-    min-width: 0;
-    font-size: 15px;
-  }
   .decision-actions {
     justify-content: stretch;
     flex-wrap: wrap;
