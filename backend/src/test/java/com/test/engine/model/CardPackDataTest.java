@@ -29,7 +29,7 @@ class CardPackDataTest {
         assertThat(pack.getInitialPerks()).hasSize(3);
         assertThat(pack.getSpecialPerks()).hasSize(6);
         assertThat(pack.getGenericSkills()).hasSize(12);
-        assertThat(pack.getCharacters()).hasSize(4);
+        assertThat(pack.getCharacters()).hasSize(5);
     }
 
     @Test
@@ -78,6 +78,32 @@ class CardPackDataTest {
         assertThat(crab.getCorePassive().getType()).isEqualTo("stone_shield");
         assertThat(crab.getPerformance().getTriggerType()).isEqualTo("guard_success");
         assertThat(crab.getSkills()).hasSize(3);
+    }
+
+    @Test
+    void hodMatchesDesignDoc() throws Exception {
+        CharacterTemplate hod = character("hod");
+
+        assertThat(hod.getName()).isEqualTo("Hod");
+        assertThat(hod.getMaxHp()).isEqualTo(100);
+        assertThat(hod.getMaxEnergy()).isEqualTo(90);
+        assertThat(hod.getSpeedDice()).isEqualTo("1d8");
+        assertThat(hod.getPhysicalResistance()).isEqualTo(1.1);
+        assertThat(hod.getMagicResistance()).isEqualTo(1.1);
+        assertThat(hod.getBaseDamageDice()).isEqualTo("1d8");
+        assertThat(hod.getBlockDice()).isEqualTo("1d6");
+        assertThat(hod.getDodgePenalty()).isEqualTo("0d3");
+        assertThat(hod.getBaseActions()).contains(ActionType.ATTACK, ActionType.DEFEND,
+                ActionType.DODGE, ActionType.GUARD, ActionType.COUNTER);
+        assertThat(hod.getCorePassive().getType()).isEqualTo("dodge_training");
+        assertThat(hod.getPerformance().getTriggerType()).isEqualTo("ally_death");
+        assertThat(hod.getSkills()).hasSize(3);
+        assertThat(hod.getSkills().get(0).getEffects()).extracting(EffectSpec::getType)
+                .containsExactly("damage", "stun");
+        assertThat(hod.getSkills().get(1).getEffects()).extracting(EffectSpec::getType)
+                .containsExactly("damage", "bleed");
+        assertThat(hod.getSkills().get(2).getEffects()).extracting(EffectSpec::getType)
+                .containsExactly("bloodletting");
     }
 
     @Test

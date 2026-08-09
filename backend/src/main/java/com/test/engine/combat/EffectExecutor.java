@@ -87,6 +87,10 @@ public class EffectExecutor {
                         caster.getName() + " 获得 " + spec.getAmount() + " 点抽牌能量。"));
             }
             case "heal_end_of_round" -> addEndOfRoundHeal(spec, caster, state);
+            case "bleed" -> applyBleedEffect(spec, caster, state, explicitTargets);
+            case "stun" -> applyStun(spec, caster, state, explicitTargets);
+            case "bloodletting" -> applyBloodletting(spec, caster, state);
+            case "collapse" -> applyCollapse(spec, caster, state);
             default -> state.log(CombatEvent.of(state.getRound(), "effect",
                     "未实现的效果类型: " + type));
         }
@@ -259,6 +263,66 @@ public class EffectExecutor {
                 state.resolvePotentialDeath(t);
             }
         }
+    }
+
+    // ----- hod mechanics: bleed / stun / bloodletting / collapse -----
+
+    private void applyBleedEffect(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
+        int stacks = spec.getCount() > 0 ? spec.getCount() : 1;
+        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTargets, spec.getCount())) {
+            if (t.isDead()) {
+                continue;
+            }
+            addBleed(t, stacks, state);
+        }
+    }
+
+    /** Adds bleed stacks to a combatant, merging into an existing stack. */
+    public void addBleed(Combatant target, int stacks, CombatState state) {
+        if (stacks <= 0 || target.isDead()) {
+            return;
+        }
+        List<StatusEffect> existing = target.statusesOfType("bleed");
+        if (!existing.isEmpty()) {
+            existing.get(0).setCount(existing.get(0).getCount() + stacks);
+        } else {
+            StatusEffect e = StatusEffect.of("bleed", Integer.MAX_VALUE / 2);
+            e.setCount(stacks);
+            target.addStatus(e);
+        }
+        int total = target.statusesOfType("bleed").stream().mapToInt(StatusEffect::getCount).sum();
+        state.log(CombatEvent.of(state.getRound(), "status",
+                target.getName() + " 获得 " + stacks + " 层流血（当前 " + total + " 层）。"));
+    }
+
+    private void applyStun(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
+        // duration 2: the stun lands this round, the target cannot act on the
+        // next one, and the round-end tick removes it afterwards
+        int duration = spec.getDuration() > 0 ? spec.getDuration() : 2;
+        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTargets, 1)) {
+            if (t.isDead()) {
+                continue;
+            }
+            t.addStatus(StatusEffect.of("stun", duration));
+            state.log(CombatEvent.of(state.getRound(), "status",
+                    t.getName() + " 陷入晕眩，下回合无法行动。"));
+        }
+    }
+
+    private void applyBloodletting(EffectSpec spec, Combatant caster, CombatState state) {
+        int duration = spec.getDuration() > 0 ? spec.getDuration() : 3;
+        caster.addStatus(StatusEffect.of("bloodletting", duration));
+        state.log(CombatEvent.of(state.getRound(), "status",
+                caster.getName() + " 进入放血状态：" + duration + " 回合内每回合获得一次额外行动，任何伤害追加 2 层流血。"));
+    }
+
+    private void applyCollapse(EffectSpec spec, Combatant caster, CombatState state) {
+        caster.addStatus(StatusEffect.of("collapse", Integer.MAX_VALUE / 2));
+        int loss = spec.getAmount() > 0 ? spec.getAmount() : 10;
+        int shield = spec.getCount() > 0 ? spec.getCount() : 5;
+        state.log(CombatEvent.of(state.getRound(), "performance",
+                caster.getName() + " 陷入崩溃：每回合开始失去 " + loss + " 点生命，所有队友获得 "
+                        + shield + " 点护盾（持续 1 回合）。"));
     }
 
     private void applyGuardBind(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {

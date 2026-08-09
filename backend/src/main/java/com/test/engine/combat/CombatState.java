@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,8 @@ public class CombatState {
 
     private String id;
     private String ownerUsername;
+    /** Deaths per side this battle (drives ally-death performances). */
+    private final Map<CombatSide, Integer> deaths = new EnumMap<>(CombatSide.class);
     /** The card pack this battle was created from. */
     private String packId;
     private Instant createdAt = Instant.now();
@@ -108,7 +111,13 @@ public class CombatState {
             return;
         }
         c.setDead(true);
+        deaths.merge(c.getSide(), 1, Integer::sum);
         log(CombatEvent.of(getRound(), "death", c.getName() + " 倒下了！"));
+    }
+
+    /** Number of deaths suffered by a side so far in this battle. */
+    public int sideDeaths(CombatSide side) {
+        return deaths.getOrDefault(side, 0);
     }
 
     public void addDrawEnergy(int amount) {

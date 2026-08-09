@@ -3,6 +3,8 @@ package com.test.engine.combat;
 import com.test.engine.enums.DamageType;
 import com.test.engine.utils.DiceRoller;
 import com.test.engine.utils.DiceResult;
+
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
@@ -87,6 +89,13 @@ public class DamageResolver {
         }
 
         applyHpDamage(target, outcome.getHpDamage(), outcome);
+        // 放血: while the attacker holds the bloodletting buff, any direct
+        // damage it deals piles 2 extra bleed stacks onto the target (never
+        // triggered by bleed damage itself, which bypasses dealDamage)
+        if (attacker != null && attacker.statusesOfType("bloodletting").stream().anyMatch(e -> !e.expired())
+                && !target.isDead()) {
+            addBleedStacks(target, 2, state);
+        }
         logEvent(target, type, outcome, state, attacker, action);
         return outcome;
     }
@@ -121,6 +130,19 @@ public class DamageResolver {
         target.setHp(target.getHp() - actual);
         outcome.setHpDamage(actual);
         outcome.setHpLost(actual);
+    }
+
+    private void addBleedStacks(Combatant target, int stacks, CombatState state) {
+        List<StatusEffect> existing = target.statusesOfType("bleed");
+        if (!existing.isEmpty()) {
+            existing.get(0).setCount(existing.get(0).getCount() + stacks);
+        } else {
+            StatusEffect e = StatusEffect.of("bleed", Integer.MAX_VALUE / 2);
+            e.setCount(stacks);
+            target.addStatus(e);
+        }
+        state.log(CombatEvent.of(state.getRound(), "status",
+                target.getName() + " 因放血追加 " + stacks + " 层流血。"));
     }
 
     private void logEvent(Combatant target, DamageType type, DamageOutcome outcome, CombatState state,

@@ -245,6 +245,10 @@ public class CombatEngine {
             if (c == null) {
                 continue;
             }
+            // a stunned combatant cannot spend its extra action
+            if (!preActionGate(state, c)) {
+                continue;
+            }
             boolean executed;
             if (d.isSkill()) {
                 // the validation above guaranteed a spare extra_skill charge
@@ -437,6 +441,10 @@ public class CombatEngine {
             if (d == null) {
                 continue;
             }
+            // stun skips the action; bleed resolves before any action
+            if (!preActionGate(state, c)) {
+                continue;
+            }
             if (d.isSkill()) {
                 executeSkill(state, c, d);
             } else {
@@ -476,6 +484,9 @@ public class CombatEngine {
         }
         for (int i = 0; i < runs; i++) {
             if (c.isDead() || state.isOver()) {
+                return;
+            }
+            if (!preActionGate(state, c)) {
                 return;
             }
             executeAttack(state, c, ActionDecision.base(c.getId(), "ATTACK", targetId), null, "ATTACK", true);
@@ -697,6 +708,13 @@ public class CombatEngine {
         int penalty = 0;
         if (actor.getDodgePenalty() != null) {
             penalty = dice.roll(actor.getDodgePenalty()).total();
+        }
+        // 教导有方: a teammate with the dodge-training passive shaves 1 point
+        // off the dodge penalty of every other combatant (min 0)
+        if (penalty > 0 && hasDodgeTrainingTeammate(state, actor)) {
+            penalty = Math.max(0, penalty - 1);
+            state.log(CombatEvent.of(state.getRound(), "buff",
+                    actor.getName() + " 的闪避惩罚因教导有方减少 1 点。"));
         }
         int value = dice.roll(actor.getSpeedDice()).total() + actor.effectiveSpeed() - penalty;
         actor.setDodgeValue(value);
@@ -1018,6 +1036,34 @@ public class CombatEngine {
                                     c.getName() + " 获得 " + e.getAmount() + " 点精力（养精蓄锐）。"));
                         }
                     }
+                    case "bloodletting" -> {
+                        // 放血: one extra base action per round while active
+                        c.setExtraActionsThisTurn(c.getExtraActionsThisTurn() + 1);
+                        state.log(CombatEvent.of(state.getRound(), "action",
+                                c.getName() + " 放血效果：本回合获得一次额外行动。"));
+                    }
+                    case "collapse" -> {
+                        // 崩溃: lose hp every round start; teammates gain a
+                        // one-round shield
+                        int loss = Math.min(e.getAmount() > 0 ? e.getAmount() : 10, c.getHp());
+                        c.setHp(c.getHp() - loss);
+                        state.log(CombatEvent.of(state.getRound(), "damage",
+                                c.getName() + " 因崩溃失去 " + loss + " 点生命。")
+                                .with("target", c.getId()).with("hpDamage", loss));
+                        if (c.getHp() <= 0) {
+                            state.resolvePotentialDeath(c);
+                        } else {
+                            int shield = e.getCount() > 0 ? e.getCount() : 5;
+                            for (Combatant mate : state.alive(c.getSide())) {
+                                if (mate.getId().equals(c.getId())) {
+                                    continue;
+                                }
+                                grantShield(mate, shield, 1);
+                                state.log(CombatEvent.of(state.getRound(), "shield",
+                                        mate.getName() + " 获得 " + shield + " 点护盾（崩溃庇护，持续 1 回合）。"));
+                            }
+                        }
+                    }
                     default -> {
                         // ignore
                     }
@@ -1046,6 +1092,12 @@ public class CombatEngine {
         state.setPhase(CombatPhase.ROUND_END);
         state.log(CombatEvent.of(state.getRound(), "round_end",
                 "第 " + state.getRound() + " 回合结束，帷幕落下。"));
+
+        // ally-death performances trigger at round end so a teammate's death
+        // mid-round still fires the trigger before the next round starts
+        for (Combatant c : state.allAlive()) {
+            checkPerformance(state, c);
+        }
 
         // taunt puppets vanish at round end
         List<Combatant> expiredPuppets = state.getCombatants().stream()
@@ -1149,6 +1201,67 @@ public class CombatEngine {
         return false;
     }
 
+    // ===================== pre-action gate (stun / bleed) =====================
+
+    private boolean preActionGate(CombatState state, Combatant c) {
+        if (c.statusesOfType("stun").stream().anyMatch(e -> !e.expired())) {
+            state.log(CombatEvent.of(state.getRound(), "action",
+                    c.getName() + " 晕眩中，无法行动。").with("actorId", c.getId()).with("action", "STUN"));
+            return false;
+        }
+        return resolveBleed(state, c);
+    }
+
+    /**
+     * 流血: performing any action costs HP equal to the current bleed stacks
+     * and halves the stacks afterwards. Returns false when the combatant died
+     * to the bleed (the pending action is cancelled).
+     */
+    private boolean resolveBleed(CombatState state, Combatant c) {
+        List<StatusEffect> bleeds = c.statusesOfType("bleed");
+        if (bleeds.isEmpty()) {
+            return true;
+        }
+        int stacks = bleeds.stream().mapToInt(StatusEffect::getCount).sum();
+        if (stacks <= 0) {
+            c.getStatusEffects().removeIf(e -> "bleed".equals(e.getType()));
+            return true;
+        }
+        int loss = Math.min(stacks, c.getHp());
+        c.setHp(c.getHp() - loss);
+        state.log(CombatEvent.of(state.getRound(), "damage",
+                c.getName() + " 因流血失去 " + loss + " 点生命（当前 " + stacks + " 层）。")
+                .with("target", c.getId()).with("hpDamage", loss).with("action", "BLEED"));
+        // half the stacks (floor); zero stacks remove the effect entirely
+        int remaining = stacks / 2;
+        for (StatusEffect b : bleeds) {
+            b.setCount(0);
+        }
+        if (remaining > 0) {
+            bleeds.get(0).setCount(remaining);
+        } else {
+            c.getStatusEffects().removeIf(e -> "bleed".equals(e.getType()));
+        }
+        if (c.getHp() <= 0) {
+            state.resolvePotentialDeath(c);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean hasDodgeTrainingTeammate(CombatState state, Combatant actor) {
+        for (Combatant mate : state.alive(actor.getSide())) {
+            if (mate.getId().equals(actor.getId())) {
+                continue;
+            }
+            if (mate.getTemplate() != null && mate.getTemplate().getCorePassive() != null
+                    && "dodge_training".equals(mate.getTemplate().getCorePassive().getType())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ===================== performance =====================
 
     private void checkPerformance(CombatState state, Combatant c) {
@@ -1161,6 +1274,7 @@ public class CombatEngine {
             case "energy_below" -> c.getEnergy() < perf.getThreshold();
             case "heal_total" -> c.getTotalHealGiven() >= perf.getThreshold();
             case "guard_success" -> c.getGuardSuccessCount() >= perf.getThreshold();
+            case "ally_death" -> state.sideDeaths(c.getSide()) > 0;
             default -> false;
         };
         if (triggered) {

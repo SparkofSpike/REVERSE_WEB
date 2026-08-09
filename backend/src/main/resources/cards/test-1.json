@@ -438,6 +438,73 @@
           "effects": [{ "type": "guard_bind", "amount": 10, "duration": 2, "target": "ally" }]
         }
       ]
+
+    },
+    {
+      "id": "hod",
+      "name": "Hod",
+      "description": "不是我害死了他们，我只是想阻止那个疯狂的想法，我没有害你，我没有...",
+      "maxHp": 100,
+      "maxEnergy": 90,
+      "speedDice": "1d8",
+      "physicalResistance": 1.1,
+      "magicResistance": 1.1,
+      "baseDamageDice": "1d8",
+      "baseDamageType": "PHYSICAL",
+      "blockDice": "1d6",
+      "dodgePenalty": "0d3",
+      "baseActions": ["ATTACK", "DEFEND", "DODGE", "GUARD", "COUNTER"],
+      "corePassive": {
+        "type": "dodge_training",
+        "amount": 1,
+        "description": "教导有方：你的其他角色受你培训，闪避惩罚减少0d1点。"
+      },
+      "performance": {
+        "triggerType": "ally_death",
+        "threshold": 0,
+        "description": "死亡一个队友",
+        "rewardDescription": "每回合开始，失去10点生命，所有队友获得持续一回合的5点护盾",
+        "effects": [
+          { "type": "collapse", "amount": 10, "count": 5, "duration": 1, "target": "allies" }
+        ]
+      },
+      "skills": [
+        {
+          "id": "hod-s1",
+          "name": "重槌制服",
+          "energyCost": 20,
+          "cooldown": 0,
+          "targetType": "enemy",
+          "description": "造成1d6的伤害，使被攻击的目标下回合晕眩无法行动。",
+          "effects": [
+            { "type": "damage", "dice": "1d6", "target": "enemy" },
+            { "type": "stun", "duration": 2, "target": "enemy" }
+          ]
+        },
+        {
+          "id": "hod-s2",
+          "name": "横切斩开",
+          "energyCost": 10,
+          "cooldown": 0,
+          "targetType": "enemy",
+          "description": "造成1d11伤害，使对方获得2层流血。",
+          "effects": [
+            { "type": "damage", "dice": "1d11", "target": "enemy" },
+            { "type": "bleed", "count": 2, "target": "enemy" }
+          ]
+        },
+        {
+          "id": "hod-s3",
+          "name": "放血",
+          "energyCost": 15,
+          "cooldown": 3,
+          "targetType": "self",
+          "description": "使用后，在接下来的三个回合内：拥有一次额外行动，任何伤害都会追加2层流血。",
+          "effects": [
+            { "type": "bloodletting", "duration": 3, "target": "self" }
+          ]
+        }
+      ]
     }
   ]
 }

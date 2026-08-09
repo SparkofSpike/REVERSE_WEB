@@ -560,10 +560,10 @@ class CombatEngineTest {
         spec.setTarget("allies");
 
         EffectExecutor executor = newExecutor();
-        executor.execute(spec, warrior, state, null); // warrior 3 -> 0 (undying first trigger -> 1)
-        executor.execute(spec, warrior, state, null); // warrior 1 -> 0 (undying rounds 2 -> 1)
-        executor.execute(spec, warrior, state, null); // warrior 1 -> 0 (undying rounds 1 -> 0)
-        executor.execute(spec, warrior, state, null); // warrior 1 -> 0 (no undying left -> dead)
+        executor.execute(spec, warrior, state, (String) null); // warrior 3 -> 0 (undying first trigger -> 1)
+        executor.execute(spec, warrior, state, (String) null); // warrior 1 -> 0 (undying rounds 2 -> 1)
+        executor.execute(spec, warrior, state, (String) null); // warrior 1 -> 0 (undying rounds 1 -> 0)
+        executor.execute(spec, warrior, state, (String) null); // warrior 1 -> 0 (no undying left -> dead)
 
         assertThat(warrior.isDead()).isTrue();
         assertThat(mage.isDead()).isFalse();
