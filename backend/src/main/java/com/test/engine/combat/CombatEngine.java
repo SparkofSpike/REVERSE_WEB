@@ -170,7 +170,7 @@ public class CombatEngine {
         if (perk.getEffect() != null) {
             List<Combatant> players = state.alive(CombatSide.PLAYER);
             for (Combatant c : players) {
-                effectExecutor.execute(perk.getEffect(), c, state, null);
+                effectExecutor.execute(perk.getEffect(), c, state, (String) null);
             }
         }
     }
@@ -817,7 +817,7 @@ public class CombatEngine {
                 caster.getName() + " 使用技能 " + skill.getName() + "（消耗 " + cost + " 精力）。")
                 .with("actorId", caster.getId()).with("targetId", decision.getTargetId()).with("action", "SKILL"));
         for (EffectSpec effect : skill.getEffects()) {
-            effectExecutor.execute(effect, caster, state, decision.getTargetId());
+            effectExecutor.execute(effect, caster, state, decision.effectiveTargetIds());
         }
         if (caster.getHp() <= 0) {
             state.resolvePotentialDeath(caster);
@@ -902,7 +902,7 @@ public class CombatEngine {
                 "选择特殊词条: " + perk.getName() + " — " + perk.getDescription()));
         List<Combatant> players = state.alive(CombatSide.PLAYER);
         for (Combatant c : players) {
-            effectExecutor.execute(perk.getEffect(), c, state, null);
+            effectExecutor.execute(perk.getEffect(), c, state, (String) null);
         }
         if (state.isOver()) {
             return state;
@@ -1168,7 +1168,7 @@ public class CombatEngine {
             state.log(CombatEvent.of(state.getRound(), "performance",
                     c.getName() + " 触发演出！" + perf.getDescription()));
             for (EffectSpec effect : perf.getEffects()) {
-                effectExecutor.execute(effect, c, state, null);
+                effectExecutor.execute(effect, c, state, (String) null);
             }
             // design doc: entering performance grants +2 draw energy (player side)
             if (c.isPlayerSide()) {

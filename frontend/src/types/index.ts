@@ -242,6 +242,7 @@ export interface ActionDecision {
   actionType: string
   skillId?: string | null
   targetId?: string | null
+  targetIds?: string[]
 }
 
 // ---------- battle record ----------

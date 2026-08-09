@@ -36,12 +36,21 @@ public class EffectExecutor {
      * targets and honored for enemy targets when non-null.
      */
     public void execute(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {
+        execute(spec, caster, state, explicitTarget == null ? null : List.of(explicitTarget));
+    }
+
+    /**
+     * Executes a spec with explicit targets. Empty/null falls back to the
+     * spec's own target resolution; multi-target selectors (enemies/allies)
+     * honor the listed ids instead of auto-picking.
+     */
+    public void execute(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
         String type = spec.getType();
         switch (type == null ? "" : type) {
-            case "damage" -> applyDamage(spec, caster, state, explicitTarget);
-            case "heal" -> applyHeal(spec, caster, state, explicitTarget);
-            case "shield" -> applyShield(spec, caster, state, explicitTarget);
-            case "energy" -> applyEnergy(spec, caster, state, explicitTarget);
+            case "damage" -> applyDamage(spec, caster, state, explicitTargets);
+            case "heal" -> applyHeal(spec, caster, state, explicitTargets);
+            case "shield" -> applyShield(spec, caster, state, explicitTargets);
+            case "energy" -> applyEnergy(spec, caster, state, explicitTargets);
             case "draw" -> drawCards(caster, state, spec.getCount());
             case "draw_boost" -> state.setDrawBoostPending(true);
             case "extra_actions" -> applyExtraActions(spec, caster);
@@ -69,7 +78,7 @@ public class EffectExecutor {
                 state.log(CombatEvent.of(state.getRound(), "effect",
                         "钟表加速：下一次特殊词条轮提前一回合。"));
             }
-            case "guard_bind" -> applyGuardBind(spec, caster, state, explicitTarget);
+            case "guard_bind" -> applyGuardBind(spec, caster, state, firstTarget(explicitTargets));
             case "sacrifice_buff" -> applySacrificeBuff(spec, caster, state);
             case "upgrade_skills" -> upgradeSkills(caster, state);
             case "draw_energy" -> {
@@ -85,11 +94,11 @@ public class EffectExecutor {
 
     // ----- damage / heal / shield / energy -----
 
-    private void applyDamage(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {
+    private void applyDamage(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
         DamageType type = spec.getDamageType() == null ? DamageType.PHYSICAL : spec.getDamageType();
         int base = spec.getDice() != null ? dice.roll(spec.getDice()).total() : spec.getAmount();
         int damage = base + caster.getBonusDamage();
-        List<Combatant> targets = resolveTargets(spec.getTarget(), caster, state, explicitTarget, spec.getCount());
+        List<Combatant> targets = resolveTargets(spec.getTarget(), caster, state, explicitTargets, spec.getCount());
         for (Combatant t : targets) {
             if (t.isDead()) {
                 continue;
@@ -101,9 +110,9 @@ public class EffectExecutor {
         }
     }
 
-    private void applyHeal(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {
+    private void applyHeal(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
         int amount = spec.getDice() != null ? dice.roll(spec.getDice()).total() : spec.getAmount();
-        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTarget, spec.getCount())) {
+        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTargets, spec.getCount())) {
             if (t.isDead()) {
                 continue;
             }
@@ -114,10 +123,10 @@ public class EffectExecutor {
         }
     }
 
-    private void applyShield(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {
+    private void applyShield(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
         int amount = spec.getDice() != null ? dice.roll(spec.getDice()).total() : spec.getAmount();
         int duration = spec.getDuration() > 0 ? spec.getDuration() : 1;
-        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTarget, spec.getCount())) {
+        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTargets, spec.getCount())) {
             if (t.isDead()) {
                 continue;
             }
@@ -127,9 +136,9 @@ public class EffectExecutor {
         }
     }
 
-    private void applyEnergy(EffectSpec spec, Combatant caster, CombatState state, String explicitTarget) {
+    private void applyEnergy(EffectSpec spec, Combatant caster, CombatState state, List<String> explicitTargets) {
         int amount = spec.getDice() != null ? dice.roll(spec.getDice()).total() : spec.getAmount();
-        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTarget, spec.getCount())) {
+        for (Combatant t : resolveTargets(spec.getTarget(), caster, state, explicitTargets, spec.getCount())) {
             t.setEnergy(Math.min(t.getMaxEnergy(), t.getEnergy() + amount));
             state.log(CombatEvent.of(state.getRound(), "energy",
                     t.getName() + " 恢复 " + amount + " 点精力。"));
@@ -388,7 +397,7 @@ public class EffectExecutor {
     }
 
     private List<Combatant> resolveTargets(String selector, Combatant caster, CombatState state,
-                                           String explicitTarget, int count) {
+                                           List<String> explicitTargets, int count) {
         if (selector == null) {
             selector = "enemy";
         }
@@ -398,7 +407,8 @@ public class EffectExecutor {
         switch (selector) {
             case "self" -> result.add(caster);
             case "ally" -> {
-                Combatant t = state.find(explicitTarget == null ? caster.getId() : explicitTarget);
+                String first = firstTarget(explicitTargets);
+                Combatant t = state.find(first == null ? caster.getId() : first);
                 if (t != null && t.getSide() == own) {
                     result.add(t);
                 }
@@ -411,17 +421,24 @@ public class EffectExecutor {
             }
             case "allies" -> {
                 List<Combatant> allies = state.alive(own);
-                int n = count > 0 ? Math.min(count, allies.size()) : allies.size();
-                result.addAll(allies.subList(0, n));
+                pickListed(allies, explicitTargets, count, result);
+                if (result.isEmpty()) {
+                    int n = count > 0 ? Math.min(count, allies.size()) : allies.size();
+                    result.addAll(allies.subList(0, n));
+                }
             }
             case "enemies" -> {
                 List<Combatant> enemies = state.alive(enemySide);
-                int n = count > 0 ? Math.min(count, enemies.size()) : enemies.size();
-                result.addAll(enemies.subList(0, n));
+                pickListed(enemies, explicitTargets, count, result);
+                if (result.isEmpty()) {
+                    int n = count > 0 ? Math.min(count, enemies.size()) : enemies.size();
+                    result.addAll(enemies.subList(0, n));
+                }
             }
             case "enemy" -> {
-                if (explicitTarget != null) {
-                    Combatant t = state.find(explicitTarget);
+                String first = firstTarget(explicitTargets);
+                if (first != null) {
+                    Combatant t = state.find(first);
                     if (t != null && t.getSide() == enemySide) {
                         result.add(t);
                     }
@@ -435,6 +452,29 @@ public class EffectExecutor {
             default -> result.add(caster);
         }
         return result;
+    }
+
+    private static String firstTarget(List<String> explicitTargets) {
+        if (explicitTargets == null || explicitTargets.isEmpty()) {
+            return null;
+        }
+        return explicitTargets.get(0);
+    }
+
+    private static void pickListed(List<Combatant> candidates, List<String> explicitTargets, int count,
+                                   List<Combatant> result) {
+        if (explicitTargets == null || explicitTargets.isEmpty()) {
+            return;
+        }
+        for (String id : explicitTargets) {
+            Combatant t = candidates.stream().filter(c -> c.getId().equals(id)).findFirst().orElse(null);
+            if (t != null && !result.contains(t)) {
+                result.add(t);
+                if (count > 0 && result.size() >= count) {
+                    break;
+                }
+            }
+        }
     }
 
     private void applyMaxHpBonus(EffectSpec spec, Combatant caster, CombatState state) {

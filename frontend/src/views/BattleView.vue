@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NSelect, useMessage } from 'naive-ui'
+import { NButton, useMessage } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
 import {
   getBattle,
@@ -24,14 +24,19 @@ const battle = ref<CombatView | null>(null)
 const loading = ref(true)
 const submitting = ref(false)
 
-// per-combatant pending decision
+// per-combatant pending decision. Targets are locked by dragging the
+// chosen action/skill card onto a unit (multi-target skills accept several).
 interface PendingDecision {
   actionType: string
   skillId: string | null
-  targetId: string | null
+  targetIds: string[]
 }
 const pending = ref<Record<string, PendingDecision>>({})
-const targetDummy = ref('dummy')
+// selected-combatant panel tabs: default to the skills page
+const panelTab = ref<'actions' | 'skills'>('skills')
+// drag-to-lock state: which chosen item is being dragged onto a unit
+const dragPayload = ref<{ combatantId: string; kind: 'action' | 'skill'; id: string } | null>(null)
+const dragOverUnit = ref<string | null>(null)
 
 // portrait images: /assets/{templateId}.png, falling back to a placeholder
 const portraitFailed = ref<Record<string, boolean>>({})
@@ -83,7 +88,15 @@ const selectedCombatant = computed(
   () => battle.value?.combatants.find((c) => c.id === selectedId.value) ?? null
 )
 function toggleSelect(id: string) {
-  selectedId.value = selectedId.value === id ? null : id
+  if (selectedId.value === id) {
+    selectedId.value = null
+    dragPayload.value = null
+    dragOverUnit.value = null
+  } else {
+    selectedId.value = id
+    // the tab panel always opens on the skills page by default
+    panelTab.value = 'skills'
+  }
 }
 // skill panel position: anchored inside the stage scene, next to the unit
 const skillPanelPos = ref<{ left?: string; right?: string; top: string } | null>(null)
@@ -242,7 +255,7 @@ watch(
   (ids) => {
     for (const id of ids.split(',')) {
       if (id && !pending.value[id]) {
-        pending.value[id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
+        pending.value[id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
       }
     }
   },
@@ -819,7 +832,7 @@ async function load() {
     processLogs(battle.value.logs)
     for (const c of alivePlayers.value) {
       if (!pending.value[c.id]) {
-        pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
+        pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
       }
     }
   } catch (e) {
@@ -827,13 +840,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function actionOptions(c: CombatantView) {
-  return [
-    ...c.baseActions.map((a) => ({ label: actionLabel(a), value: a })),
-    { label: '技能', value: 'SKILL' }
-  ]
 }
 
 function actionLabel(action: string): string {
@@ -849,12 +855,205 @@ function actionLabel(action: string): string {
   return map[action] ?? action
 }
 
-function needsTarget(action: string): boolean {
+function newPending(): PendingDecision {
+  return { actionType: 'ATTACK', skillId: null, targetIds: [] }
+}
+
+function actionNeedsTarget(action: string): boolean {
   return action === 'ATTACK' || action === 'CHASE'
 }
 
-function needsGuardTarget(action: string): boolean {
+function actionNeedsAllyTarget(action: string): boolean {
   return action === 'GUARD'
+}
+
+// max targets a skill can lock: the largest count among its effects (1 default)
+function skillTargetCap(s: SkillView): number {
+  let cap = 1
+  for (const e of s.effects ?? []) {
+    if (typeof e.count === 'number' && e.count > cap) cap = e.count
+  }
+  return cap
+}
+
+function skillNeedsTarget(s: SkillView | null): boolean {
+  if (!s) return false
+  return s.targetType !== 'self' && s.targetType !== 'random_ally'
+}
+
+function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): boolean {
+  if (s.targetType === 'self') return t.id === c.id
+  if (s.targetType.includes('enemy')) return t.side === 'ENEMY' && !t.dead
+  if (s.targetType.includes('ally')) return t.side === 'PLAYER' && !t.dead
+  return false
+}
+
+// click an action in the selected-combatant panel
+function pickAction(c: CombatantView, action: string) {
+  if (c.side !== 'PLAYER' || animating.value) return
+  const p = pending.value[c.id] ?? newPending()
+  p.actionType = action
+  p.skillId = null
+  p.targetIds = []
+  pending.value[c.id] = { ...p }
+}
+
+// click a skill card: select it (self-targeted auto-locks); clicking the
+// already selected one cancels the choice
+function pickSkill(c: CombatantView, s: SkillView) {
+  if (c.side !== 'PLAYER' || animating.value) return
+  if ((c.cooldowns[s.id] ?? 0) > 0) {
+    message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
+    return
+  }
+  const cur = pending.value[c.id]
+  if (cur?.actionType === 'SKILL' && cur.skillId === s.id) {
+    pending.value[c.id] = newPending()
+    return
+  }
+  pending.value[c.id] = {
+    actionType: 'SKILL',
+    skillId: s.id,
+    targetIds: s.targetType === 'self' ? [c.id] : []
+  }
+}
+
+function skillActive(c: CombatantView, s: SkillView): boolean {
+  const p = pending.value[c.id]
+  return !!p && p.actionType === 'SKILL' && p.skillId === s.id
+}
+
+function selectedNeedsTarget(c: CombatantView): boolean {
+  const p = pending.value[c.id]
+  if (!p) return false
+  if (p.actionType === 'SKILL') {
+    const s = c.skills.find((x) => x.id === p.skillId)
+    return skillNeedsTarget(s ?? null)
+  }
+  return actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)
+}
+
+// ---- decision status helpers (used by the panel and the decision bar) ----
+function hasDecision(c: CombatantView): boolean {
+  const p = pending.value[c.id]
+  if (!p) return false
+  if (p.actionType === 'SKILL') return !!p.skillId
+  return true
+}
+
+function decisionReady(c: CombatantView): boolean {
+  const p = pending.value[c.id]
+  if (!p) return false
+  if (p.actionType === 'SKILL') {
+    const s = c.skills.find((x) => x.id === p.skillId)
+    if (!s) return false
+    return !skillNeedsTarget(s) || p.targetIds.length > 0
+  }
+  if (actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)) {
+    return p.targetIds.length > 0
+  }
+  return true
+}
+
+function combatantName(id: string): string {
+  return battle.value?.combatants.find((x) => x.id === id)?.name ?? id
+}
+
+function decisionSummary(c: CombatantView): string {
+  const p = pending.value[c.id]
+  if (!p) return '未下达指令'
+  if (p.actionType === 'SKILL') {
+    const s = c.skills.find((x) => x.id === p.skillId)
+    if (!s) return '未下达指令'
+    const t = p.targetIds.map(combatantName).join('、')
+    return t ? `${s.name} → ${t}` : `${s.name}${skillNeedsTarget(s) ? '（拖拽锁定目标）' : ''}`
+  }
+  const label = actionLabel(p.actionType)
+  if (actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)) {
+    const t = p.targetIds.map(combatantName).join('、')
+    return t ? `${label} → ${t}` : `${label}（拖拽锁定目标）`
+  }
+  return label
+}
+
+function clearDecision(c: CombatantView) {
+  pending.value[c.id] = newPending()
+}
+
+// ---- drag-to-lock: drag the chosen action/skill card onto a unit ----
+function onDragStart(c: CombatantView, kind: 'action' | 'skill', id: string, ev: DragEvent) {
+  // dragging also selects the action/skill first
+  if (kind === 'action') {
+    if ((pending.value[c.id]?.actionType ?? '') !== id) pickAction(c, id)
+  } else {
+    const s = c.skills.find((x) => x.id === id)
+    if (s && !skillActive(c, s)) pickSkill(c, s)
+  }
+  dragPayload.value = { combatantId: c.id, kind, id }
+  ev.dataTransfer!.effectAllowed = 'copy'
+}
+
+function onDragEnd() {
+  dragPayload.value = null
+  dragOverUnit.value = null
+}
+
+function canAcceptDrop(t: CombatantView): boolean {
+  const p = dragPayload.value
+  if (!p) return false
+  const c = battle.value?.combatants.find((x) => x.id === p.combatantId)
+  if (!c || c.dead) return false
+  if (p.kind === 'skill') {
+    const s = c.skills.find((x) => x.id === p.id)
+    return s ? isSkillTargetValid(s, c, t) : false
+  }
+  if (actionNeedsTarget(p.id)) return t.side === 'ENEMY' && !t.dead
+  if (actionNeedsAllyTarget(p.id)) return t.side === 'PLAYER' && !t.dead && t.id !== c.id
+  return false
+}
+
+function onDragOverUnit(ev: DragEvent, t: CombatantView) {
+  if (!dragPayload.value) return
+  ev.preventDefault()
+  if (canAcceptDrop(t)) {
+    ev.dataTransfer!.dropEffect = 'copy'
+    dragOverUnit.value = t.id
+  }
+}
+
+function onDropUnit(t: CombatantView) {
+  const p = dragPayload.value
+  dragOverUnit.value = null
+  dragPayload.value = null
+  if (!p || !canAcceptDrop(t)) return
+  const c = battle.value?.combatants.find((x) => x.id === p.combatantId)
+  if (!c) return
+  const dec = pending.value[c.id]
+  if (!dec) return
+  if (p.kind === 'skill') {
+    const s = c.skills.find((x) => x.id === p.id)
+    if (!s) return
+    const cap = skillTargetCap(s)
+    if (dec.targetIds.includes(t.id)) {
+      message.info('该目标已锁定')
+      return
+    }
+    if (dec.targetIds.length >= cap) {
+      message.warning(`最多锁定 ${cap} 个目标`)
+      return
+    }
+    dec.targetIds.push(t.id)
+  } else {
+    dec.targetIds = [t.id]
+  }
+  pending.value[c.id] = { ...dec }
+}
+
+function removeLockedTarget(c: CombatantView, idx: number) {
+  const p = pending.value[c.id]
+  if (!p) return
+  p.targetIds.splice(idx, 1)
+  pending.value[c.id] = { ...p }
 }
 
 // entering the extra-action round resets every extra actor's selection:
@@ -863,60 +1062,11 @@ function needsGuardTarget(action: string): boolean {
 watch(inExtraRound, (on) => {
   if (!on) return
   for (const c of extraActors.value) {
-    pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetId: targetDummy.value }
+    pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
   }
 })
 
-function onActionTypeChange(c: CombatantView, action: string) {
-  if (action === 'SKILL') return
-  // leaving SKILL must clear the pending skill, otherwise the skill tag
-  // stays highlighted and the old skill leaks into the next decision
-  const p = pending.value[c.id]
-  p.skillId = null
-  p.targetId = needsTarget(action) ? targetDummy.value : null
-}
 
-function selectSkill(c: CombatantView, s: SkillView) {
-  if ((c.cooldowns[s.id] ?? 0) > 0) {
-    message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
-    return
-  }
-  pending.value[c.id] = {
-    actionType: 'SKILL',
-    skillId: s.id,
-    targetId: s.targetType === 'self' ? c.id : null
-  }
-}
-
-function selectedSkill(c: CombatantView): SkillView | null {
-  const id = pending.value[c.id]?.skillId
-  return c.skills.find((s) => s.id === id) ?? null
-}
-
-function skillNeedsTarget(s: SkillView | null): boolean {
-  if (!s) return false
-  return s.targetType !== 'self' && s.targetType !== 'allies'
-}
-
-function skillTagClass(c: CombatantView, s: SkillView): string {
-  const active = pending.value[c.id]?.actionType === 'SKILL' && pending.value[c.id]?.skillId === s.id ? ' active' : ''
-  const cooldown = (c.cooldowns[s.id] ?? 0) > 0 ? ' cooldown' : ''
-  return 'skill-tag' + active + cooldown
-}
-
-function skillTargetOptions(skillTargetType: string, c: CombatantView) {
-  const allies = players.value.filter((p) => !p.dead && p.id !== c.id)
-  if (skillTargetType === 'ally' || skillTargetType === 'random_ally') {
-    return allies.map((a) => ({ label: a.name, value: a.id }))
-  }
-  if (skillTargetType === 'allies') {
-    return allies.map((a) => ({ label: a.name, value: a.id }))
-  }
-  if (skillTargetType === 'enemy' || skillTargetType === 'enemies') {
-    return enemies.value.filter((e) => !e.dead).map((e) => ({ label: e.name, value: e.id }))
-  }
-  return []
-}
 
 async function submitDecisions() {
   const decisions: ActionDecision[] = []
@@ -928,25 +1078,32 @@ async function submitDecisions() {
         message.warning(`${c.name} 未选择技能`)
         return
       }
+      const s = c.skills.find((x) => x.id === p.skillId)
+      if (s && skillNeedsTarget(s) && p.targetIds.length === 0) {
+        message.warning(`${c.name} 的技能 ${s.name} 需要拖拽锁定目标`)
+        return
+      }
       decisions.push({
         combatantId: c.id,
         actionType: 'SKILL',
         skillId: p.skillId,
-        targetId: p.targetId ?? undefined
+        targetId: p.targetIds[0] ?? null,
+        targetIds: [...p.targetIds]
       })
     } else {
-      if (needsTarget(p.actionType) && !p.targetId) {
+      if (actionNeedsTarget(p.actionType) && p.targetIds.length === 0) {
         message.warning(`${c.name} 未选择攻击目标`)
         return
       }
-      if (needsGuardTarget(p.actionType) && !p.targetId) {
+      if (actionNeedsAllyTarget(p.actionType) && p.targetIds.length === 0) {
         message.warning(`${c.name} 未选择守护目标`)
         return
       }
       decisions.push({
         combatantId: c.id,
         actionType: p.actionType,
-        targetId: p.targetId ?? undefined
+        targetId: p.targetIds[0] ?? null,
+        targetIds: [...p.targetIds]
       })
     }
   }
@@ -1144,9 +1301,12 @@ function statusText(c: CombatantView): string {
               approaching: approaching[c.id],
               clashing: clashing[c.id],
               shaking: shaking[c.id],
-              selected: selectedId === c.id
+              selected: selectedId === c.id,
+              'drag-target': dragOverUnit === c.id
             }"
             @click="toggleSelect(c.id)"
+            @dragover="onDragOverUnit($event, c)"
+            @drop="onDropUnit(c)"
           >
             <div class="portrait-wrap">
               <img
@@ -1184,6 +1344,13 @@ function statusText(c: CombatantView): string {
               <div class="name">
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+                <span
+                  v-if="inDecision && !c.dead"
+                  class="tag-decision"
+                  :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
+                >
+                  {{ !hasDecision(c) ? '未下令' : decisionReady(c) ? '已下令' : '待目标' }}
+                </span>
               </div>
               <div class="bar-row">
                 <div class="hp-bar">
@@ -1221,9 +1388,12 @@ function statusText(c: CombatantView): string {
               approaching: approaching[c.id],
               clashing: clashing[c.id],
               shaking: shaking[c.id],
-              selected: selectedId === c.id
+              selected: selectedId === c.id,
+              'drag-target': dragOverUnit === c.id
             }"
             @click="toggleSelect(c.id)"
+            @dragover="onDragOverUnit($event, c)"
+            @drop="onDropUnit(c)"
           >
             <div class="portrait-wrap">
               <img
@@ -1261,6 +1431,13 @@ function statusText(c: CombatantView): string {
               <div class="name">
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+                <span
+                  v-if="inDecision && !c.dead"
+                  class="tag-decision"
+                  :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
+                >
+                  {{ !hasDecision(c) ? '未下令' : decisionReady(c) ? '已下令' : '待目标' }}
+                </span>
               </div>
               <div class="bar-row">
                 <div class="hp-bar">
@@ -1331,18 +1508,79 @@ function statusText(c: CombatantView): string {
           <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
         </div>
 
-        <!-- selected-combatant skill cards: anchored next to the unit -->
+        <!-- selected-combatant tab panel: actions + skills, anchored next
+             to the unit. Default tab is skills; clicking a card issues the
+             decision, target-requiring ones are locked by dragging the card
+             onto a unit (multi-target skills accept one drag per target). -->
         <div v-if="selectedCombatant && skillPanelPos" class="skill-panel" :style="skillPanelPos">
           <div class="skill-panel-head">
             <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
             <span class="skill-panel-close" @click="selectedId = null">✕</span>
           </div>
-          <div class="skill-cards">
+          <div class="panel-tabs">
+            <button
+              class="panel-tab"
+              :class="{ active: panelTab === 'actions' }"
+              @click="panelTab = 'actions'"
+            >
+              行动
+            </button>
+            <button
+              class="panel-tab"
+              :class="{ active: panelTab === 'skills' }"
+              @click="panelTab = 'skills'"
+            >
+              技能
+            </button>
+          </div>
+
+          <!-- actions tab: base actions; attack/guard drag onto a unit -->
+          <div v-if="panelTab === 'actions'" class="action-list">
+            <button
+              v-for="a in selectedCombatant.baseActions"
+              :key="a"
+              class="action-chip"
+              :class="{ active: pending[selectedCombatant.id]?.actionType === a }"
+              :disabled="selectedCombatant.side !== 'PLAYER' || animating"
+              :draggable="!animating && inDecision && selectedCombatant.side === 'PLAYER'"
+              @click="pickAction(selectedCombatant, a)"
+              @dragstart="onDragStart(selectedCombatant, 'action', a, $event)"
+              @dragend="onDragEnd"
+            >
+              {{ actionLabel(a) }}
+            </button>
+            <div v-if="selectedNeedsTarget(selectedCombatant)" class="panel-hint">
+              {{
+                pending[selectedCombatant.id]?.actionType === 'GUARD'
+                  ? '拖拽到要守护的队友上锁定目标'
+                  : '拖拽到敌方单位上锁定目标'
+              }}
+            </div>
+          </div>
+
+          <!-- skills tab (default): click to use, drag onto units to lock -->
+          <div v-else class="skill-cards">
             <div
               v-for="sk in selectedCombatant.skills"
               :key="sk.id"
               class="card-face skill"
-              :class="{ upgraded: sk.upgraded }"
+              :class="{
+                upgraded: sk.upgraded,
+                active: skillActive(selectedCombatant, sk),
+                disabled:
+                  (selectedCombatant.cooldowns[sk.id] ?? 0) > 0 ||
+                  selectedCombatant.side !== 'PLAYER' ||
+                  animating
+              }"
+              :draggable="
+                !animating &&
+                inDecision &&
+                selectedCombatant.side === 'PLAYER' &&
+                skillNeedsTarget(sk)
+              "
+              @click="pickSkill(selectedCombatant, sk)"
+              @dragstart="onDragStart(selectedCombatant, 'skill', sk.id, $event)"
+              @dragend="onDragEnd"
             >
               <img
                 class="face-img"
@@ -1359,85 +1597,75 @@ function statusText(c: CombatantView): string {
                   <span v-if="sk.upgraded" class="face-up">升变</span>
                 </div>
                 <div class="face-desc">{{ sk.description }}</div>
+                <div v-if="skillActive(selectedCombatant, sk) && skillNeedsTarget(sk)" class="locked-targets">
+                  <span
+                    v-for="(tid, ti) in pending[selectedCombatant.id]?.targetIds ?? []"
+                    :key="tid"
+                    class="target-chip"
+                  >
+                    {{ combatantName(tid) }}
+                    <b @click.stop="removeLockedTarget(selectedCombatant, ti)">✕</b>
+                  </span>
+                  <span v-if="!(pending[selectedCombatant.id]?.targetIds ?? []).length" class="dim">
+                    拖拽到目标上锁定
+                  </span>
+                </div>
               </div>
             </div>
+          </div>
+
+          <!-- current decision summary -->
+          <div class="decision-summary" :class="{ ready: decisionReady(selectedCombatant) }">
+            <span>{{ decisionSummary(selectedCombatant) }}</span>
+            <span
+              v-if="hasDecision(selectedCombatant)"
+              class="clear-decision"
+              @click="clearDecision(selectedCombatant)"
+            >
+              撤销
+            </span>
           </div>
         </div>
         </div>
       </div>
 
-      <!-- decision panel: one control row per alive player (extra-action
-           rounds only show characters that still hold extra actions) -->
+      <!-- decision panel: per-character status + submit. Orders are issued
+           from the tab panel (click a unit), so this bar only shows the
+           pending state and the submit button. -->
       <div v-if="inDecision" class="panel decision-panel" :class="{ locked: animating }">
         <div v-if="inExtraRound" class="extra-round-hint">
           ⚡ 额外行动轮：{{ extraActors.map((a) => `${a.name}（剩余 ${a.extraActionsThisTurn}）`).join('、') }}
         </div>
-        <div v-for="c in decisionActors" :key="c.id" class="decision-unit">
-          <span class="actor-name">{{ c.name }}</span>
-          <n-select
-            v-model:value="pending[c.id].actionType"
-            @update:value="onActionTypeChange(c, $event)"
-            :options="actionOptions(c)"
-            size="small"
-            style="width: 120px"
-          />
-          <n-select
-            v-if="pending[c.id].actionType === 'SKILL'"
-            v-model:value="pending[c.id].skillId"
-            :options="c.skills.map((s) => ({
-              label: `${s.name} (${s.energyCost})${s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : ''}`,
-              value: s.id
-            }))"
-            size="small"
-            style="width: 160px"
-          />
-          <n-select
-            v-if="needsTarget(pending[c.id].actionType) || (pending[c.id].actionType === 'SKILL' && pending[c.id].skillId)"
-            v-model:value="pending[c.id].targetId"
-            :options="
-              pending[c.id].actionType === 'SKILL'
-                ? skillTargetOptions(c.skills.find((s) => s.id === pending[c.id].skillId)?.targetType ?? '', c)
-                : enemies.filter((e) => !e.dead).map((e) => ({ label: e.name, value: e.id }))
-            "
-            size="small"
-            style="width: 120px"
-          />
-          <n-select
-            v-if="needsGuardTarget(pending[c.id].actionType)"
-            v-model:value="pending[c.id].targetId"
-            :options="players.filter((p) => !p.dead && p.id !== c.id).map((p) => ({ label: p.name, value: p.id }))"
-            size="small"
-            style="width: 120px"
-          />
-          <div class="skill-hint">
-            <span v-for="s in c.skills" :key="s.id" :class="skillTagClass(c, s)" @click="selectSkill(c, s)">
-              {{ s.name }}({{ s.energyCost }}){{ (c.cooldowns[s.id] ?? 0) > 0 ? ' CD' + (c.cooldowns[s.id] ?? 0) : '' }}{{ s.upgraded ? (c.skillsUpgraded ? ' 已升变' : ' 可升变') : '' }}
+        <div class="decision-status">
+          <div
+            v-for="c in decisionActors"
+            :key="c.id"
+            class="decision-unit"
+            @click="toggleSelect(c.id)"
+          >
+            <span class="actor-name" :class="{ decided: decisionReady(c) }">{{ c.name }}</span>
+            <span
+              class="decision-text"
+              :class="{ undecided: !hasDecision(c), waiting: hasDecision(c) && !decisionReady(c) }"
+            >
+              {{ decisionSummary(c) }}
             </span>
           </div>
-          <div v-if="pending[c.id].actionType === 'SKILL' && selectedSkill(c)" class="skill-detail">
-            <div class="skill-desc dim">{{ selectedSkill(c)?.description }}</div>
-            <n-select
-              v-if="skillNeedsTarget(selectedSkill(c))"
-              v-model:value="pending[c.id].targetId"
-              :options="skillTargetOptions(selectedSkill(c)?.targetType ?? '', c)"
-              size="small"
-              style="width: 170px"
-              placeholder="选择目标"
-            />
-          </div>
         </div>
-        <n-button
-          v-if="inExtraRound"
-          quaternary
-          size="small"
-          :disabled="animating || submitting"
-          @click="skipExtra"
-        >
-          跳过剩余额外行动
-        </n-button>
-        <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
-          {{ inExtraRound ? '执行额外行动' : '提交指令' }}
-        </n-button>
+        <div class="decision-actions">
+          <n-button
+            v-if="inExtraRound"
+            quaternary
+            size="small"
+            :disabled="animating || submitting"
+            @click="skipExtra"
+          >
+            跳过剩余额外行动
+          </n-button>
+          <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
+            {{ inExtraRound ? '执行额外行动' : '提交指令' }}
+          </n-button>
+        </div>
       </div>
 
 
@@ -2099,53 +2327,49 @@ function statusText(c: CombatantView): string {
   font-weight: 600;
 }
 
-.skill-hint {
+.decision-status {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  font-size: 12px;
 }
 
-.skill-tag {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+.decision-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   cursor: pointer;
-  color: var(--text-dim);
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
-}
-
-.skill-tag:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.skill-tag.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(76, 194, 255, 0.12);
-}
-
-.skill-tag.cooldown {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.skill-detail {
-  margin-top: 4px;
-  padding: 6px 8px;
-  border: 1px dashed var(--border);
+  padding: 4px 6px;
   border-radius: 6px;
+}
+
+.decision-unit:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.actor-name.decided {
+  color: #7ce0a3;
+}
+
+.decision-text {
   font-size: 12px;
+  color: var(--text-dim);
+}
+
+.decision-text.undecided {
+  color: var(--warn, #ffc857);
+  font-weight: 600;
+}
+
+.decision-text.waiting {
+  color: #ffe08a;
+}
+
+.decision-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
-
-.skill-desc {
-  margin-bottom: 0;
+  justify-content: flex-end;
 }
 
 /* ---------- card faces: artist art + bottom text overlay ---------- */
@@ -2296,6 +2520,168 @@ function statusText(c: CombatantView): string {
 .skill-panel-close:hover {
   color: #fff;
 }
+.panel-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-tab {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.panel-tab.active {
+  color: #ffe08a;
+  border-color: rgba(255, 200, 87, 0.5);
+  background: rgba(255, 200, 87, 0.1);
+}
+
+.action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.action-chip {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.action-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.action-chip.active {
+  color: #ffe08a;
+  border-color: rgba(255, 200, 87, 0.6);
+  background: rgba(255, 200, 87, 0.12);
+}
+
+.panel-hint {
+  width: 100%;
+  font-size: 11px;
+  color: var(--warn, #ffc857);
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(255, 200, 87, 0.08);
+  border: 1px dashed rgba(255, 200, 87, 0.3);
+}
+
+/* locked targets chips inside the selected skill card */
+.locked-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.target-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #191919;
+  background: #ffe08a;
+  border-radius: 999px;
+}
+
+.target-chip b {
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* selected card highlight + cooldown look */
+.card-face.skill.active {
+  outline: 2px solid rgba(255, 200, 87, 0.9);
+  outline-offset: 1px;
+  box-shadow: 0 0 16px rgba(255, 200, 87, 0.35);
+}
+
+.card-face.skill.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* current decision summary row at the bottom of the panel */
+.decision-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.decision-summary.ready {
+  color: #7ce0a3;
+}
+
+.clear-decision {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+.clear-decision:hover {
+  color: var(--danger);
+}
+
+/* unit drag highlight + per-unit decision tag */
+.unit.drag-target {
+  outline: 2px dashed rgba(76, 194, 255, 0.8);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.tag-decision {
+  margin-left: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 4px;
+  vertical-align: 1px;
+  color: var(--warn, #ffc857);
+  border: 1px solid rgba(255, 200, 87, 0.5);
+}
+
+.tag-decision.ready {
+  color: #7ce0a3;
+  border-color: rgba(124, 224, 163, 0.5);
+}
+
+.tag-decision.waiting {
+  color: var(--warn, #ffc857);
+  border-color: rgba(255, 200, 87, 0.5);
+}
+
 .skill-cards {
   display: flex;
   flex-direction: row;
@@ -2600,23 +2986,12 @@ function statusText(c: CombatantView): string {
     min-width: 0;
     font-size: 15px;
   }
-  .decision-unit .n-select {
-    width: 100% !important;
+  .decision-actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
   }
-  .skill-detail {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .skill-detail .n-select {
-    width: 100% !important;
-  }
-  .skill-hint {
-    gap: 8px;
-  }
-  .skill-tag {
-    padding: 6px 10px;
-    font-size: 13px;
+  .decision-actions .n-button {
+    flex: 1 1 100%;
   }
 
   .hand .card {
