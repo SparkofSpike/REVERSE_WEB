@@ -833,7 +833,8 @@ public class CombatEngine {
         }
         state.log(CombatEvent.of(state.getRound(), "skill",
                 caster.getName() + " 使用技能 " + skill.getName() + "（消耗 " + cost + " 精力）。")
-                .with("actorId", caster.getId()).with("targetId", decision.getTargetId()).with("action", "SKILL"));
+                .with("actorId", caster.getId()).with("targetId", decision.getTargetId())
+                .with("action", "SKILL").with("skillId", skill.getId()));
         for (EffectSpec effect : skill.getEffects()) {
             effectExecutor.execute(effect, caster, state, decision.effectiveTargetIds());
         }

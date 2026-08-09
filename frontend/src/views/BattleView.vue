@@ -240,7 +240,16 @@ function preloadAssets() {
     '/assets/curtain_fall.webp',
     '/assets/last_dash.webp',
     '/assets/warrior.webp',
-    '/assets/mage.webp'
+    '/assets/mage.webp',
+    // hod pose sheet (idle/attack/defend/skills/clash/hit)
+    '/assets/hod_idle.webp',
+    '/assets/hod_attack.webp',
+    '/assets/hod_defend.webp',
+    '/assets/hod_skill1.webp',
+    '/assets/hod_skill2.webp',
+    '/assets/hod_clash.webp',
+    '/assets/hod_hit.webp',
+    '/assets/hod_hit_max.webp'
   ]
   for (const u of urls) {
     void ensureImageLoaded(u)
@@ -489,6 +498,10 @@ async function playStep(step: QueuedStep) {
     if (!actorId || !targetId) return
     pulseActor(actorId)
     pulseActor(targetId)
+    for (const id of [actorId, targetId]) {
+      const c = battle.value?.combatants.find((x) => x.id === id)
+      if (c && hasPoses(c)) setPose(id, 'clash', CLASH_STEP + 250)
+    }
     // "Clash!" label on both fighters' heads, styled like the Attack!/Defend!
     // action labels (longer ttl so it is still visible at the impact moment)
     pushFloat(actorId, 'Clash!', 'action', 34, 900)
@@ -607,6 +620,19 @@ async function playStep(step: QueuedStep) {
     if (!actorId) return
     if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
     pulseActor(actorId)
+    // pose by action: skills split into skill1/skill2 art by skill index
+    const actor = battle.value?.combatants.find((x) => x.id === actorId)
+    if (actor && hasPoses(actor)) {
+      if (action === 'SKILL' || action === 'CARD') {
+        const skillId = d.skillId as string | undefined
+        const idx = skillId ? actor.skills.findIndex((sk) => sk.id === skillId) : -1
+        setPose(actorId, idx === 1 ? 'skill2' : 'skill1', ACTION_STEP + 250)
+      } else if (action === 'ATTACK' || action === 'CHASE' || action === 'COUNTER') {
+        setPose(actorId, 'attack', ACTION_STEP + 250)
+      } else if (action === 'DEFEND' || action === 'DODGE' || action === 'GUARD' || action === 'PRAY') {
+        setPose(actorId, 'defend', ACTION_STEP + 250)
+      }
+    }
     // melee fighters lunge at their target on every offensive action
     // (plain attacks, chase, skills, clash, counter); magic casters
     // strike from their spot
@@ -623,6 +649,13 @@ async function playStep(step: QueuedStep) {
     const amount = (d.hpDamage ?? d.raw ?? 0) as number
     if (t) shakeTarget(t)
     if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
+    // pose: big single hits (>= 15% max HP) use the max-damage art
+    if (t) {
+      const target = battle.value?.combatants.find((x) => x.id === t)
+      if (target && hasPoses(target) && amount > 0) {
+        setPose(t, amount >= target.maxHp * 0.15 ? 'hit_max' : 'hit', SETTLE_STEP + 250)
+      }
+    }
     // HP bar settles together with the damage cue, not all at once
     if (t) {
       const real = battle.value?.combatants.find((c) => c.id === t)?.hp
@@ -820,8 +853,55 @@ function floatsFor(unitId: string): FloatNum[] {
   return floats.value.filter((f) => f.targetId === unitId)
 }
 
+// ---------- pose sheet: characters with per-event art ----------
+// Characters in POSE_TEMPLATES switch their portrait by battle event:
+// idle (default), attack, defend, skill1/skill2 (by skill index), clash,
+// hit (light damage) and hit_max (single hit >= 15% of max HP).
+const POSE_TEMPLATES = new Set(['hod'])
+const poses = ref<Record<string, string>>({})
+const poseTimers = new Map<string, number>()
+
+function hasPoses(c: CombatantView): boolean {
+  return POSE_TEMPLATES.has(c.templateId)
+}
+
+function setPose(id: string, pose: string, ttl: number) {
+  window.clearTimeout(poseTimers.get(id))
+  poses.value[id] = pose
+  const timer = window.setTimeout(() => {
+    if (poses.value[id] === pose) {
+      poses.value[id] = 'idle'
+    }
+    poseTimers.delete(id)
+  }, ttl)
+  poseTimers.set(id, timer)
+}
+
+// portrait url with pose art; a missing pose file falls back to the base
+// portrait, and a missing base portrait falls back to the placeholder
 function portraitUrl(c: CombatantView): string {
+  if (hasPoses(c)) {
+    const pose = poses.value[c.id] ?? 'idle'
+    const url = `/assets/${c.templateId}_${pose}.webp`
+    return portraitFailed.value[url] ? `/assets/${c.templateId}.webp` : url
+  }
   return `/assets/${c.templateId}.webp`
+}
+
+function onPortraitError(ev: Event) {
+  const el = ev.target as HTMLImageElement
+  const path = new URL(el.src).pathname
+  portraitFailed.value[path] = true
+  // pose art failed: snap units back to their idle pose so the base
+  // portrait shows instead of a broken image
+  const m = /^\/assets\/([^_]+)_([a-z0-9]+)\.webp$/.exec(path)
+  if (m) {
+    for (const [id, pose] of Object.entries(poses.value)) {
+      if (pose === m[2]) {
+        poses.value[id] = 'idle'
+      }
+    }
+  }
 }
 
 async function load() {
@@ -1310,11 +1390,11 @@ function statusText(c: CombatantView): string {
           >
             <div class="portrait-wrap">
               <img
-                v-if="!portraitFailed[c.id]"
+                v-if="!portraitFailed[portraitUrl(c)]"
                 :src="portraitUrl(c)"
                 :alt="c.name"
                 class="portrait"
-                @error="portraitFailed[c.id] = true"
+                @error="onPortraitError($event)"
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
@@ -1397,11 +1477,11 @@ function statusText(c: CombatantView): string {
           >
             <div class="portrait-wrap">
               <img
-                v-if="!portraitFailed[c.id]"
+                v-if="!portraitFailed[portraitUrl(c)]"
                 :src="portraitUrl(c)"
                 :alt="c.name"
                 class="portrait"
-                @error="portraitFailed[c.id] = true"
+                @error="onPortraitError($event)"
               />
               <div v-else class="portrait-placeholder">{{ c.name.charAt(0) }}</div>
               <span v-if="c.performing" class="tag-perform">演出</span>
