@@ -1044,16 +1044,6 @@ function skillActive(c: CombatantView, s: SkillView): boolean {
   return !!p && p.actionType === 'SKILL' && p.skillId === s.id
 }
 
-function selectedNeedsTarget(c: CombatantView): boolean {
-  const p = pending.value[c.id]
-  if (!p) return false
-  if (p.actionType === 'SKILL') {
-    const s = c.skills.find((x) => x.id === p.skillId)
-    return skillNeedsTarget(s ?? null)
-  }
-  return actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)
-}
-
 // ---- decision status helpers (used by the panel and the decision bar) ----
 function hasDecision(c: CombatantView): boolean {
   const p = pending.value[c.id]
@@ -1102,12 +1092,12 @@ function decisionSummary(c: CombatantView): string {
     const s = c.skills.find((x) => x.id === p.skillId)
     if (!s) return '未下达指令'
     const t = p.targetIds.map(combatantName).join('、')
-    return t ? `${s.name} → ${t}` : `${s.name}${skillNeedsTarget(s) ? '（点击目标锁定）' : ''}`
+    return t ? `${s.name} → ${t}` : `${s.name}`
   }
   const label = actionLabel(p.actionType)
   if (actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)) {
     const t = p.targetIds.map(combatantName).join('、')
-    return t ? `${label} → ${t}` : `${label}（点击目标锁定）`
+    return t ? `${label} → ${t}` : `${label}`
   }
   return label
 }
@@ -1248,7 +1238,7 @@ async function submitDecisions() {
       }
       const s = c.skills.find((x) => x.id === p.skillId)
       if (s && skillNeedsTarget(s) && p.targetIds.length === 0) {
-        message.warning(`${c.name} 的技能 ${s.name} 需要点击目标锁定`)
+        message.warning(`${c.name} 的技能 ${s.name} 未锁定目标`)
         return
       }
       decisions.push({
@@ -1732,13 +1722,6 @@ function statusText(c: CombatantView): string {
             >
               {{ actionLabel(a) }}
             </button>
-            <div v-if="selectedNeedsTarget(selectedCombatant)" class="panel-hint">
-              {{
-                pending[selectedCombatant.id]?.actionType === 'GUARD'
-                  ? '点击要守护的队友锁定目标'
-                  : '点击敌方单位锁定目标'
-              }}
-            </div>
           </div>
 
           <!-- skills tab (default): click to use, drag onto units to lock -->
@@ -1780,9 +1763,6 @@ function statusText(c: CombatantView): string {
                   >
                     {{ combatantName(tid) }}
                     <b @click.stop="removeLockedTarget(selectedCombatant, ti)">✕</b>
-                  </span>
-                  <span v-if="!(pending[selectedCombatant.id]?.targetIds ?? []).length" class="dim">
-                    点击目标锁定
                   </span>
                 </div>
               </div>
@@ -2689,16 +2669,6 @@ function statusText(c: CombatantView): string {
   color: #ffe08a;
   border-color: rgba(255, 200, 87, 0.6);
   background: rgba(255, 200, 87, 0.12);
-}
-
-.panel-hint {
-  width: 100%;
-  font-size: 11px;
-  color: var(--warn, #ffc857);
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: rgba(255, 200, 87, 0.08);
-  border: 1px dashed rgba(255, 200, 87, 0.3);
 }
 
 /* locked targets chips inside the selected skill card */
