@@ -1085,6 +1085,17 @@ function statusText(c: CombatantView): string {
         <n-button size="small" @click="load">刷新</n-button>
       </div>
 
+      <!-- top speed track: current-round speed order -->
+      <div class="speed-track" v-if="speedOrder.length">
+        <template v-for="(sp, i) in speedOrder" :key="sp.id">
+          <span v-if="i > 0" class="speed-arrow">›</span>
+          <div class="speed-node">
+            <span class="speed-name">{{ sp.name }}</span>
+            <span class="speed-roll">{{ sp.roll }}</span>
+          </div>
+        </template>
+      </div>
+
       <!-- victory banner -->
       <div v-if="isFinished" class="panel result-banner" :class="battle.winner === 'PLAYER' ? 'win' : 'lose'">
         <h2>{{ battle.winner === 'PLAYER' ? '战斗胜利' : '战斗败北' }}</h2>
@@ -1353,17 +1364,6 @@ function statusText(c: CombatantView): string {
           </div>
         </div>
         </div>
-      </div>
-
-      <!-- bottom speed track: current-round speed order -->
-      <div class="speed-track" v-if="speedOrder.length">
-        <template v-for="(sp, i) in speedOrder" :key="sp.id">
-          <span v-if="i > 0" class="speed-arrow">›</span>
-          <div class="speed-node">
-            <span class="speed-name">{{ sp.name }}</span>
-            <span class="speed-roll">{{ sp.roll }}</span>
-          </div>
-        </template>
       </div>
 
       <!-- decision panel: one control row per alive player (extra-action
@@ -2395,7 +2395,7 @@ function statusText(c: CombatantView): string {
   opacity: 1;
 }
 
-/* ---------- bottom speed track: current-round speed order ---------- */
+/* ---------- top speed track: current-round speed order ---------- */
 .speed-track {
   display: flex;
   align-items: center;
