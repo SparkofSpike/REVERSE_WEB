@@ -1109,6 +1109,12 @@ function onKeydown(ev: KeyboardEvent) {
   if (ev.key === 'Escape') cancelAim()
 }
 
+// empty-scene clicks cancel aiming; clicks on units/panels are handled by
+// their own handlers (and stop propagation), so aim mode survives picking
+function onStageClick(ev: MouseEvent) {
+  if (ev.target === ev.currentTarget) cancelAim()
+}
+
 function cancelAim() {
   aimMode.value = null
   aimLine.value = null
@@ -1408,7 +1414,7 @@ function statusText(c: CombatantView): string {
           class="stage-scene"
           :class="{ dimmed: anyPerforming, zoomed: anyPerforming }"
           :style="{ transformOrigin: zoomOrigin }"
-          @click="cancelAim"
+          @click="onStageClick"
         >
         <div class="side-col side-player">
           <div
@@ -1646,7 +1652,12 @@ function statusText(c: CombatantView): string {
              to the unit. Default tab is skills; clicking a card issues the
              decision, target-requiring ones are locked by dragging the card
              onto a unit (multi-target skills accept one drag per target). -->
-        <div v-if="selectedCombatant && skillPanelPos" class="skill-panel" :style="skillPanelPos">
+        <div
+          v-if="selectedCombatant && skillPanelPos"
+          class="skill-panel"
+          :style="skillPanelPos"
+          @click.stop
+        >
           <div class="skill-panel-head">
             <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
             <span class="skill-panel-close" @click="selectedId = null">✕</span>
