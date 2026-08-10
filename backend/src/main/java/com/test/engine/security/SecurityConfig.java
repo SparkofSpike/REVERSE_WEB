@@ -47,6 +47,11 @@ public class SecurityConfig {
                         // H2 console is NOT public by default: only a dev
                         // build with app.h2-console-enabled=true may open it
                         .requestMatchers(r -> h2ConsoleEnabled && r.getRequestURI().startsWith("/h2-console")).permitAll()
+                        // PVP SSE refresh channel: signal-only (no battle data),
+                        // so the browser's EventSource can subscribe without a
+                        // Bearer header; real state always comes from the
+                        // authenticated combat API
+                        .requestMatchers("/api/pvp/events/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/packs/**").permitAll()
                         // SPA pages and static assets (everything outside /api) are public;
                         // the frontend router guards private views client-side.

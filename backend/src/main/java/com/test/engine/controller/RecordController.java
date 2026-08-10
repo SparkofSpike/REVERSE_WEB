@@ -71,6 +71,8 @@ public class RecordController {
         map.put("battleId", record.getBattleId());
         map.put("packId", record.getPackId());
         map.put("winner", record.getWinner());
+        map.put("mySide", record.getMySide());
+        map.put("opponentUsername", record.getOpponentUsername());
         map.put("rounds", record.getRounds());
         map.put("playerCharacterIds", new java.util.ArrayList<>(record.getPlayerCharacterIds()));
         map.put("totalDamageDealt", record.getTotalDamageDealt());

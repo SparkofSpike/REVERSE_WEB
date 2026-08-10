@@ -39,9 +39,17 @@ public class BattleRecord {
     @Column(nullable = false, length = 32)
     private String packId;
 
-    /** PLAYER or ENEMY. */
+    /** PLAYER or ENEMY (engine-side semantics: the side that won). */
     @Column(nullable = false, length = 8)
     private String winner;
+
+    /** PLAYER or ENEMY: which side this record's owner controlled. */
+    @Column(length = 8)
+    private String mySide;
+
+    /** Opposing human username; null for solo dummy battles. */
+    @Column(length = 32)
+    private String opponentUsername;
 
     @Column(nullable = false)
     private int rounds;

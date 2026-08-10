@@ -8,4 +8,7 @@ import java.util.List;
 public interface BattleRecordRepository extends JpaRepository<BattleRecord, Long> {
 
     List<BattleRecord> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    /** Idempotency check: a battle may only persist one record per user. */
+    boolean existsByBattleIdAndUserId(String battleId, Long userId);
 }
