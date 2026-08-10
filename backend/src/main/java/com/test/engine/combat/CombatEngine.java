@@ -1659,6 +1659,28 @@ public class CombatEngine {
         startRound(state);
     }
 
+    /**
+     * A side surrenders: the opponent wins immediately (PVP only). The winner
+     * follows the same PLAYER/ENEMY semantics as checkVictory so records and
+     * views stay consistent; subscribers get a refresh ping right away.
+     */
+    public synchronized CombatState surrender(String battleId, CombatSide side) {
+        CombatState state = getBattle(battleId);
+        if (!state.isPvp()) {
+            throw new IllegalStateException("solo battles have no surrender");
+        }
+        if (state.isOver()) {
+            throw new IllegalStateException("battle already finished");
+        }
+        CombatSide winnerSide = CombatState.opposite(side);
+        state.setWinner(winnerSide.name());
+        state.setPhase(CombatPhase.FINISHED);
+        state.log(CombatEvent.of(state.getRound(), "surrender",
+                sideLabel(state, side) + " 投降，" + sideLabel(state, winnerSide) + " 获胜！"));
+        notifyPvp(battleId);
+        return state;
+    }
+
     private boolean checkVictory(CombatState state) {
         if (state.alive(CombatSide.PLAYER).isEmpty()) {
             state.setWinner("ENEMY");

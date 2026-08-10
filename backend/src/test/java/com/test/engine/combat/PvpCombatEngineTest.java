@@ -276,6 +276,28 @@ class PvpCombatEngineTest {
     }
 
     @Test
+    void surrenderEndsTheBattleWithOpponentWin() {
+        pickInitialPerks();
+        engine.surrender(state.getId(), CombatSide.PLAYER);
+        assertThat(state.isOver()).isTrue();
+        assertThat(state.getWinner()).isEqualTo("ENEMY");
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.FINISHED);
+        assertThat(state.getLogs()).anyMatch(e -> "surrender".equals(e.getType()));
+        // a finished battle cannot surrender again
+        assertThatThrownBy(() -> engine.surrender(state.getId(), CombatSide.PLAYER))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> engine.surrender(state.getId(), CombatSide.ENEMY))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void soloBattlesCannotSurrender() {
+        CombatState solo = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        assertThatThrownBy(() -> engine.surrender(solo.getId(), CombatSide.PLAYER))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void fullPvpBattleRunsToCompletion() {
         pickInitialPerks();
         int safety = 0;

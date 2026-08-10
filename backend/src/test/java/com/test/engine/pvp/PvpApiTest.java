@@ -225,6 +225,38 @@ class PvpApiTest {
                 .andExpect(jsonPath("$.message").value("无权访问该战斗"));
     }
 
+    @Test
+    void surrenderEndsBattleAndPersistsBothRecords() throws Exception {
+        String hostToken = registerAndToken("pvp_host_sur");
+        String guestToken = registerAndToken("pvp_guest_sur");
+        JsonNode room = postJson("/api/pvp/rooms", hostToken,
+                Map.of("packId", "test-1", "password", "",
+                        "hostCharacterIds", List.of("warrior")));
+        postJson("/api/pvp/rooms/" + room.get("id").asText() + "/join", guestToken,
+                Map.of("password", "", "guestCharacterIds", List.of("mage")));
+        String battleId = postJson("/api/pvp/rooms/" + room.get("id").asText() + "/start",
+                hostToken, Map.of()).get("battleId").asText();
+
+        // the host surrenders: the guest wins immediately
+        JsonNode surrendered = postJson("/api/combat/" + battleId + "/surrender", hostToken, Map.of());
+        assertThat(surrendered.get("phase").asText()).isEqualTo("FINISHED");
+        assertThat(surrendered.get("winner").asText()).isEqualTo("ENEMY");
+
+        // the guest's view shows the win and the surrender log
+        JsonNode guestView = getJson("/api/combat/" + battleId, guestToken);
+        assertThat(guestView.get("phase").asText()).isEqualTo("FINISHED");
+        assertThat(guestView.get("winner").asText()).isEqualTo("ENEMY");
+        assertThat(guestView.get("logs")).anyMatch(log -> "surrender".equals(log.get("type").asText()));
+
+        // both records persisted with the surrender outcome
+        JsonNode hostRecords = getJson("/api/records", hostToken);
+        JsonNode guestRecords = getJson("/api/records", guestToken);
+        assertThat(hostRecords.size()).isGreaterThanOrEqualTo(1);
+        assertThat(guestRecords.size()).isGreaterThanOrEqualTo(1);
+        assertThat(hostRecords.get(0).get("winner").asText()).isEqualTo("ENEMY");
+        assertThat(guestRecords.get(0).get("winner").asText()).isEqualTo("ENEMY");
+    }
+
     private List<Map<String, String>> decisionsFor(JsonNode view, String side) throws Exception {
         List<Map<String, String>> decisions = new ArrayList<>();
         String foeSide = "PLAYER".equals(side) ? "ENEMY" : "PLAYER";

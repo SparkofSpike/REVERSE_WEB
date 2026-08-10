@@ -78,6 +78,11 @@ public class CombatController {
         return combatService.skipSpecialPerk(authentication.getName(), battleId);
     }
 
+    @PostMapping("/{battleId}/surrender")
+    public CombatView surrender(Authentication authentication, @PathVariable String battleId) {
+        return combatService.surrender(authentication.getName(), battleId);
+    }
+
     public record CreateDummyRequest(
             String packId,
             @NotEmpty(message = "至少部署一个角色")

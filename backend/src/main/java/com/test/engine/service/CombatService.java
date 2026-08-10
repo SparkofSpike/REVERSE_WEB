@@ -110,6 +110,13 @@ public class CombatService {
         return toView(state, side);
     }
 
+    public CombatView surrender(String username, String battleId) {
+        CombatSide side = sideOf(engine.getBattle(battleId), username);
+        CombatState state = engine.surrender(battleId, side);
+        persistIfFinished(state);
+        return toView(state, side);
+    }
+
     /** The side controlled by the requesting user (owner=PLAYER, guest=ENEMY). */
     private CombatSide sideOf(CombatState state, String username) {
         if (state.getOwnerUsername().equals(username)) {
