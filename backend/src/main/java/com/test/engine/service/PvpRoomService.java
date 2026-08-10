@@ -71,7 +71,11 @@ public class PvpRoomService {
         return toView(room);
     }
 
-    public PvpRoomView join(String username, String roomId, String password, List<String> guestCharacterIds) {
+    /**
+     * Joining is synchronized so two guests racing for the last seat cannot
+     * both pass the "already full" check and overwrite each other.
+     */
+    public synchronized PvpRoomView join(String username, String roomId, String password, List<String> guestCharacterIds) {
         reap();
         PvpRoom room = find(roomId);
         if (!PvpRoom.STATUS_WAITING.equals(room.getStatus())) {
@@ -83,7 +87,9 @@ public class PvpRoomService {
         if (room.getGuestUsername() != null) {
             throw new BusinessException("房间已满");
         }
-        if (room.getPasswordHash() != null && !sha256(password == null ? "" : password).equals(room.getPasswordHash())) {
+        if (room.getPasswordHash() != null && !MessageDigest.isEqual(
+                room.getPasswordHash().getBytes(StandardCharsets.UTF_8),
+                sha256(password == null ? "" : password).getBytes(StandardCharsets.UTF_8))) {
             throw new BusinessException("房间密码错误");
         }
         validatePackAndCharacters(room.getPackId(), guestCharacterIds);
@@ -110,6 +116,24 @@ public class PvpRoomService {
         room.setBattleId(battleId);
         room.setStatus(PvpRoom.STATUS_PLAYING);
         return battleId;
+    }
+
+    /**
+     * The guest may leave a waiting room: the seat frees up so another
+     * challenger can join (a ghost guest would otherwise force the host to
+     * play against a 30s-timeout AI all match).
+     */
+    public synchronized PvpRoomView leave(String username, String roomId) {
+        PvpRoom room = find(roomId);
+        if (!room.getGuestUsername().equals(username)) {
+            throw new BusinessException("只有挑战者可以退出房间");
+        }
+        if (!PvpRoom.STATUS_WAITING.equals(room.getStatus())) {
+            throw new BusinessException("战斗已开始，无法退出");
+        }
+        room.setGuestUsername(null);
+        room.setGuestCharacterIds(List.of());
+        return toView(room);
     }
 
     /** Host may cancel a waiting room; the battle itself is untouched once started. */

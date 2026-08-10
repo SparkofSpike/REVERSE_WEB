@@ -25,12 +25,20 @@ public class PvpEventService {
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
         Set<SseEmitter> set = subscribers.computeIfAbsent(battleId, k -> ConcurrentHashMap.newKeySet());
         set.add(emitter);
-        emitter.onCompletion(() -> set.remove(emitter));
-        emitter.onTimeout(() -> set.remove(emitter));
-        emitter.onError(e -> set.remove(emitter));
+        emitter.onCompletion(() -> remove(battleId, set, emitter));
+        emitter.onTimeout(() -> remove(battleId, set, emitter));
+        emitter.onError(e -> remove(battleId, set, emitter));
         // initial ping: the client may have missed the change that started the stream
         send(emitter, battleId);
         return emitter;
+    }
+
+    private void remove(String battleId, Set<SseEmitter> set, SseEmitter emitter) {
+        set.remove(emitter);
+        // drop the map key when nobody subscribes anymore (map hygiene)
+        if (set.isEmpty()) {
+            subscribers.remove(battleId, set);
+        }
     }
 
     /** Pushes a refresh ping to every subscriber of the battle. */

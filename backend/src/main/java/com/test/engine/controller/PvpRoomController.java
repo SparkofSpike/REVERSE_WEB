@@ -59,6 +59,11 @@ public class PvpRoomController {
         return Map.of("battleId", roomService.start(authentication.getName(), roomId));
     }
 
+    @PostMapping("/rooms/{roomId}/leave")
+    public PvpRoomView leaveRoom(Authentication authentication, @PathVariable String roomId) {
+        return roomService.leave(authentication.getName(), roomId);
+    }
+
     @DeleteMapping("/rooms/{roomId}")
     public void deleteRoom(Authentication authentication, @PathVariable String roomId) {
         roomService.delete(authentication.getName(), roomId);
