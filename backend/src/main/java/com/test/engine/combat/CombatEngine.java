@@ -50,6 +50,8 @@ public class CombatEngine {
     private static final long BATTLE_TTL_MS = 60 * 60 * 1000L;
     /** PVP decision window per round (auto-submits when it expires). */
     private static final long PVP_DECISION_WINDOW_MS = 30_000L;
+    /** PVP: consecutive rounds without a submission end the battle as a loss. */
+    private static final int IDLE_SURRENDER_ROUNDS = 3;
     /** How often the deadline sweeper checks PVP battles. */
     private static final long DEADLINE_TICK_MS = 1_000L;
 
@@ -321,12 +323,15 @@ public class CombatEngine {
         }
     }
 
-    /** Fills in a side's decisions with the AI when its 30s window expires. */
+    /**
+     * Hearthstone-style timeout: the side's turn simply ends. Decisions the
+     * player already submitted (partial submissions are allowed) stand as-is;
+     * units without a decision skip their action. No AI fills in for a human.
+     */
     private void autoSubmitDecisions(CombatState state, CombatSide side) {
-        state.getPendingBySide().put(side, puppetAi.decideFor(state, side));
         state.getSubmittedThisRound().put(side, true);
         state.log(CombatEvent.of(state.getRound(), "decision",
-                sideLabel(state, side) + " 决策超时，自动提交指令。"));
+                sideLabel(state, side) + " 决策超时，自动结束回合。"));
     }
 
     /** Picks the first special perk option for a timed-out side. */
@@ -436,8 +441,11 @@ public class CombatEngine {
             throw new IllegalStateException("side " + side + " already submitted this round");
         }
         List<Combatant> units = state.alive(side);
-        if (decisions == null || decisions.size() != units.size()) {
-            throw new IllegalArgumentException("decisions for all alive " + side + " characters required");
+        // hearthstone-style: a side may submit FEWER decisions than alive
+        // units - unconfigured units simply skip their action (partial
+        // submissions also come from the client's end-of-turn timeout)
+        if (decisions == null || decisions.size() > units.size()) {
+            throw new IllegalArgumentException("decisions must cover at most all alive " + side + " characters");
         }
         // every decision must belong to a DISTINCT alive character of this
         // side: wrong/duplicate ids or enemy ids would otherwise be silently
@@ -458,6 +466,8 @@ public class CombatEngine {
         }
         state.getPendingBySide().put(side, new ArrayList<>(decisions));
         state.getSubmittedThisRound().put(side, true);
+        // any submission counts as an active round (resets the idle streak)
+        state.markActive(side);
         state.log(CombatEvent.of(state.getRound(), "decision",
                 sideLabel(state, side) + " 提交了指令，等待对方。"));
         if (state.bothSubmitted()) {
@@ -1391,6 +1401,25 @@ public class CombatEngine {
         state.setRound(state.getRound() + 1);
         state.setSpecialPerkOffered(false);
         if (state.isPvp()) {
+            // idle-surrender check runs BEFORE resetRoundGates clears the
+            // submission gates (round 1 has no previous round to judge).
+            // "Active" means the side actually SUBMITTED decisions: a timeout
+            // only marks submitted=true without touching pendingBySide, so
+            // timed-out rounds count as idle.
+            if (state.getRound() > 1) {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (state.getPendingBySide().containsKey(side)) {
+                        state.markActive(side);
+                    } else {
+                        state.markIdle(side);
+                        if (state.idleRounds(side) >= IDLE_SURRENDER_ROUNDS) {
+                            finishBySurrender(state, side, sideLabel(state, side)
+                                    + " 已离线判负（连续 " + IDLE_SURRENDER_ROUNDS + " 回合无行动）。");
+                            return;
+                        }
+                    }
+                }
+            }
             // fresh PVP gates for the new round
             state.resetRoundGates();
         }
@@ -1672,13 +1701,18 @@ public class CombatEngine {
         if (state.isOver()) {
             throw new IllegalStateException("battle already finished");
         }
+        finishBySurrender(state, side, sideLabel(state, side) + " 投降，"
+                + sideLabel(state, CombatState.opposite(side)) + " 获胜！");
+        return state;
+    }
+
+    /** Shared surrender settlement: winner, FINISHED, log and SSE ping. */
+    private void finishBySurrender(CombatState state, CombatSide side, String message) {
         CombatSide winnerSide = CombatState.opposite(side);
         state.setWinner(winnerSide.name());
         state.setPhase(CombatPhase.FINISHED);
-        state.log(CombatEvent.of(state.getRound(), "surrender",
-                sideLabel(state, side) + " 投降，" + sideLabel(state, winnerSide) + " 获胜！"));
-        notifyPvp(battleId);
-        return state;
+        state.log(CombatEvent.of(state.getRound(), "surrender", message));
+        notifyPvp(state.getId());
     }
 
     private boolean checkVictory(CombatState state) {

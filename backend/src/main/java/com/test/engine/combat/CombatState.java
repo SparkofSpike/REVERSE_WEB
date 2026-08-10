@@ -74,6 +74,8 @@ public class CombatState {
     private final Map<CombatSide, Boolean> initialPerkSelected = new EnumMap<>(CombatSide.class);
     /** PVP: epoch ms by which the current decision window auto-submits. */
     private Long decisionDeadlineAt;
+    /** PVP: consecutive rounds a side ended WITHOUT submitting (idle surrender). */
+    private final Map<CombatSide, Integer> idleRounds = new EnumMap<>(CombatSide.class);
     /** Enemy decisions deferred while a side spends extra actions. */
     private List<ActionDecision> pendingEnemyDecisions = new ArrayList<>();
 
@@ -220,6 +222,20 @@ public class CombatState {
         specialPerkSubmitted.clear();
         extraRoundSide = null;
         pendingBySide.clear();
+    }
+
+    public int idleRounds(CombatSide side) {
+        return idleRounds.getOrDefault(side, 0);
+    }
+
+    /** A submitted round resets the idle streak. */
+    public void markActive(CombatSide side) {
+        idleRounds.put(side, 0);
+    }
+
+    /** A timed-out round extends the idle streak. */
+    public void markIdle(CombatSide side) {
+        idleRounds.put(side, idleRounds(side) + 1);
     }
 
     /** All decisions for a side, merged in side order, with enemy side last. */

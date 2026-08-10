@@ -298,6 +298,82 @@ class PvpCombatEngineTest {
     }
 
     @Test
+    void partialDecisionsLeaveUnconfiguredUnitsIdle() {
+        pickInitialPerks();
+        List<Combatant> hostUnits = state.alive(CombatSide.PLAYER);
+        Combatant mage = hostUnits.get(1);
+        String targetId = state.alive(CombatSide.ENEMY).get(0).getId();
+        // only the warrior is configured; the mage has no decision at all
+        engine.decideSide(state.getId(), CombatSide.PLAYER,
+                List.of(ActionDecision.base(hostUnits.get(0).getId(), "ATTACK", targetId)));
+        engine.decideSide(state.getId(), CombatSide.ENEMY, attackAll(CombatSide.ENEMY));
+        assertThat(state.getRound()).isEqualTo(2);
+        // hearthstone-style: the unconfigured mage skipped its action
+        assertThat(state.getLogs()).noneMatch(e -> mage.getId().equals(e.getData().get("actorId")));
+    }
+
+    @Test
+    void timeoutEndsTurnWithoutFillingDecisions() {
+        pickInitialPerks();
+        List<Combatant> hostUnits = state.alive(CombatSide.PLAYER);
+        Combatant mage = hostUnits.get(1);
+        String targetId = state.alive(CombatSide.ENEMY).get(0).getId();
+        // host configured only the warrior, then the window expired (no AI fill)
+        engine.decideSide(state.getId(), CombatSide.PLAYER,
+                List.of(ActionDecision.base(hostUnits.get(0).getId(), "ATTACK", targetId)));
+        state.setDecisionDeadlineAt(System.currentTimeMillis() - 1L);
+        engine.tickDeadlines();
+        assertThat(state.getRound()).isGreaterThan(1);
+        assertThat(state.getLogs()).anyMatch(e -> e.getMessage().contains("超时"));
+        assertThat(state.getLogs()).noneMatch(e -> mage.getId().equals(e.getData().get("actorId")));
+    }
+
+    @Test
+    void threeIdleRoundsSurrenderAsOfflineLoss() {
+        pickInitialPerks();
+        // the guest defends (never kills) while the host idles three rounds
+        for (int i = 0; i < 3; i++) {
+            engine.decideSide(state.getId(), CombatSide.ENEMY, defendAll(CombatSide.ENEMY));
+            state.setDecisionDeadlineAt(System.currentTimeMillis() - 1L);
+            engine.tickDeadlines();
+        }
+        assertThat(state.isOver()).isTrue();
+        assertThat(state.getWinner()).isEqualTo("ENEMY");
+        assertThat(state.getLogs()).anyMatch(e -> e.getMessage().contains("离线判负"));
+    }
+
+    @Test
+    void activeSubmissionResetsTheIdleStreak() {
+        pickInitialPerks();
+        // round 1: both sides submit (the host is active)
+        engine.decideSide(state.getId(), CombatSide.PLAYER, defendAll(CombatSide.PLAYER));
+        engine.decideSide(state.getId(), CombatSide.ENEMY, defendAll(CombatSide.ENEMY));
+        // rounds 2-3: the host idles twice - not enough to surrender
+        for (int i = 0; i < 2; i++) {
+            engine.decideSide(state.getId(), CombatSide.ENEMY, defendAll(CombatSide.ENEMY));
+            state.setDecisionDeadlineAt(System.currentTimeMillis() - 1L);
+            engine.tickDeadlines();
+        }
+        assertThat(state.isOver()).isFalse();
+        // round 4: idle a third time; the round ends into the special perk
+        // round (round 4 % 4 == 0), which delays the surrender check
+        engine.decideSide(state.getId(), CombatSide.ENEMY, defendAll(CombatSide.ENEMY));
+        state.setDecisionDeadlineAt(System.currentTimeMillis() - 1L);
+        engine.tickDeadlines();
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.SPECIAL_PERK);
+        // resolve the perk round by timeout (the idle host picks nothing);
+        // the idle surrender then fires on round 5's start
+        state.setDecisionDeadlineAt(System.currentTimeMillis() - 1L);
+        engine.tickDeadlines();
+        assertThat(state.isOver())
+                .as("round=%d idleP=%d idleE=%d phase=%s",
+                        state.getRound(), state.idleRounds(CombatSide.PLAYER),
+                        state.idleRounds(CombatSide.ENEMY), state.getPhase())
+                .isTrue();
+        assertThat(state.getLogs()).anyMatch(e -> e.getMessage().contains("离线判负"));
+    }
+
+    @Test
     void fullPvpBattleRunsToCompletion() {
         pickInitialPerks();
         int safety = 0;
@@ -327,6 +403,13 @@ class PvpCombatEngineTest {
         for (Combatant c : s.alive(side)) {
             c.setEnergy(c.getMaxEnergy());
         }
+    }
+
+    /** Every alive unit defends (harmless: keeps idle-surrender tests stable). */
+    private List<ActionDecision> defendAll(CombatSide side) {
+        return state.alive(side).stream()
+                .map(c -> ActionDecision.base(c.getId(), "DEFEND", null))
+                .toList();
     }
 
     /** Every alive unit decides: the first one uses the skill, the rest attack. */
