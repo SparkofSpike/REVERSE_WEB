@@ -247,10 +247,11 @@ function startCountdown() {
     if (countdown.value !== remaining) {
       countdown.value = remaining
     }
-    if (remaining === 0 && !battle.value?.mySubmitted && inDecision.value) {
-      // window expired client-side: hand over to the backend sweeper which
-      // auto-submits; a refresh reveals the resolved round
+    if (remaining === 0 && !battle.value?.mySubmitted && inDecision.value && !inExtraRound.value) {
+      // hearthstone-style: the turn ends with whatever is already configured
+      // (unconfigured units skip); the backend sweeper is the fallback
       window.clearInterval(countdownTimer)
+      void submitDecisions(true)
     }
   }
   tick()
@@ -475,7 +476,8 @@ const ACTION_LABELS: Record<string, string> = {
 const LOG_TYPE_CLASS: Record<string, string> = {
   damage: 'log-damage',
   heal: 'log-heal',
-  performance: 'log-perf'
+  performance: 'log-perf',
+  surrender: 'log-surrender'
 }
 
 function pushFloat(
@@ -1318,19 +1320,38 @@ watch(inExtraRound, (on) => {
 
 
 
-async function submitDecisions() {
+/** True when a pending decision is fully configured (target locked when needed). */
+function isConfigured(c: CombatantView, p: PendingDecision): boolean {
+  if (p.actionType === 'SKILL') {
+    if (!p.skillId) return false
+    const s = c.skills.find((x) => x.id === p.skillId)
+    return !(s && skillNeedsTarget(s)) || p.targetIds.length > 0
+  }
+  if (actionNeedsTarget(p.actionType) || actionNeedsAllyTarget(p.actionType)) {
+    return p.targetIds.length > 0
+  }
+  return true
+}
+
+async function submitDecisions(partial = false) {
   const decisions: ActionDecision[] = []
   for (const c of decisionActors.value) {
     const p = pending.value[c.id]
     if (!p) continue
+    // hearthstone-style end-of-turn: unconfigured units skip their action
+    if (partial && !isConfigured(c, p)) continue
     if (p.actionType === 'SKILL') {
       if (!p.skillId) {
-        message.warning(`${c.name} 未选择技能`)
+        if (!partial) {
+          message.warning(`${c.name} 未选择技能`)
+        }
         return
       }
       const s = c.skills.find((x) => x.id === p.skillId)
       if (s && skillNeedsTarget(s) && p.targetIds.length === 0) {
-        message.warning(`${c.name} 的技能 ${s.name} 未锁定目标`)
+        if (!partial) {
+          message.warning(`${c.name} 的技能 ${s.name} 未锁定目标`)
+        }
         return
       }
       decisions.push({
@@ -1342,11 +1363,15 @@ async function submitDecisions() {
       })
     } else {
       if (actionNeedsTarget(p.actionType) && p.targetIds.length === 0) {
-        message.warning(`${c.name} 未选择攻击目标`)
+        if (!partial) {
+          message.warning(`${c.name} 未选择攻击目标`)
+        }
         return
       }
       if (actionNeedsAllyTarget(p.actionType) && p.targetIds.length === 0) {
-        message.warning(`${c.name} 未选择守护目标`)
+        if (!partial) {
+          message.warning(`${c.name} 未选择守护目标`)
+        }
         return
       }
       decisions.push({
@@ -1357,7 +1382,7 @@ async function submitDecisions() {
       })
     }
   }
-  if (decisions.length !== decisionActors.value.length) {
+  if (!partial && decisions.length !== decisionActors.value.length) {
     message.warning(inExtraRound.value ? '请为拥有额外行动的角色下达指令' : '请为所有存活角色下达指令')
     return
   }
@@ -1948,7 +1973,7 @@ function statusText(c: CombatantView): string {
           >
             跳过剩余额外行动
           </n-button>
-          <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
+          <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions()">
             {{ inExtraRound ? '执行额外行动' : '提交指令' }}
             <template v-if="isPvp && countdown > 0">（{{ countdown }}s）</template>
           </n-button>
@@ -3209,6 +3234,11 @@ function statusText(c: CombatantView): string {
 
 .log-type.log-perf {
   color: var(--warn);
+}
+
+.log-type.log-surrender {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .log-message {
