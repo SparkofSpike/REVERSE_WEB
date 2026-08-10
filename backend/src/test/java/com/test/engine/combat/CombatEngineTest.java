@@ -28,7 +28,7 @@ class CombatEngineTest {
         DiceRoller dice = new DiceRoller(2026L);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
                 new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
-                new PuppetAi(dice));
+                new PuppetAi(dice), null);
     }
 
     @Test

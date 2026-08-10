@@ -29,24 +29,35 @@ public class PuppetAi {
                 .toList();
     }
 
-    private ActionDecision decideFor(Combatant dummy, CombatState state) {
-        double roll = dice.random().nextDouble();
-        if (roll < ATTACK_PROBABILITY) {
-            Combatant target = pickAttackTarget(state);
-            if (target != null) {
-                return ActionDecision.base(dummy.getId(), ActionType.ATTACK.name(), target.getId());
-            }
-        }
-        return ActionDecision.base(dummy.getId(), ActionType.DEFEND.name(), null);
+    /**
+     * PVP timeout auto-decision: generates a decision for EVERY alive unit of
+     * the given side (including summoned minions) so a pending round can
+     * always be closed without waiting for a human player.
+     */
+    public List<ActionDecision> decideFor(CombatState state, CombatSide side) {
+        return state.alive(side).stream()
+                .map(d -> decideFor(d, state))
+                .toList();
     }
 
-    private Combatant pickAttackTarget(CombatState state) {
-        List<Combatant> players = state.alive(CombatSide.PLAYER);
+    private ActionDecision decideFor(Combatant unit, CombatState state) {
+        double roll = dice.random().nextDouble();
+        if (roll < ATTACK_PROBABILITY) {
+            Combatant target = pickAttackTarget(state, unit.getSide());
+            if (target != null) {
+                return ActionDecision.base(unit.getId(), ActionType.ATTACK.name(), target.getId());
+            }
+        }
+        return ActionDecision.base(unit.getId(), ActionType.DEFEND.name(), null);
+    }
+
+    private Combatant pickAttackTarget(CombatState state, CombatSide attackerSide) {
+        List<Combatant> opponents = state.alive(CombatState.opposite(attackerSide));
         // taunt minions must be attacked first
-        List<Combatant> taunts = players.stream()
+        List<Combatant> taunts = opponents.stream()
                 .filter(p -> p instanceof PuppetMinion pm && pm.isTaunt())
                 .toList();
-        List<Combatant> pool = taunts.isEmpty() ? players : taunts;
+        List<Combatant> pool = taunts.isEmpty() ? opponents : taunts;
         if (pool.isEmpty()) {
             return null;
         }

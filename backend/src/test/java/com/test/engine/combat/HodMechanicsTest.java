@@ -30,7 +30,7 @@ class HodMechanicsTest {
         damageResolver = new DamageResolver(dice);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
                 damageResolver, new EffectExecutor(dice, damageResolver, loader),
-                new PuppetAi(dice));
+                new PuppetAi(dice), null);
     }
 
     private CombatState start(String... chars) {

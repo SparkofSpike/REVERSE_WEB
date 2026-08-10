@@ -21,6 +21,8 @@ public class CombatState {
 
     private String id;
     private String ownerUsername;
+    /** Opposing human player; null for solo dummy battles (PVP flag). */
+    private String guestUsername;
     /** Deaths per side this battle (drives ally-death performances). */
     private final Map<CombatSide, Integer> deaths = new EnumMap<>(CombatSide.class);
     /** The card pack this battle was created from. */
@@ -35,6 +37,10 @@ public class CombatState {
     private int playerDrawEnergy;
     private List<GenericSkillTemplate> playerHand = new ArrayList<>();
     private List<GenericSkillTemplate> playerDeck = new ArrayList<>();
+    /** Enemy-side draw energy and generic skill deck (PVP only). */
+    private int enemyDrawEnergy;
+    private List<GenericSkillTemplate> enemyHand = new ArrayList<>();
+    private List<GenericSkillTemplate> enemyDeck = new ArrayList<>();
     private boolean drawBoostPending;
 
     // perk offers
@@ -52,9 +58,23 @@ public class CombatState {
     private Integer firstStrikeSide;
     private List<ActionDecision> pendingDecisions = new ArrayList<>();
     private Map<String, Integer> roundSpeed = new LinkedHashMap<>();
-    /** True while the player may spend extra base actions (连续奔袭 etc.). */
+    /** True while a side may spend extra base actions (连续奔袭 etc.). */
     private boolean extraActionRound;
-    /** Enemy decisions deferred while the player spends extra actions. */
+    /** PVP: which side's extra-action window is currently open. */
+    private CombatSide extraRoundSide;
+    /** PVP: per-side decisions waiting for the opponent to submit. */
+    private final Map<CombatSide, List<ActionDecision>> pendingBySide = new EnumMap<>(CombatSide.class);
+    /** PVP: sides that already submitted this round's main decisions. */
+    private final Map<CombatSide, Boolean> submittedThisRound = new EnumMap<>(CombatSide.class);
+    /** PVP: sides that finished their extra-action window. */
+    private final Map<CombatSide, Boolean> extraDone = new EnumMap<>(CombatSide.class);
+    /** PVP: sides that picked or skipped the special perk offer. */
+    private final Map<CombatSide, Boolean> specialPerkSubmitted = new EnumMap<>(CombatSide.class);
+    /** PVP: sides that picked the initial perk. */
+    private final Map<CombatSide, Boolean> initialPerkSelected = new EnumMap<>(CombatSide.class);
+    /** PVP: epoch ms by which the current decision window auto-submits. */
+    private Long decisionDeadlineAt;
+    /** Enemy decisions deferred while a side spends extra actions. */
     private List<ActionDecision> pendingEnemyDecisions = new ArrayList<>();
 
     private String winner;
@@ -121,6 +141,98 @@ public class CombatState {
     }
 
     public void addDrawEnergy(int amount) {
-        playerDrawEnergy = Math.min(10, playerDrawEnergy + amount);
+        addDrawEnergy(CombatSide.PLAYER, amount);
+    }
+
+    // ----- PVP helpers -----
+
+    /** True when this battle pits two human players against each other. */
+    public boolean isPvp() {
+        return guestUsername != null && !guestUsername.isBlank();
+    }
+
+    public int sideDrawEnergy(CombatSide side) {
+        return side == CombatSide.PLAYER ? playerDrawEnergy : enemyDrawEnergy;
+    }
+
+    public List<GenericSkillTemplate> sideHand(CombatSide side) {
+        return side == CombatSide.PLAYER ? playerHand : enemyHand;
+    }
+
+    public List<GenericSkillTemplate> sideDeck(CombatSide side) {
+        return side == CombatSide.PLAYER ? playerDeck : enemyDeck;
+    }
+
+    public void addDrawEnergy(CombatSide side, int amount) {
+        if (side == CombatSide.PLAYER) {
+            playerDrawEnergy = Math.min(10, playerDrawEnergy + amount);
+        } else {
+            enemyDrawEnergy = Math.min(10, enemyDrawEnergy + amount);
+        }
+    }
+
+    /** Side that opposes the given one. */
+    public static CombatSide opposite(CombatSide side) {
+        return side == CombatSide.PLAYER ? CombatSide.ENEMY : CombatSide.PLAYER;
+    }
+
+    /** Human username controlling the given side (owner for PLAYER, guest for ENEMY). */
+    public String sideUsername(CombatSide side) {
+        return side == CombatSide.PLAYER ? ownerUsername : guestUsername;
+    }
+
+    public boolean submitted(CombatSide side) {
+        return submittedThisRound.getOrDefault(side, false);
+    }
+
+    public boolean bothSubmitted() {
+        return submitted(CombatSide.PLAYER) && submitted(CombatSide.ENEMY);
+    }
+
+    public boolean extraFinished(CombatSide side) {
+        return extraDone.getOrDefault(side, false);
+    }
+
+    public boolean bothExtraFinished() {
+        return extraFinished(CombatSide.PLAYER) && extraFinished(CombatSide.ENEMY);
+    }
+
+    public boolean specialPerkPicked(CombatSide side) {
+        return specialPerkSubmitted.getOrDefault(side, false);
+    }
+
+    public boolean bothSpecialPerksPicked() {
+        return specialPerkPicked(CombatSide.PLAYER) && specialPerkPicked(CombatSide.ENEMY);
+    }
+
+    public boolean initialPerkPicked(CombatSide side) {
+        return initialPerkSelected.getOrDefault(side, false);
+    }
+
+    public boolean bothInitialPerksPicked() {
+        return initialPerkPicked(CombatSide.PLAYER) && initialPerkPicked(CombatSide.ENEMY);
+    }
+
+    /** Clears per-round PVP gates (called at every round start). */
+    public void resetRoundGates() {
+        submittedThisRound.clear();
+        extraDone.clear();
+        specialPerkSubmitted.clear();
+        extraRoundSide = null;
+        pendingBySide.clear();
+    }
+
+    /** All decisions for a side, merged in side order, with enemy side last. */
+    public List<ActionDecision> mergedPendingDecisions() {
+        List<ActionDecision> all = new ArrayList<>();
+        List<ActionDecision> player = pendingBySide.get(CombatSide.PLAYER);
+        List<ActionDecision> enemy = pendingBySide.get(CombatSide.ENEMY);
+        if (player != null) {
+            all.addAll(player);
+        }
+        if (enemy != null) {
+            all.addAll(enemy);
+        }
+        return all;
     }
 }

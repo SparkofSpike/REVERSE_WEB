@@ -448,16 +448,19 @@ public class EffectExecutor {
     public void drawCards(Combatant caster, CombatState state, int count) {
         int actual = count + (state.isDrawBoostPending() ? 2 : 0);
         state.setDrawBoostPending(false);
-        List<GenericSkillTemplate> deck = state.getPlayerDeck();
+        // each side owns its own generic skill deck (PVP: the guest draws
+        // into the enemy-side hand; solo keeps the legacy player-side fields)
+        List<GenericSkillTemplate> deck = state.sideDeck(caster.getSide());
+        List<GenericSkillTemplate> hand = state.sideHand(caster.getSide());
         for (int i = 0; i < actual; i++) {
             if (deck.isEmpty()) {
                 break;
             }
             GenericSkillTemplate card = deck.remove(deck.size() - 1);
-            state.getPlayerHand().add(card);
+            hand.add(card);
         }
         state.log(CombatEvent.of(state.getRound(), "draw",
-                caster.getName() + " 抽取 " + actual + " 张通用技能（手牌 " + state.getPlayerHand().size() + " 张）。"));
+                caster.getName() + " 抽取 " + actual + " 张通用技能（手牌 " + hand.size() + " 张）。"));
     }
 
     private List<Combatant> resolveTargets(String selector, Combatant caster, CombatState state,

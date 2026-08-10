@@ -11,8 +11,11 @@ import com.test.engine.model.PerformanceSpec;
 import com.test.engine.model.Perk;
 import com.test.engine.model.PuppetTemplate;
 import com.test.engine.model.SkillTemplate;
+import com.test.engine.service.PvpEventService;
 import com.test.engine.utils.DiceRoller;
 import com.test.engine.utils.DiceResult;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -25,6 +28,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Battle state machine. Owns in-memory battles; each battle advances through
@@ -42,6 +48,10 @@ public class CombatEngine {
     private static final int INITIAL_HAND_SIZE = 2;
     /** Finished battles are reaped after this long (in-memory map hygiene). */
     private static final long BATTLE_TTL_MS = 60 * 60 * 1000L;
+    /** PVP decision window per round (auto-submits when it expires). */
+    private static final long PVP_DECISION_WINDOW_MS = 30_000L;
+    /** How often the deadline sweeper checks PVP battles. */
+    private static final long DEADLINE_TICK_MS = 1_000L;
 
     private final DiceRoller dice;
     private final CardPackLoader cardPackLoader;
@@ -49,18 +59,45 @@ public class CombatEngine {
     private final DamageResolver damageResolver;
     private final EffectExecutor effectExecutor;
     private final PuppetAi puppetAi;
+    /** SSE refresh channel; null in plain unit tests. */
+    private final PvpEventService pvpEventService;
 
     private final Map<String, CombatState> battles = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService deadlineSweeper =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "pvp-deadline-sweeper");
+                t.setDaemon(true);
+                return t;
+            });
 
     public CombatEngine(DiceRoller dice, CardPackLoader cardPackLoader,
                         SpeedAdjudicator speedAdjudicator, DamageResolver damageResolver,
-                        EffectExecutor effectExecutor, PuppetAi puppetAi) {
+                        EffectExecutor effectExecutor, PuppetAi puppetAi,
+                        PvpEventService pvpEventService) {
         this.dice = dice;
         this.cardPackLoader = cardPackLoader;
         this.speedAdjudicator = speedAdjudicator;
         this.damageResolver = damageResolver;
         this.effectExecutor = effectExecutor;
         this.puppetAi = puppetAi;
+        this.pvpEventService = pvpEventService;
+    }
+
+    @PostConstruct
+    void startDeadlineSweeper() {
+        deadlineSweeper.scheduleAtFixedRate(this::tickDeadlines, DEADLINE_TICK_MS, DEADLINE_TICK_MS, TimeUnit.MILLISECONDS);
+    }
+
+    @PreDestroy
+    void stopDeadlineSweeper() {
+        deadlineSweeper.shutdownNow();
+    }
+
+    /** Pushes a refresh ping to PVP subscribers of the battle (no-op in tests). */
+    private void notifyPvp(String battleId) {
+        if (pvpEventService != null) {
+            pvpEventService.publish(battleId);
+        }
     }
 
     // ===================== battle lifecycle =====================
@@ -113,6 +150,75 @@ public class CombatEngine {
         return state;
     }
 
+    /**
+     * PVP battle: the host controls the PLAYER side, the guest the ENEMY
+     * side. Both sides get their own generic skill deck and initial hand,
+     * and both pick their own initial perk before round 1 starts.
+     */
+    public CombatState createPvpBattle(String packId, List<String> hostCharacterIds,
+                                       List<String> guestCharacterIds, String hostUsername, String guestUsername) {
+        if (hostCharacterIds == null || hostCharacterIds.isEmpty() || hostCharacterIds.size() > 4
+                || guestCharacterIds == null || guestCharacterIds.isEmpty() || guestCharacterIds.size() > 4) {
+            throw new IllegalArgumentException("each side must deploy 1-4 characters");
+        }
+        CardPack pack = cardPackLoader.get(packId);
+        CombatState state = new CombatState();
+        state.setId(UUID.randomUUID().toString().substring(0, 16));
+        state.setOwnerUsername(hostUsername);
+        state.setGuestUsername(guestUsername);
+        state.setPackId(packId);
+        state.setPhase(CombatPhase.INITIAL_PERK);
+        state.setDecisionDeadlineAt(System.currentTimeMillis() + PVP_DECISION_WINDOW_MS);
+
+        int idx = 1;
+        for (String characterId : hostCharacterIds) {
+            CharacterTemplate t = findCharacter(pack, characterId);
+            state.getCombatants().add(Combatant.fromTemplate(t, characterId + "-p" + idx, CombatSide.PLAYER));
+            idx++;
+        }
+        idx = 1;
+        for (String characterId : guestCharacterIds) {
+            CharacterTemplate t = findCharacter(pack, characterId);
+            state.getCombatants().add(Combatant.fromTemplate(t, characterId + "-e" + idx, CombatSide.ENEMY));
+            idx++;
+        }
+
+        // both sides draw their own generic skill hand
+        for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+            List<GenericSkillTemplate> deck = new ArrayList<>(pack.getGenericSkills());
+            Collections.shuffle(deck, dice.random());
+            state.sideDeck(side).addAll(deck);
+            List<Combatant> units = state.alive(side);
+            if (!units.isEmpty()) {
+                effectExecutor.drawCards(units.get(0), state, INITIAL_HAND_SIZE);
+            }
+        }
+
+        state.setInitialPerkOptions(new ArrayList<>(pack.getInitialPerks()));
+        state.log(CombatEvent.of(0, "setup", "PVP 战斗开始！" + hostUsername + " 部署 "
+                + hostCharacterIds.size() + " 名角色对阵 " + guestUsername + " 的 "
+                + guestCharacterIds.size() + " 名角色。"));
+        reapFinishedBattles();
+        battles.put(state.getId(), state);
+        return state;
+    }
+
+    private CharacterTemplate findCharacter(CardPack pack, String characterId) {
+        return pack.getCharacters().stream()
+                .filter(c -> c.getId().equals(characterId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("unknown character: " + characterId));
+    }
+
+    private void reapFinishedBattles() {
+        long now = System.currentTimeMillis();
+        battles.entrySet().removeIf(e -> {
+            CombatState s = e.getValue();
+            return s.isOver() && s.getCreatedAt() != null
+                    && now - s.getCreatedAt().toEpochMilli() > BATTLE_TTL_MS;
+        });
+    }
+
     private Combatant createPuppet(PuppetTemplate t) {
         Combatant d = new Combatant();
         d.setId("dummy");
@@ -148,59 +254,217 @@ public class CombatEngine {
         return state;
     }
 
+    // ===================== PVP deadline sweeper =====================
+
+    /**
+     * PVP deadline sweeper: auto-submits expired decision windows so a battle
+     * never stalls waiting for a disconnected human. Runs every second on the
+     * daemon scheduler; solo battles are unaffected (no deadlines armed).
+     */
+    public synchronized void tickDeadlines() {
+        long now = System.currentTimeMillis();
+        for (CombatState state : new ArrayList<>(battles.values())) {
+            if (!state.isPvp() || state.isOver()) {
+                continue;
+            }
+            Long deadline = state.getDecisionDeadlineAt();
+            if (deadline == null || now < deadline) {
+                continue;
+            }
+            boolean progressed = false;
+            if (state.getPhase() == CombatPhase.DECISION) {
+                if (state.isExtraActionRound()) {
+                    CombatSide active = state.getExtraRoundSide();
+                    if (active != null && !state.extraFinished(active)) {
+                        finishExtraRound(state, active);
+                        progressed = true;
+                    }
+                } else if (!state.bothSubmitted()) {
+                    for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                        if (!state.submitted(side)) {
+                            autoSubmitDecisions(state, side);
+                        }
+                    }
+                    if (state.bothSubmitted()) {
+                        state.log(CombatEvent.of(state.getRound(), "decision", "决策超时，进入速度裁定。"));
+                        resolveRound(state);
+                    }
+                    progressed = true;
+                }
+            } else if (state.getPhase() == CombatPhase.SPECIAL_PERK && !state.bothSpecialPerksPicked()) {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (!state.specialPerkPicked(side)) {
+                        autoPickPerk(state, side);
+                    }
+                }
+                if (state.bothSpecialPerksPicked()) {
+                    state.setSpecialPerkOptions(List.of());
+                    state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
+                    endRound(state);
+                }
+                progressed = true;
+            } else if (state.getPhase() == CombatPhase.INITIAL_PERK && !state.bothInitialPerksPicked()) {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (!state.initialPerkPicked(side)) {
+                        autoPickInitialPerk(state, side);
+                    }
+                }
+                if (state.bothInitialPerksPicked()) {
+                    state.setInitialPerkOptions(List.of());
+                    startRound(state);
+                }
+                progressed = true;
+            }
+            if (progressed) {
+                notifyPvp(state.getId());
+            }
+        }
+    }
+
+    /** Fills in a side's decisions with the AI when its 30s window expires. */
+    private void autoSubmitDecisions(CombatState state, CombatSide side) {
+        state.getPendingBySide().put(side, puppetAi.decideFor(state, side));
+        state.getSubmittedThisRound().put(side, true);
+        state.log(CombatEvent.of(state.getRound(), "decision",
+                sideLabel(state, side) + " 决策超时，自动提交指令。"));
+    }
+
+    /** Picks the first special perk option for a timed-out side. */
+    private void autoPickPerk(CombatState state, CombatSide side) {
+        List<Perk> options = state.getSpecialPerkOptions();
+        if (options.isEmpty()) {
+            state.getSpecialPerkSubmitted().put(side, true);
+            state.log(CombatEvent.of(state.getRound(), "perk",
+                    sideLabel(state, side) + " 超时跳过特殊词条。"));
+            return;
+        }
+        Perk perk = options.get(0);
+        state.log(CombatEvent.of(state.getRound(), "perk", sideLabel(state, side)
+                + " 超时自动选择词条: " + perk.getName() + " — " + perk.getDescription()));
+        for (Combatant c : state.alive(side)) {
+            effectExecutor.execute(perk.getEffect(), c, state, (String) null);
+        }
+        state.getSpecialPerkSubmitted().put(side, true);
+    }
+
+    /** Picks the first initial perk option for a timed-out side. */
+    private void autoPickInitialPerk(CombatState state, CombatSide side) {
+        Perk perk = state.getInitialPerkOptions().get(0);
+        state.log(CombatEvent.of(0, "perk", sideLabel(state, side)
+                + " 超时自动选择初始词条: " + perk.getName() + " — " + perk.getDescription()));
+        applyPerkEffect(perk, state, side);
+        state.getInitialPerkSelected().put(side, true);
+    }
+
     // ===================== initial perk =====================
 
+    /** Solo alias: the single player always picks for the PLAYER side. */
     public synchronized CombatState selectInitialPerk(String battleId, String perkId) {
+        return selectInitialPerk(battleId, perkId, CombatSide.PLAYER);
+    }
+
+    /**
+     * Initial perk choice. Solo battles start round 1 immediately; PVP waits
+     * until BOTH sides picked their perk (each side applies its own choice to
+     * its own team).
+     */
+    public synchronized CombatState selectInitialPerk(String battleId, String perkId, CombatSide side) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.INITIAL_PERK) {
             throw new IllegalStateException("not in initial perk phase");
+        }
+        if (state.isPvp() && state.initialPerkPicked(side)) {
+            throw new IllegalStateException("initial perk already picked for side " + side);
         }
         Perk perk = state.getInitialPerkOptions().stream()
                 .filter(p -> p.getId().equals(perkId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("unknown initial perk: " + perkId));
-        state.setInitialPerkOptions(List.of());
-        state.log(CombatEvent.of(0, "perk", "选择初始词条: " + perk.getName() + " — " + perk.getDescription()));
-        applyPerkEffect(perk, state);
-        startRound(state);
+        state.log(CombatEvent.of(0, "perk", sideLabel(state, side) + " 选择初始词条: "
+                + perk.getName() + " — " + perk.getDescription()));
+        applyPerkEffect(perk, state, side);
+        if (!state.isPvp()) {
+            state.setInitialPerkOptions(List.of());
+            startRound(state);
+            return state;
+        }
+        state.getInitialPerkSelected().put(side, true);
+        if (state.bothInitialPerksPicked()) {
+            state.setInitialPerkOptions(List.of());
+            startRound(state);
+        }
+        notifyPvp(battleId);
         return state;
     }
 
-    private void applyPerkEffect(Perk perk, CombatState state) {
+    private void applyPerkEffect(Perk perk, CombatState state, CombatSide side) {
         if (perk.getEffect() != null) {
-            List<Combatant> players = state.alive(CombatSide.PLAYER);
-            for (Combatant c : players) {
+            for (Combatant c : state.alive(side)) {
                 effectExecutor.execute(perk.getEffect(), c, state, (String) null);
             }
         }
     }
 
+    /** Human-readable side label for logs (username in PVP, 玩家/木桩 in solo). */
+    private String sideLabel(CombatState state, CombatSide side) {
+        if (state.isPvp()) {
+            String username = state.sideUsername(side);
+            return username != null ? username : side.name();
+        }
+        return side == CombatSide.PLAYER ? "玩家" : "木桩";
+    }
+
     // ===================== decision & round execution =====================
 
+    /** Solo alias: submits the player's decisions (the dummy AI decides for the enemy). */
     public synchronized CombatState decide(String battleId, List<ActionDecision> playerDecisions) {
+        return decideSide(battleId, CombatSide.PLAYER, playerDecisions);
+    }
+
+    /**
+     * Main round decision for one side. Solo battles resolve immediately
+     * (the dummy AI supplies the enemy decisions); PVP battles buffer the
+     * side's decisions until BOTH sides submitted, then resolve the round
+     * (fog of war: nothing is revealed before both submissions land).
+     */
+    public synchronized CombatState decideSide(String battleId, CombatSide side, List<ActionDecision> decisions) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION || state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in decision phase");
         }
-        List<Combatant> players = state.alive(CombatSide.PLAYER);
-        if (playerDecisions == null || playerDecisions.size() != players.size()) {
-            throw new IllegalArgumentException("decisions for all alive player characters required");
+        if (state.isPvp() && state.submitted(side)) {
+            throw new IllegalStateException("side " + side + " already submitted this round");
         }
-        // every decision must belong to a DISTINCT alive player character:
-        // wrong/duplicate ids or enemy ids would otherwise be silently
+        List<Combatant> units = state.alive(side);
+        if (decisions == null || decisions.size() != units.size()) {
+            throw new IllegalArgumentException("decisions for all alive " + side + " characters required");
+        }
+        // every decision must belong to a DISTINCT alive character of this
+        // side: wrong/duplicate ids or enemy ids would otherwise be silently
         // dropped (that character skips its action) or overridden by the AI
         Set<String> decided = new HashSet<>();
-        for (ActionDecision d : playerDecisions) {
+        for (ActionDecision d : decisions) {
             Combatant c = state.find(d.getCombatantId());
-            if (c == null || !c.isPlayerSide() || c.isDead() || !decided.add(d.getCombatantId())) {
+            if (c == null || c.getSide() != side || c.isDead() || !decided.add(d.getCombatantId())) {
                 throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
             }
         }
-        state.setPendingDecisions(new ArrayList<>(playerDecisions));
-        state.getPendingDecisions().addAll(puppetAi.decide(state));
-
-        state.log(CombatEvent.of(state.getRound(), "decision", "双方完成决策，进入速度裁定。"));
-        resolveRound(state);
+        if (!state.isPvp()) {
+            state.setPendingDecisions(new ArrayList<>(decisions));
+            state.getPendingDecisions().addAll(puppetAi.decide(state));
+            state.log(CombatEvent.of(state.getRound(), "decision", "双方完成决策，进入速度裁定。"));
+            resolveRound(state);
+            return state;
+        }
+        state.getPendingBySide().put(side, new ArrayList<>(decisions));
+        state.getSubmittedThisRound().put(side, true);
+        state.log(CombatEvent.of(state.getRound(), "decision",
+                sideLabel(state, side) + " 提交了指令，等待对方。"));
+        if (state.bothSubmitted()) {
+            state.log(CombatEvent.of(state.getRound(), "decision", "双方完成决策，进入速度裁定。"));
+            resolveRound(state);
+        }
+        notifyPvp(battleId);
         return state;
     }
 
@@ -209,10 +473,19 @@ public class CombatEngine {
      * still hold extra base actions (连续奔袭). Each submitted decision
      * consumes one extra action; when none are left the round finalizes.
      */
+    /** Solo alias: the player spends its extra actions. */
     public synchronized CombatState decideExtraActions(String battleId, List<ActionDecision> decisions) {
+        return decideExtraActions(battleId, decisions, CombatSide.PLAYER);
+    }
+
+    public synchronized CombatState decideExtraActions(String battleId, List<ActionDecision> decisions,
+                                                       CombatSide side) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION || !state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in an extra-action round");
+        }
+        if (state.isPvp() && state.getExtraRoundSide() != side) {
+            throw new IllegalStateException("extra actions belong to side " + state.getExtraRoundSide());
         }
         if (decisions == null || decisions.isEmpty()) {
             throw new IllegalArgumentException("at least one extra action decision required");
@@ -224,7 +497,7 @@ public class CombatEngine {
         for (ActionDecision d : decisions) {
             Combatant c = state.find(d.getCombatantId());
             int claimed = batchSpend.getOrDefault(d.getCombatantId(), 0);
-            if (c == null || c.isDead() || c.getExtraActionsThisTurn() - claimed <= 0) {
+            if (c == null || c.getSide() != side || c.isDead() || c.getExtraActionsThisTurn() - claimed <= 0) {
                 throw new IllegalArgumentException("no extra actions left for " + d.getCombatantId());
             }
             // extra actions are base actions only; 超限技能 grants extra
@@ -263,41 +536,64 @@ public class CombatEngine {
         }
         if (checkVictory(state)) {
             state.setExtraActionRound(false);
+            notifyPvp(battleId);
             return state;
         }
-        boolean extraPending = state.alive(CombatSide.PLAYER).stream()
-                .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
-        if (extraPending) {
+        if (hasExtraCharges(state, side)) {
             state.setPhase(CombatPhase.DECISION);
             state.log(CombatEvent.of(state.getRound(), "extra",
                     "仍有额外行动可继续（或跳过）。"));
+            notifyPvp(battleId);
             return state;
         }
-        state.setExtraActionRound(false);
-        executeDeferredEnemyActions(state);
-        if (checkVictory(state)) {
-            return state;
+        if (!state.isPvp()) {
+            state.setExtraActionRound(false);
+            executeDeferredEnemyActions(state);
+            if (checkVictory(state)) {
+                return state;
+            }
+            endRound(state);
+        } else {
+            finishExtraRound(state, side);
         }
-        endRound(state);
+        notifyPvp(battleId);
         return state;
     }
 
-    /** Ends the extra-action window early and finalizes the round. */
+    /** Solo alias: ends the extra-action window early and finalizes the round. */
     public synchronized CombatState skipExtraActions(String battleId) {
+        return skipExtraActions(battleId, CombatSide.PLAYER);
+    }
+
+    /** Ends the extra-action window early for the given side. */
+    public synchronized CombatState skipExtraActions(String battleId, CombatSide side) {
         CombatState state = getBattle(battleId);
         if (!state.isExtraActionRound()) {
             throw new IllegalStateException("battle is not in an extra-action round");
         }
-        state.setExtraActionRound(false);
-        executeDeferredEnemyActions(state);
-        if (checkVictory(state)) {
+        if (state.isPvp() && state.getExtraRoundSide() != side) {
+            throw new IllegalStateException("extra actions belong to side " + state.getExtraRoundSide());
+        }
+        if (!state.isPvp()) {
+            state.setExtraActionRound(false);
+            executeDeferredEnemyActions(state);
+            if (checkVictory(state)) {
+                return state;
+            }
+            endRound(state);
             return state;
         }
-        endRound(state);
+        finishExtraRound(state, side);
+        notifyPvp(battleId);
         return state;
     }
 
     private void resolveRound(CombatState state) {
+        if (state.isPvp()) {
+            // merge the buffered per-side decisions; pendingDecisions stay the
+            // single source of truth for clash/extra-action resolution
+            state.setPendingDecisions(state.mergedPendingDecisions());
+        }
         state.setPhase(CombatPhase.SPEED);
         List<Combatant> alive = state.allAlive();
         List<Combatant> speedOrder = speedAdjudicator.resolve(alive, state);
@@ -310,7 +606,11 @@ public class CombatEngine {
                 .with("speeds", new LinkedHashMap<>(state.getRoundSpeed())));
 
         state.setPhase(CombatPhase.EXECUTION);
-        // A round whose player decisions include an extra-action skill
+        if (state.isPvp()) {
+            resolveRoundPvp(state, speedOrder);
+            return;
+        }
+        // Solo: a round whose player decisions include an extra-action skill
         // (连续奔袭 etc.) splits into player phase -> extra-action round ->
         // enemy phase, so the player's turn continues after the skill and
         // the enemy acts only once the extra actions are spent. Ordinary
@@ -324,10 +624,7 @@ public class CombatEngine {
             boolean extraPending = state.alive(CombatSide.PLAYER).stream()
                     .anyMatch(c -> c.getExtraActionsThisTurn() > 0);
             if (extraPending) {
-                state.setExtraActionRound(true);
-                state.setPhase(CombatPhase.DECISION);
-                state.log(CombatEvent.of(state.getRound(), "extra",
-                        "获得额外行动的角色可以继续行动（或跳过）。"));
+                enterExtraRound(state, CombatSide.PLAYER);
                 return;
             }
             executeDeferredEnemyActions(state);
@@ -340,6 +637,88 @@ public class CombatEngine {
         }
         // special-perk handling lives inside endRound so EVERY round-ending
         // path - plain rounds and extra-action rounds alike - offers the perk
+        endRound(state);
+    }
+
+    /**
+     * PVP round flow: host main actions -> host extra-action window -> guest
+     * main actions -> guest extra-action window -> round end. Only the side
+     * whose main actions just ran may spend its extra charges, so the two
+     * humans never write into the same window.
+     */
+    private void resolveRoundPvp(CombatState state, List<Combatant> speedOrder) {
+        state.setPendingEnemyDecisions(collectEnemyDecisions(state));
+        executeActions(state, speedOrder, CombatSide.PLAYER);
+        if (state.isOver()) {
+            return;
+        }
+        if (hasExtraCharges(state, CombatSide.PLAYER)) {
+            enterExtraRound(state, CombatSide.PLAYER);
+            return;
+        }
+        executeDeferredEnemyActions(state);
+        if (state.isOver()) {
+            return;
+        }
+        if (hasExtraCharges(state, CombatSide.ENEMY)) {
+            enterExtraRound(state, CombatSide.ENEMY);
+            return;
+        }
+        endRound(state);
+    }
+
+    private boolean hasExtraCharges(CombatState state, CombatSide side) {
+        return state.alive(side).stream().anyMatch(c -> c.getExtraActionsThisTurn() > 0);
+    }
+
+    /** Opens the extra-action window for one side and arms its deadline. */
+    private void enterExtraRound(CombatState state, CombatSide side) {
+        state.setExtraActionRound(true);
+        state.setExtraRoundSide(side);
+        // the other side is considered finished for this window: it either
+        // already spent its extra actions or never had any
+        state.getExtraDone().put(CombatSide.PLAYER, side != CombatSide.PLAYER);
+        state.getExtraDone().put(CombatSide.ENEMY, side != CombatSide.ENEMY);
+        state.setPhase(CombatPhase.DECISION);
+        state.setDecisionDeadlineAt(System.currentTimeMillis() + PVP_DECISION_WINDOW_MS);
+        state.log(CombatEvent.of(state.getRound(), "extra",
+                sideLabel(state, side) + " 获得额外行动的角色可以继续行动（或跳过）。"));
+    }
+
+    /**
+     * Closes the current extra-action window. When the host finishes first,
+     * the deferred guest main actions run, then the guest window opens if the
+     * guest still holds charges; otherwise the round ends. The guest window
+     * only opens via enterExtraRound (which flips extraRoundSide), so the
+     * side state is the source of truth - never the pre-marked extraDone
+     * entries (enterExtraRound marks the other side "finished" for display).
+     */
+    private void finishExtraRound(CombatState state, CombatSide side) {
+        state.getExtraDone().put(side, true);
+        if (state.isOver()) {
+            return;
+        }
+        // host window is open and the host has not finished yet: wait
+        if (!state.extraFinished(CombatSide.PLAYER)) {
+            return;
+        }
+        // the guest window is open (guest is the active side): round ends
+        if (state.getExtraRoundSide() == CombatSide.ENEMY) {
+            state.setExtraActionRound(false);
+            endRound(state);
+            return;
+        }
+        // host done while the guest window never opened: run the deferred
+        // guest main actions, then open the guest window if it holds charges
+        executeDeferredEnemyActions(state);
+        if (state.isOver()) {
+            return;
+        }
+        if (hasExtraCharges(state, CombatSide.ENEMY)) {
+            enterExtraRound(state, CombatSide.ENEMY);
+            return;
+        }
+        state.setExtraActionRound(false);
         endRound(state);
     }
 
@@ -855,29 +1234,45 @@ public class CombatEngine {
 
     // ===================== generic skills =====================
 
+    /** Solo alias: the single player plays cards from the player hand. */
     public synchronized CombatState playGenericSkill(String battleId, String skillId, String targetId) {
+        return playGenericSkill(battleId, skillId, targetId, CombatSide.PLAYER);
+    }
+
+    /**
+     * Plays a generic skill card from the side's own hand. PVP: only before
+     * the side submitted its round decisions (a submitted round is locked).
+     * Card plays are public events (like playing a card face-up), so they are
+     * not hidden by the fog of war.
+     */
+    public synchronized CombatState playGenericSkill(String battleId, String skillId, String targetId,
+                                                     CombatSide side) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.DECISION) {
             throw new IllegalStateException("generic skills can only be played during decision phase");
         }
-        GenericSkillTemplate card = state.getPlayerHand().stream()
+        if (state.isPvp() && state.submitted(side)) {
+            throw new IllegalStateException("side already submitted its round decisions");
+        }
+        GenericSkillTemplate card = state.sideHand(side).stream()
                 .filter(c -> c.getId().equals(skillId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("card not in hand: " + skillId));
-        Combatant caster = state.alive(CombatSide.PLAYER).get(0);
+        Combatant caster = state.alive(side).get(0);
         state.log(CombatEvent.of(state.getRound(), "card",
                 caster.getName() + " 打出通用技能 " + card.getName() + "。")
                 .with("actorId", caster.getId()).with("action", "CARD"));
         for (EffectSpec effect : card.getEffects()) {
             effectExecutor.execute(effect, caster, state, targetId);
         }
-        state.getPlayerHand().remove(card);
+        state.sideHand(side).remove(card);
         if (card.isConsumed()) {
-            state.getPlayerDeck().remove(card);
+            state.sideDeck(side).remove(card);
         }
         // a card can kill the last enemy (or the last ally via hp_cost):
         // settle victory immediately so the battle does not linger in
         // DECISION with a dead side still "in play"
+        notifyPvp(battleId);
         if (checkVictory(state)) {
             return state;
         }
@@ -903,41 +1298,82 @@ public class CombatEngine {
         }
         state.setSpecialPerkOptions(options);
         state.setPhase(CombatPhase.SPECIAL_PERK);
+        if (state.isPvp()) {
+            state.setDecisionDeadlineAt(System.currentTimeMillis() + PVP_DECISION_WINDOW_MS);
+        }
         state.log(CombatEvent.of(state.getRound(), "perk", "特殊词条轮！请选择一项词条。"));
     }
 
+    /** Solo alias: the single player picks for the PLAYER side. */
     public synchronized CombatState selectSpecialPerk(String battleId, String perkId) {
+        return selectSpecialPerk(battleId, perkId, CombatSide.PLAYER);
+    }
+
+    /**
+     * Special perk choice. Solo battles continue immediately; PVP waits until
+     * both sides picked (each side applies its own choice to its own team).
+     */
+    public synchronized CombatState selectSpecialPerk(String battleId, String perkId, CombatSide side) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.SPECIAL_PERK) {
             throw new IllegalStateException("not in special perk phase");
+        }
+        if (state.isPvp() && state.specialPerkPicked(side)) {
+            throw new IllegalStateException("special perk already picked for side " + side);
         }
         Perk perk = state.getSpecialPerkOptions().stream()
                 .filter(p -> p.getId().equals(perkId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("unknown special perk: " + perkId));
-        state.setSpecialPerkOptions(List.of());
-        state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-        state.log(CombatEvent.of(state.getRound(), "perk",
-                "选择特殊词条: " + perk.getName() + " — " + perk.getDescription()));
-        List<Combatant> players = state.alive(CombatSide.PLAYER);
-        for (Combatant c : players) {
+        state.log(CombatEvent.of(state.getRound(), "perk", sideLabel(state, side)
+                + " 选择特殊词条: " + perk.getName() + " — " + perk.getDescription()));
+        for (Combatant c : state.alive(side)) {
             effectExecutor.execute(perk.getEffect(), c, state, (String) null);
         }
         if (state.isOver()) {
             return state;
         }
-        endRound(state);
+        if (!state.isPvp()) {
+            state.setSpecialPerkOptions(List.of());
+            state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
+            endRound(state);
+            return state;
+        }
+        state.getSpecialPerkSubmitted().put(side, true);
+        if (state.bothSpecialPerksPicked()) {
+            state.setSpecialPerkOptions(List.of());
+            state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
+            endRound(state);
+        }
+        notifyPvp(battleId);
         return state;
     }
 
+    /** Solo alias: skips the special perk offer for the player side. */
     public synchronized CombatState skipSpecialPerk(String battleId) {
+        return skipSpecialPerk(battleId, CombatSide.PLAYER);
+    }
+
+    public synchronized CombatState skipSpecialPerk(String battleId, CombatSide side) {
         CombatState state = getBattle(battleId);
         if (state.getPhase() != CombatPhase.SPECIAL_PERK) {
             throw new IllegalStateException("not in special perk phase");
         }
-        state.setSpecialPerkOptions(List.of());
-        state.log(CombatEvent.of(state.getRound(), "perk", "跳过本轮特殊词条选择。"));
-        endRound(state);
+        if (state.isPvp() && state.specialPerkPicked(side)) {
+            throw new IllegalStateException("special perk already settled for side " + side);
+        }
+        state.log(CombatEvent.of(state.getRound(), "perk", sideLabel(state, side) + " 跳过本轮特殊词条选择。"));
+        if (!state.isPvp()) {
+            state.setSpecialPerkOptions(List.of());
+            endRound(state);
+            return state;
+        }
+        state.getSpecialPerkSubmitted().put(side, true);
+        if (state.bothSpecialPerksPicked()) {
+            state.setSpecialPerkOptions(List.of());
+            endRound(state);
+        }
+        notifyPvp(battleId);
         return state;
     }
 
@@ -947,6 +1383,10 @@ public class CombatEngine {
         state.setPhase(CombatPhase.ROUND_START);
         state.setRound(state.getRound() + 1);
         state.setSpecialPerkOffered(false);
+        if (state.isPvp()) {
+            // fresh PVP gates for the new round
+            state.resetRoundGates();
+        }
         state.log(CombatEvent.of(state.getRound(), "round_start",
                 "第 " + state.getRound() + " 回合开始，帷幕升起。"));
 
@@ -957,25 +1397,31 @@ public class CombatEngine {
             enemyRoll = dice.between(1, 20);
         } while (playerRoll == enemyRoll);
         state.setFirstStrikeSide(playerRoll >= enemyRoll ? 0 : 1);
+        String firstLabel = state.getFirstStrikeSide() == 0 ? sideLabel(state, CombatSide.PLAYER)
+                : sideLabel(state, CombatSide.ENEMY);
         state.log(CombatEvent.of(state.getRound(), "round",
-                "第 " + state.getRound() + " 回合开始。先手骰点: 玩家 " + playerRoll
-                        + " vs 木桩 " + enemyRoll
-                        + (state.getFirstStrikeSide() == 0 ? "，玩家先手。" : "，木桩先手。")));
+                "第 " + state.getRound() + " 回合开始。先手骰点: " + sideLabel(state, CombatSide.PLAYER)
+                        + " " + playerRoll + " vs " + sideLabel(state, CombatSide.ENEMY) + " " + enemyRoll
+                        + "，" + firstLabel + " 先手。"));
 
-        // generic card draw every 3 rounds
-        if (state.getRound() % GENERIC_DRAW_INTERVAL == 0) {
-            Combatant caster = state.alive(CombatSide.PLAYER).stream().findFirst().orElse(null);
-            if (caster != null) {
-                effectExecutor.drawCards(caster, state, 1);
+        // generic card draw every 3 rounds, per side
+        List<CombatSide> sides = state.isPvp()
+                ? List.of(CombatSide.PLAYER, CombatSide.ENEMY) : List.of(CombatSide.PLAYER);
+        for (CombatSide side : sides) {
+            if (state.getRound() % GENERIC_DRAW_INTERVAL == 0) {
+                Combatant caster = state.alive(side).stream().findFirst().orElse(null);
+                if (caster != null) {
+                    effectExecutor.drawCards(caster, state, 1);
+                }
             }
-        }
-        // pending draw energy converted to a card
-        if (state.getPlayerDrawEnergy() >= DRAW_ENERGY_CAP) {
-            Combatant caster = state.alive(CombatSide.PLAYER).stream().findFirst().orElse(null);
-            if (caster != null) {
-                effectExecutor.drawCards(caster, state, 1);
+            // pending draw energy converted to a card
+            if (state.sideDrawEnergy(side) >= DRAW_ENERGY_CAP) {
+                Combatant caster = state.alive(side).stream().findFirst().orElse(null);
+                if (caster != null) {
+                    effectExecutor.drawCards(caster, state, 1);
+                }
+                state.addDrawEnergy(side, -state.sideDrawEnergy(side));
             }
-            state.setPlayerDrawEnergy(0);
         }
 
         tickRoundStartEffects(state);
@@ -984,6 +1430,9 @@ public class CombatEngine {
             return;
         }
         state.setPhase(CombatPhase.DECISION);
+        if (state.isPvp()) {
+            state.setDecisionDeadlineAt(System.currentTimeMillis() + PVP_DECISION_WINDOW_MS);
+        }
     }
 
     private void tickRoundStartEffects(CombatState state) {
@@ -1016,14 +1465,19 @@ public class CombatEngine {
                     }
                     case "draw_over_time" -> {
                         int amount = e.getDice() != null ? dice.roll(e.getDice()).total() : e.getAmount();
-                        Combatant caster = state.alive(CombatSide.PLAYER).stream().findFirst().orElse(null);
+                        // the effect draws for the OWNER's side (PVP: each
+                        // human draws into their own hand)
+                        Combatant caster = e.getOwnerId() != null ? state.find(e.getOwnerId()) : null;
+                        if (caster == null || caster.isDead()) {
+                            caster = state.alive(CombatSide.PLAYER).stream().findFirst().orElse(null);
+                        }
                         if (caster != null) {
-                            int before = state.getPlayerHand().size();
+                            List<GenericSkillTemplate> hand = state.sideHand(caster.getSide());
                             effectExecutor.drawCards(caster, state, amount);
-                            if (e.getMax() > 0 && state.getPlayerHand().size() > e.getMax()) {
-                                int excess = state.getPlayerHand().size() - e.getMax();
+                            if (e.getMax() > 0 && hand.size() > e.getMax()) {
+                                int excess = hand.size() - e.getMax();
                                 for (int i = 0; i < excess; i++) {
-                                    state.getPlayerHand().remove(state.getPlayerHand().size() - 1);
+                                    hand.remove(hand.size() - 1);
                                 }
                             }
                             state.log(CombatEvent.of(state.getRound(), "draw",
@@ -1110,12 +1564,24 @@ public class CombatEngine {
         }
 
         // draw energy settlement: first +3, second +4
-        int firstGain = state.getFirstStrikeSide() == 0 ? 3 : 4;
-        int secondGain = state.getFirstStrikeSide() == 0 ? 4 : 3;
-        state.addDrawEnergy(firstGain);
-        state.log(CombatEvent.of(state.getRound(), "energy",
-                "回合结束：先手获得 " + firstGain + " 抽牌能量，后手获得 " + secondGain
-                        + "（当前 " + state.getPlayerDrawEnergy() + "/" + DRAW_ENERGY_CAP + "）。"));
+        if (state.isPvp()) {
+            CombatSide firstSide = state.getFirstStrikeSide() == 0 ? CombatSide.PLAYER : CombatSide.ENEMY;
+            state.addDrawEnergy(firstSide, 3);
+            state.addDrawEnergy(CombatState.opposite(firstSide), 4);
+            state.log(CombatEvent.of(state.getRound(), "energy",
+                    "回合结束：先手获得 3 抽牌能量，后手获得 4（"
+                            + sideLabel(state, CombatSide.PLAYER) + " "
+                            + state.sideDrawEnergy(CombatSide.PLAYER) + "/" + DRAW_ENERGY_CAP
+                            + "，" + sideLabel(state, CombatSide.ENEMY) + " "
+                            + state.sideDrawEnergy(CombatSide.ENEMY) + "/" + DRAW_ENERGY_CAP + "）。"));
+        } else {
+            int firstGain = state.getFirstStrikeSide() == 0 ? 3 : 4;
+            state.addDrawEnergy(firstGain);
+            state.log(CombatEvent.of(state.getRound(), "energy",
+                    "回合结束：先手获得 " + firstGain + " 抽牌能量，后手获得 "
+                            + (state.getFirstStrikeSide() == 0 ? 4 : 3)
+                            + "（当前 " + state.getPlayerDrawEnergy() + "/" + DRAW_ENERGY_CAP + "）。"));
+        }
 
         for (Combatant c : state.allAlive()) {
             if (c.getShield() > 0 && c.getShieldRemainingRounds() > 0) {
@@ -1190,13 +1656,17 @@ public class CombatEngine {
         if (state.alive(CombatSide.PLAYER).isEmpty()) {
             state.setWinner("ENEMY");
             state.setPhase(CombatPhase.FINISHED);
-            state.log(CombatEvent.of(state.getRound(), "victory", "玩家队伍全灭，木桩获胜。"));
+            state.log(CombatEvent.of(state.getRound(), "victory", state.isPvp()
+                    ? sideLabel(state, CombatSide.PLAYER) + " 的队伍全灭，" + sideLabel(state, CombatSide.ENEMY) + " 获胜！"
+                    : "玩家队伍全灭，木桩获胜。"));
             return true;
         }
         if (state.alive(CombatSide.ENEMY).isEmpty()) {
             state.setWinner("PLAYER");
             state.setPhase(CombatPhase.FINISHED);
-            state.log(CombatEvent.of(state.getRound(), "victory", "木桩被击倒，玩家获胜！"));
+            state.log(CombatEvent.of(state.getRound(), "victory", state.isPvp()
+                    ? sideLabel(state, CombatSide.ENEMY) + " 的队伍被击倒，" + sideLabel(state, CombatSide.PLAYER) + " 获胜！"
+                    : "木桩被击倒，玩家获胜！"));
             return true;
         }
         return false;
