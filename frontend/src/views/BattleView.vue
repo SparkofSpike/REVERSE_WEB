@@ -186,8 +186,8 @@ const zoomOrigin = computed(() => {
   )
   if (sides.size > 1) return '50% 62%'
   const side = battle.value.combatants.find((c) => c.id === acting[0])?.side
-  if (side === 'ENEMY') return '66% 60%'
-  if (side === 'PLAYER') return '34% 60%'
+  if (side === mySide.value) return '34% 60%'
+  if (side !== mySide.value) return '66% 60%'
   return '50% 62%'
 })
 
@@ -859,13 +859,13 @@ function clashPointX(actorId: string, targetId: string): number | null {
   const all = battle.value?.combatants ?? []
   // the enemy participant in this clash (the locked enemy)
   const enemyId =
-    all.find((c) => c.id === targetId)?.side === 'ENEMY' ? targetId : actorId
+    all.find((c) => c.id === targetId)?.side !== mySide.value ? targetId : actorId
   const enemyEl = unitEl(enemyId)
   if (!enemyEl) return null
   // the player's frontmost living unit: the one closest to the enemy line
   let frontEl: HTMLElement | null = null
   for (const c of all) {
-    if (c.side !== 'PLAYER' || c.dead) continue
+    if (c.side !== mySide.value || c.dead) continue
     const el = unitEl(c.id)
     if (!el) continue
     if (!frontEl || el.offsetLeft > frontEl.offsetLeft) frontEl = el
@@ -1051,10 +1051,10 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
   // note: exact selectors only - "enemies" does NOT contain the substring
   // "enemy" (it is e-n-e-m-i-e-s), so includes() would silently fail
   if (s.targetType === 'enemy' || s.targetType === 'enemies') {
-    return t.side === 'ENEMY' && !t.dead
+    return t.side !== mySide.value && !t.dead
   }
   if (s.targetType === 'ally' || s.targetType === 'allies' || s.targetType === 'random_ally') {
-    return t.side === 'PLAYER' && !t.dead
+    return t.side === mySide.value && !t.dead
   }
   return false
 }
@@ -1063,7 +1063,7 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
 // actions (attack/guard) enter aim mode; re-clicking the picked action
 // cancels the choice.
 function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
-  if (c.side !== 'PLAYER' || animating.value) return
+  if (c.side !== mySide.value || animating.value) return
   const cur = pending.value[c.id]
   if (cur?.actionType === action && cur.skillId === null) {
     pending.value[c.id] = newPending()
@@ -1091,7 +1091,7 @@ function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
 // skills enter aim mode (click a unit to lock). Re-clicking the picked
 // card cancels the choice.
 function pickSkill(c: CombatantView, s: SkillView, ev: MouseEvent) {
-  if (c.side !== 'PLAYER' || animating.value) return
+  if (c.side !== mySide.value || animating.value) return
   if ((c.cooldowns[s.id] ?? 0) > 0) {
     message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
     return
@@ -1239,8 +1239,8 @@ function canLockTarget(t: CombatantView): boolean {
     const s = c.skills.find((x) => x.id === p.id)
     return s ? isSkillTargetValid(s, c, t) : false
   }
-  if (actionNeedsTarget(p.id)) return t.side === 'ENEMY' && !t.dead
-  if (actionNeedsAllyTarget(p.id)) return t.side === 'PLAYER' && !t.dead && t.id !== c.id
+  if (actionNeedsTarget(p.id)) return t.side !== mySide.value && !t.dead
+  if (actionNeedsAllyTarget(p.id)) return t.side === mySide.value && !t.dead && t.id !== c.id
   return false
 }
 
@@ -1592,7 +1592,7 @@ function statusText(c: CombatantView): string {
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
                 <span
-                  v-if="inDecision && !c.dead && c.side === 'PLAYER'"
+                  v-if="inDecision && !c.dead && c.side === mySide"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
@@ -1677,7 +1677,7 @@ function statusText(c: CombatantView): string {
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
                 <span
-                  v-if="inDecision && !c.dead && c.side === 'PLAYER'"
+                  v-if="inDecision && !c.dead && c.side === mySide"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
@@ -1791,7 +1791,7 @@ function statusText(c: CombatantView): string {
           </div>
           <!-- order tabs only exist for player combatants; the enemy panel
                is read-only (skill info only, no order controls) -->
-          <div v-if="selectedCombatant.side === 'PLAYER'" class="panel-tabs">
+          <div v-if="selectedCombatant.side === mySide" class="panel-tabs">
             <button
               class="panel-tab"
               :class="{ active: panelTab === 'actions' }"
@@ -1815,7 +1815,7 @@ function statusText(c: CombatantView): string {
               :key="a"
               class="action-chip"
               :class="{ active: pending[selectedCombatant.id]?.actionType === a }"
-              :disabled="selectedCombatant.side !== 'PLAYER' || animating"
+              :disabled="selectedCombatant.side !== mySide || animating"
               @click="pickAction(selectedCombatant, a, $event)"
             >
               {{ actionLabel(a) }}
@@ -1823,19 +1823,19 @@ function statusText(c: CombatantView): string {
           </div>
 
           <!-- skills tab (default): click to use, drag onto units to lock -->
-          <div v-else class="skill-cards" :class="{ readonly: selectedCombatant.side !== 'PLAYER' }">
+          <div v-else class="skill-cards" :class="{ readonly: selectedCombatant.side !== mySide }">
             <div
               v-for="sk in selectedCombatant.skills"
               :key="sk.id"
               class="card-face skill"
               :class="{
                 upgraded: sk.upgraded,
-                active: selectedCombatant.side === 'PLAYER' && skillActive(selectedCombatant, sk),
+                active: selectedCombatant.side === mySide && skillActive(selectedCombatant, sk),
                 disabled:
-                  selectedCombatant.side === 'PLAYER' &&
+                  selectedCombatant.side === mySide &&
                   ((selectedCombatant.cooldowns[sk.id] ?? 0) > 0 || animating)
               }"
-              @click="selectedCombatant.side === 'PLAYER' && pickSkill(selectedCombatant, sk, $event)"
+              @click="selectedCombatant.side === mySide && pickSkill(selectedCombatant, sk, $event)"
             >
               <img
                 class="face-img"
@@ -1868,7 +1868,7 @@ function statusText(c: CombatantView): string {
 
           <!-- current decision summary (player only) -->
           <div
-            v-if="selectedCombatant.side === 'PLAYER'"
+            v-if="selectedCombatant.side === mySide"
             class="decision-summary"
             :class="{ ready: decisionReady(selectedCombatant) }"
           >
@@ -2195,6 +2195,12 @@ function statusText(c: CombatantView): string {
 /* the hod art sheet faces left: flip it so she looks at the enemy */
 .side-player .portrait[src*="hod_"] {
   transform: scaleX(-1);
+}
+
+/* the hod sheet faces left: on the enemy side the generic flip turns her
+   away from the players, so keep her original facing instead */
+.side-enemy .portrait[src*="hod_"] {
+  transform: scaleX(1);
 }
 
 .portrait-placeholder {
