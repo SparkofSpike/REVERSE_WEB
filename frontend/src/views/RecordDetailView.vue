@@ -55,8 +55,8 @@ function formatDate(iso: string): string {
 
       <template v-if="record">
         <div class="panel summary">
-          <div class="result" :class="record.winner === 'PLAYER' ? 'ok' : 'danger'">
-            {{ record.winner === 'PLAYER' ? '胜利' : '败北' }}
+          <div class="result" :class="record.winner === (record.mySide ?? 'PLAYER') ? 'ok' : 'danger'">
+            {{ record.winner === (record.mySide ?? 'PLAYER') ? '胜利' : '败北' }}
           </div>
           <div class="summary-grid">
             <div class="summary-item">

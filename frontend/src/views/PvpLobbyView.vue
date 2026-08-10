@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { NButton, NInput, NModal, NSelect, useMessage } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
 import { listPacks } from '@/api/packs'
-import { createRoom, deleteRoom, getRoom, joinRoom, listRooms, startRoom } from '@/api/pvp'
+import { createRoom, deleteRoom, getRoom, joinRoom, leaveRoom as leaveRoomApi, listRooms, startRoom } from '@/api/pvp'
 import { errorMessage } from '@/api/http'
 import type { CardPack, PvpRoom } from '@/types'
 
@@ -176,6 +176,9 @@ async function leaveRoom() {
   try {
     if (isHost) {
       await deleteRoom(myRoom.value.id)
+    } else {
+      // the guest frees its seat so another challenger can join
+      await leaveRoomApi(myRoom.value.id)
     }
   } catch (e) {
     message.error(errorMessage(e))

@@ -262,11 +262,12 @@ function startCountdown() {
 let eventSource: EventSource | null = null
 
 function connectSse(battleId: string) {
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
-  }
   if (!isPvp.value) {
+    return
+  }
+  if (eventSource) {
+    // already subscribed: load() re-runs on every refresh ping, so recreating
+    // the source would receive the initial ping again and loop forever
     return
   }
   const source = new EventSource(battleEventsUrl(battleId))
@@ -987,23 +988,34 @@ function onPortraitError(ev: Event) {
   }
 }
 
+// request sequence: a stale load() response (older than the latest request)
+// must never overwrite fresher state (e.g. a submit response that landed after)
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   try {
     const battleId = route.params.battleId as string
-    battle.value = await getBattle(battleId)
-    processLogs(battle.value.logs)
+    const view = await getBattle(battleId)
+    if (seq !== loadSeq) {
+      return // a newer load/submit already applied fresher state
+    }
+    battle.value = view
+    processLogs(view.logs)
     for (const c of alivePlayers.value) {
       if (!pending.value[c.id]) {
         pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
       }
     }
-    connectSse(battle.value.id)
+    connectSse(view.id)
     startCountdown()
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
-    loading.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+    }
   }
 }
 
