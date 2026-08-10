@@ -242,6 +242,40 @@ class PvpCombatEngineTest {
     }
 
     @Test
+    void guestActionsEarnDrawEnergyInPvp() {
+        pickInitialPerks();
+        int before = state.getEnemyDrawEnergy();
+        engine.decideSide(state.getId(), CombatSide.PLAYER, attackAll(CombatSide.PLAYER));
+        engine.decideSide(state.getId(), CombatSide.ENEMY, attackAll(CombatSide.ENEMY));
+        // the guest's own actions must feed its own draw energy, not the host's
+        assertThat(state.getEnemyDrawEnergy()).isGreaterThanOrEqualTo(before + 1);
+    }
+
+    @Test
+    void guestPermanentExtraActionFiresOnDeferredPath() {
+        pickInitialPerks();
+        grantEnergy(state, CombatSide.PLAYER);
+        grantEnergy(state, CombatSide.ENEMY);
+        // simulate the 冷漠实现 special perk on the guest's leading unit
+        Combatant guestUnit = state.alive(CombatSide.ENEMY).get(0);
+        guestUnit.setPermanentExtraAction(true);
+        // host uses 连续奔袭 so the guest main actions run deferred
+        engine.decideSide(state.getId(), CombatSide.PLAYER, decisionsWithSkill(CombatSide.PLAYER, "warrior-s3"));
+        engine.decideSide(state.getId(), CombatSide.ENEMY, attackAll(CombatSide.ENEMY));
+        assertThat(state.isExtraActionRound()).isTrue();
+        engine.skipExtraActions(state.getId(), CombatSide.PLAYER);
+        // the deferred guest phase must include the permanent extra strike:
+        // main attack + auto-strike = at least two damage events by the unit
+        long strikes = state.getLogs().stream()
+                .filter(e -> "damage".equals(e.getType()))
+                .filter(e -> guestUnit.getId().equals(e.getData().get("actorId")))
+                .count();
+        assertThat(strikes).as("guest unit must land its main attack and the permanent extra strike")
+                .isGreaterThanOrEqualTo(2);
+        assertThat(state.getRound()).isEqualTo(2);
+    }
+
+    @Test
     void fullPvpBattleRunsToCompletion() {
         pickInitialPerks();
         int safety = 0;

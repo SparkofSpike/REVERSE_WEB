@@ -770,6 +770,8 @@ public class CombatEngine {
             }
             if (d.isSkill()) {
                 executeSkill(state, c, d);
+                // permanent-extra-action units (冷漠实现) still auto-strike
+                executeExtraActions(state, c, d);
                 continue;
             }
             ActionType action;
@@ -787,6 +789,7 @@ public class CombatEngine {
                 case CHASE -> executeChase(state, c, d, null);
                 case PRAY -> executePray(state, c);
             }
+            executeExtraActions(state, c, d);
         }
     }
 
@@ -1174,9 +1177,10 @@ public class CombatEngine {
     }
 
     private void grantAttackEnergy(CombatState state, Combatant actor) {
-        // draw energy is only tracked for the player side (dummy has no deck)
-        if (actor.isPlayerSide()) {
-            state.addDrawEnergy(1);
+        // each side tracks its own draw energy; solo battles only feed the
+        // player side (the dummy has no deck to spend it on)
+        if (state.isPvp() || actor.isPlayerSide()) {
+            state.addDrawEnergy(actor.getSide(), 1);
         }
     }
 
@@ -1331,6 +1335,9 @@ public class CombatEngine {
             effectExecutor.execute(perk.getEffect(), c, state, (String) null);
         }
         if (state.isOver()) {
+            // a perk can kill the opponent outright: ping them so their UI
+            // leaves the perk overlay instead of waiting forever
+            notifyPvp(battleId);
             return state;
         }
         if (!state.isPvp()) {
@@ -1755,11 +1762,12 @@ public class CombatEngine {
             for (EffectSpec effect : perf.getEffects()) {
                 effectExecutor.execute(effect, c, state, (String) null);
             }
-            // design doc: entering performance grants +2 draw energy (player side)
-            if (c.isPlayerSide()) {
-                state.addDrawEnergy(2);
+            // design doc: entering performance grants +2 draw energy (per side)
+            if (state.isPvp() || c.isPlayerSide()) {
+                state.addDrawEnergy(c.getSide(), 2);
                 state.log(CombatEvent.of(state.getRound(), "energy",
-                        c.getName() + " 进入演出，抽牌能量 +2（当前 " + state.getPlayerDrawEnergy() + "/" + DRAW_ENERGY_CAP + "）。"));
+                        c.getName() + " 进入演出，抽牌能量 +2（当前 "
+                                + state.sideDrawEnergy(c.getSide()) + "/" + DRAW_ENERGY_CAP + "）。"));
             }
             // design doc default: restore energy unless the performance
             // already defines an explicit energy-restore effect

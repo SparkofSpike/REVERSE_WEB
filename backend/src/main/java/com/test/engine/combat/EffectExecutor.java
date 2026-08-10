@@ -82,7 +82,8 @@ public class EffectExecutor {
             case "sacrifice_buff" -> applySacrificeBuff(spec, caster, state);
             case "upgrade_skills" -> upgradeSkills(caster, state);
             case "draw_energy" -> {
-                state.addDrawEnergy(spec.getAmount());
+                // the effect feeds the caster's OWN side (PVP: each human's deck)
+                state.addDrawEnergy(caster.getSide(), spec.getAmount());
                 state.log(CombatEvent.of(state.getRound(), "energy",
                         caster.getName() + " 获得 " + spec.getAmount() + " 点抽牌能量。"));
             }
