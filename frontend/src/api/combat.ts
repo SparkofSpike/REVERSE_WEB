@@ -36,3 +36,8 @@ export function selectSpecialPerk(battleId: string, perkId: string): Promise<Com
 export function skipSpecialPerk(battleId: string): Promise<CombatView> {
   return http.post(`/combat/${battleId}/skip-perk`, {}).then((r) => r.data)
 }
+
+/** Surrender a PVP battle: the opponent wins immediately (PVP only). */
+export function surrender(battleId: string): Promise<CombatView> {
+  return http.post(`/combat/${battleId}/surrender`, {}).then((r) => r.data)
+}

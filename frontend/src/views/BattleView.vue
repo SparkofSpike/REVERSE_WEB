@@ -11,7 +11,8 @@ import {
   skipExtraActions,
   playCard,
   selectSpecialPerk,
-  skipSpecialPerk
+  skipSpecialPerk,
+  surrender as surrenderBattle
 } from '@/api/combat'
 import { errorMessage } from '@/api/http'
 import { battleEventsUrl } from '@/api/pvp'
@@ -1391,6 +1392,26 @@ async function submitDecisions() {
   }
 }
 
+/** Surrender a PVP battle (explicit exit = loss) and return to the home page. */
+async function surrenderAndLeave() {
+  if (!battle.value || isFinished.value) {
+    router.push({ name: 'home' })
+    return
+  }
+  if (!window.confirm('投降将立即结束本场比赛（判负），确定退出吗？')) {
+    return
+  }
+  submitting.value = true
+  try {
+    await surrenderBattle(battle.value.id)
+    router.push({ name: 'home' })
+  } catch (e) {
+    message.error(errorMessage(e))
+  } finally {
+    submitting.value = false
+  }
+}
+
 async function skipExtra() {
   submitting.value = true
   try {
@@ -1482,7 +1503,7 @@ function statusText(c: CombatantView): string {
     <main v-if="battle" class="container">
       <!-- battle header -->
       <div class="head">
-        <n-button quaternary @click="router.push({ name: 'home' })">离开</n-button>
+        <n-button quaternary :loading="submitting" @click="surrenderAndLeave">投降退出</n-button>
         <div class="head-info">
           <span class="round">第 {{ battle.round }} 回合</span>
           <span v-if="isPvp" class="pvp-tag" :class="battle.mySide === 'PLAYER' ? 'host' : 'guest'">
