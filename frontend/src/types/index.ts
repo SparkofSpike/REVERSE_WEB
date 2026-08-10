@@ -214,6 +214,8 @@ export interface StatusEffect {
 export interface CombatView {
   id: string
   ownerUsername: string
+  /** Opposing human player; null for solo dummy battles. */
+  guestUsername: string | null
   phase:
     | 'SETUP'
     | 'INITIAL_PERK'
@@ -226,8 +228,19 @@ export interface CombatView {
     | 'FINISHED'
   round: number
   winner: 'PLAYER' | 'ENEMY' | null
+  /** Side controlled by the requesting user (solo: always PLAYER). */
+  mySide: 'PLAYER' | 'ENEMY' | null
+  /** True when the requesting user already acted in the current window. */
+  mySubmitted: boolean
+  /** True when the opponent already acted in the current window. */
+  opponentSubmitted: boolean
+  /** Epoch ms by which the current PVP window auto-submits; null in solo. */
+  decisionDeadlineAt: number | null
+  /** PVP extra-action round: which side's window is currently open. */
+  extraRoundSide: 'PLAYER' | 'ENEMY' | null
   firstStrikeSide: 0 | 1 | null
   playerDrawEnergy: number
+  /** The requesting user's own hand (fog of war). */
   playerHand: GenericSkillTemplate[]
   initialPerkOptions: Perk[]
   specialPerkOptions: Perk[]
@@ -245,6 +258,32 @@ export interface ActionDecision {
   targetIds?: string[]
 }
 
+// ---------- pvp room ----------
+
+export interface PvpRoom {
+  id: string
+  hostUsername: string
+  guestUsername: string | null
+  locked: boolean
+  packId: string
+  hostCharacterIds: string[]
+  guestCharacterIds: string[]
+  status: 'WAITING' | 'PLAYING' | 'FINISHED'
+  battleId: string | null
+  createdAt: string
+}
+
+export interface CreateRoomRequest {
+  packId: string
+  password?: string
+  hostCharacterIds: string[]
+}
+
+export interface JoinRoomRequest {
+  password?: string
+  guestCharacterIds: string[]
+}
+
 // ---------- battle record ----------
 
 export interface BattleRecordSummary {
@@ -252,6 +291,10 @@ export interface BattleRecordSummary {
   battleId: string
   packId: string
   winner: 'PLAYER' | 'ENEMY'
+  /** Side this record's owner controlled. */
+  mySide: 'PLAYER' | 'ENEMY' | null
+  /** Opposing human username; null for solo battles. */
+  opponentUsername: string | null
   rounds: number
   playerCharacterIds: string[]
   totalDamageDealt: number

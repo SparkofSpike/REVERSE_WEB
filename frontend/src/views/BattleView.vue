@@ -14,6 +14,7 @@ import {
   skipSpecialPerk
 } from '@/api/combat'
 import { errorMessage } from '@/api/http'
+import { battleEventsUrl } from '@/api/pvp'
 import type { CombatView, CombatantView, ActionDecision, SkillView, CombatEvent } from '@/types'
 
 const route = useRoute()
@@ -190,11 +191,14 @@ const zoomOrigin = computed(() => {
   return '50% 62%'
 })
 
+// PVP perspective: 'players'/'enemies' mirror the requesting user's side
+// (guest controls the ENEMY team); solo battles always view from PLAYER
+const mySide = computed<'PLAYER' | 'ENEMY'>(() => battle.value?.mySide ?? 'PLAYER')
 const players = computed(() =>
-  (battle.value?.combatants ?? []).filter((c) => c.side === 'PLAYER')
+  (battle.value?.combatants ?? []).filter((c) => c.side === mySide.value)
 )
 const enemies = computed(() =>
-  (battle.value?.combatants ?? []).filter((c) => c.side === 'ENEMY')
+  (battle.value?.combatants ?? []).filter((c) => c.side !== mySide.value)
 )
 const alivePlayers = computed(() => players.value.filter((c) => !c.dead))
 const isFinished = computed(() => battle.value?.phase === 'FINISHED')
@@ -207,6 +211,74 @@ const extraActors = computed(() => alivePlayers.value.filter((c) => c.extraActio
 // who still hold extra base actions
 const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : alivePlayers.value))
 
+// PVP helpers: opponent name, submission gates and the 30s decision window
+const isPvp = computed(() => !!battle.value?.guestUsername)
+const opponentName = computed(() =>
+  isPvp.value
+    ? (battle.value?.mySide === 'ENEMY' ? battle.value?.ownerUsername : battle.value?.guestUsername)
+    : null
+)
+const mySubmitted = computed(() => battle.value?.mySubmitted ?? false)
+const opponentSubmitted = computed(() => battle.value?.opponentSubmitted ?? false)
+/** Extra window held by the opponent (PVP): my team waits. */
+const opponentsExtraRound = computed(() =>
+  isPvp.value && inExtraRound.value && battle.value?.extraRoundSide
+    ? battle.value.extraRoundSide !== mySide.value
+    : false
+)
+/** Decision window locked because I already acted and await the opponent. */
+const awaitingOpponent = computed(() =>
+  isPvp.value && inDecision.value && !isFinished.value
+    ? (inExtraRound.value ? opponentsExtraRound.value : mySubmitted.value)
+    : false
+)
+/** Countdown seconds for the current PVP decision window (0 when idle). */
+const countdown = ref(0)
+let countdownTimer = 0
+function startCountdown() {
+  window.clearInterval(countdownTimer)
+  countdown.value = 0
+  if (!isPvp.value || !battle.value?.decisionDeadlineAt) {
+    return
+  }
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((battle.value!.decisionDeadlineAt! - Date.now()) / 1000))
+    if (countdown.value !== remaining) {
+      countdown.value = remaining
+    }
+    if (remaining === 0 && !battle.value?.mySubmitted && inDecision.value) {
+      // window expired client-side: hand over to the backend sweeper which
+      // auto-submits; a refresh reveals the resolved round
+      window.clearInterval(countdownTimer)
+    }
+  }
+  tick()
+  countdownTimer = window.setInterval(tick, 1000)
+}
+
+// PVP SSE refresh channel: the server pings on every state change, then we
+// pull the real (authenticated) state. EventSource cannot carry headers, so
+// the endpoint only carries the ping - no data, no auth needed.
+let eventSource: EventSource | null = null
+
+function connectSse(battleId: string) {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+  if (!isPvp.value) {
+    return
+  }
+  const source = new EventSource(battleEventsUrl(battleId))
+  source.addEventListener('refresh', () => {
+    void load()
+  })
+  source.onerror = () => {
+    // browser retries automatically; nothing to do
+  }
+  eventSource = source
+}
+
 onMounted(() => {
   window.addEventListener('mousemove', onAimMove)
   window.addEventListener('keydown', onKeydown)
@@ -218,6 +290,11 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('mousemove', onAimMove)
   window.removeEventListener('keydown', onKeydown)
+  window.clearInterval(countdownTimer)
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
 })
 
 function loadImage(url: string): Promise<void> {
@@ -921,6 +998,8 @@ async function load() {
         pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
       }
     }
+    connectSse(battle.value.id)
+    startCountdown()
   } catch (e) {
     message.error(errorMessage(e))
   } finally {
@@ -1394,7 +1473,10 @@ function statusText(c: CombatantView): string {
         <n-button quaternary @click="router.push({ name: 'home' })">离开</n-button>
         <div class="head-info">
           <span class="round">第 {{ battle.round }} 回合</span>
-          <span class="dim">先手：{{ battle.firstStrikeSide === 0 ? '玩家' : '木桩' }}</span>
+          <span v-if="isPvp" class="pvp-tag" :class="battle.mySide === 'PLAYER' ? 'host' : 'guest'">
+            {{ battle.mySide === 'PLAYER' ? '先手方' : '后手方' }} · VS {{ opponentName }}
+          </span>
+          <span v-else class="dim">先手：{{ battle.firstStrikeSide === 0 ? '玩家' : '木桩' }}</span>
           <span class="dim">抽牌能量 {{ battle.playerDrawEnergy }}/10</span>
         </div>
         <n-button size="small" @click="load">刷新</n-button>
@@ -1411,16 +1493,21 @@ function statusText(c: CombatantView): string {
         </template>
       </div>
 
-      <!-- victory banner -->
-      <div v-if="isFinished" class="panel result-banner" :class="battle.winner === 'PLAYER' ? 'win' : 'lose'">
-        <h2>{{ battle.winner === 'PLAYER' ? '战斗胜利' : '战斗败北' }}</h2>
+      <!-- victory banner (PVP: relative to the viewer's side) -->
+      <div
+        v-if="isFinished"
+        class="panel result-banner"
+        :class="battle.winner === (battle.mySide ?? 'PLAYER') ? 'win' : 'lose'"
+      >
+        <h2>{{ battle.winner === (battle.mySide ?? 'PLAYER') ? '战斗胜利' : '战斗败北' }}</h2>
         <n-button type="primary" @click="router.push({ name: 'records' })">查看战报</n-button>
       </div>
 
-      <!-- initial perk -->
+      <!-- initial perk (PVP: each side picks its own, then waits) -->
       <section v-if="inInitialPerk" class="panel perk-panel">
-        <h3>选择初始词条</h3>
-        <div class="perk-grid">
+        <h3 v-if="isPvp && battle.mySubmitted">等待对方选择初始词条…</h3>
+        <h3 v-else>选择初始词条</h3>
+        <div class="perk-grid" :class="{ disabled: isPvp && battle.mySubmitted }">
           <div
             v-for="p in battle.initialPerkOptions"
             :key="p.id"
@@ -1434,6 +1521,9 @@ function statusText(c: CombatantView): string {
             </div>
           </div>
         </div>
+        <p v-if="isPvp && battle.opponentSubmitted && !battle.mySubmitted" class="dim wait-hint">
+          对方已选好词条，等待你选择…
+        </p>
       </section>
 
       <!-- top action bar: text of the action currently playing -->
@@ -1661,22 +1751,28 @@ function statusText(c: CombatantView): string {
           <span v-if="battle.playerHand.length === 0" class="dim hand-empty">无手牌</span>
         </div>
 
-        <!-- special perk offers: centered on the battlefield (middle card out) -->
+        <!-- special perk offers: centered on the battlefield (middle card out).
+             PVP: each side picks its own offer, then waits for the opponent. -->
         <div v-if="inSpecialPerk" class="perk-overlay">
-          <div
-            v-for="p in battle.specialPerkOptions"
-            :key="p.id"
-            class="card-face perk"
-            @click="chooseSpecialPerk(p.id)"
-          >
-            <img class="face-img" src="/assets/core_perk.webp" alt="" />
-            <div class="face-text">
-              <div class="face-name">{{ p.name }}</div>
-              <div class="face-desc">{{ p.description }}</div>
+          <template v-if="isPvp && battle.mySubmitted">
+            <p class="perk-wait">等待对方选择特殊词条…</p>
+          </template>
+          <template v-else>
+            <div
+              v-for="p in battle.specialPerkOptions"
+              :key="p.id"
+              class="card-face perk"
+              @click="chooseSpecialPerk(p.id)"
+            >
+              <img class="face-img" src="/assets/core_perk.webp" alt="" />
+              <div class="face-text">
+                <div class="face-name">{{ p.name }}</div>
+                <div class="face-desc">{{ p.description }}</div>
+              </div>
             </div>
-          </div>
-          <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
-          <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
+            <span v-if="battle.specialPerkOptions.length === 0" class="dim">无可用词条</span>
+            <n-button quaternary size="small" :loading="submitting" @click="skipPerk">跳过本轮</n-button>
+          </template>
         </div>
 
         <!-- selected-combatant tab panel: actions + skills, anchored next
@@ -1791,12 +1887,25 @@ function statusText(c: CombatantView): string {
 
       <!-- decision panel: per-character status + submit. Orders are issued
            from the tab panel (click a unit), so this bar only shows the
-           pending state and the submit button. -->
-      <div v-if="inDecision" class="panel decision-panel" :class="{ locked: animating }">
+           pending state and the submit button. PVP locks the panel while
+           awaiting the opponent and shows the 30s countdown on the button. -->
+      <div
+        v-if="inDecision"
+        class="panel decision-panel"
+        :class="{ locked: animating || awaitingOpponent }"
+      >
         <div v-if="inExtraRound" class="extra-round-hint">
           ⚡ 额外行动轮：{{ extraActors.map((a) => `${a.name}（剩余 ${a.extraActionsThisTurn}）`).join('、') }}
         </div>
-        <div class="decision-actions">
+        <div v-if="awaitingOpponent" class="waiting-hint">
+          <span v-if="opponentsExtraRound" class="dim">等待 {{ opponentName }} 完成额外行动…</span>
+          <span v-else class="dim">已提交，等待 {{ opponentName }}…</span>
+          <span v-if="countdown > 0" class="countdown">⏱ {{ countdown }}s</span>
+        </div>
+        <div v-else class="decision-actions">
+          <span v-if="isPvp && opponentSubmitted && !mySubmitted" class="dim wait-hint">
+            对方已提交指令，等待你…
+          </span>
           <n-button
             v-if="inExtraRound"
             quaternary
@@ -1808,6 +1917,7 @@ function statusText(c: CombatantView): string {
           </n-button>
           <n-button type="primary" :loading="submitting" :disabled="animating" @click="submitDecisions">
             {{ inExtraRound ? '执行额外行动' : '提交指令' }}
+            <template v-if="isPvp && countdown > 0">（{{ countdown }}s）</template>
           </n-button>
         </div>
       </div>
@@ -2461,6 +2571,53 @@ function statusText(c: CombatantView): string {
   color: var(--accent, #4cc2ff);
   margin-bottom: 8px;
   font-weight: 600;
+}
+
+/* ---------- PVP: opponent tag, waiting states, countdown ---------- */
+.pvp-tag {
+  font-size: 13px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.pvp-tag.host {
+  color: var(--accent, #4cc2ff);
+  border-color: var(--accent, #4cc2ff);
+}
+
+.pvp-tag.guest {
+  color: var(--warn, #f0a020);
+  border-color: var(--warn, #f0a020);
+}
+
+.waiting-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.countdown {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 15px;
+  color: var(--warn, #f0a020);
+}
+
+.wait-hint {
+  font-size: 12px;
+}
+
+.perk-wait {
+  color: var(--text-dim);
+  padding: 24px;
+}
+
+.perk-grid.disabled {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .decision-actions {

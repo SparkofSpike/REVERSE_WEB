@@ -50,9 +50,10 @@ function formatDate(iso: string): string {
         <div v-for="r in records" :key="r.id" class="panel record-row">
           <div class="record-main">
             <div class="record-top">
-              <span class="result" :class="r.winner === 'PLAYER' ? 'ok' : 'danger'">
-                {{ r.winner === 'PLAYER' ? '胜利' : '败北' }}
+              <span class="result" :class="r.winner === (r.mySide ?? 'PLAYER') ? 'ok' : 'danger'">
+                {{ r.winner === (r.mySide ?? 'PLAYER') ? '胜利' : '败北' }}
               </span>
+              <span v-if="r.opponentUsername" class="record-vs dim">VS {{ r.opponentUsername }}</span>
               <span class="record-rounds dim">{{ r.rounds }} 回合</span>
             </div>
             <div class="record-chars dim">
@@ -130,6 +131,11 @@ function formatDate(iso: string): string {
 
 .record-rounds {
   font-size: 13px;
+}
+
+.record-vs {
+  font-size: 12px;
+  color: var(--warn, #f0a020);
 }
 
 .record-chars {

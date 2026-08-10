@@ -10,6 +10,7 @@ const appVersion = __APP_VERSION__
 
 const navItems = [
   { name: 'home', label: '作战室' },
+  { name: 'pvp', label: 'PVP 对战' },
   { name: 'builds', label: '构筑管理' },
   { name: 'records', label: '战报' }
 ]
