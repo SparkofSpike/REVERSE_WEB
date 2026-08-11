@@ -1,4 +1,4 @@
-// 与后端 DTO 严格对齐的类型契约
+// Types strictly aligned with the backend DTOs
 
 export interface AuthResponse {
   token: string

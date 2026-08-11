@@ -7,7 +7,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Training dummy (木桩) definition. A dummy has no skills, passives or
+ * Training dummy (training dummy) definition. A dummy has no skills, passives or
  * performance; it retaliates with simple base actions.
  */
 @Data

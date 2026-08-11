@@ -1334,7 +1334,7 @@ function removeLockedTarget(c: CombatantView, idx: number) {
 }
 
 // entering the extra-action round resets every extra actor's selection:
-// a stale skill choice (e.g. the just-used 连续奔袭, now on cooldown) must
+// a stale skill choice (e.g. the just-used Relentless Charge, now on cooldown) must
 // never be re-submitted and burn a charge doing nothing
 watch(inExtraRound, (on) => {
   if (!on) return

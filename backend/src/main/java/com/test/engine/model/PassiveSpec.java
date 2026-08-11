@@ -3,7 +3,7 @@ package com.test.engine.model;
 import lombok.Data;
 
 /**
- * Core passive of a character (被动词条库 entry).
+ * Core passive of a character (passive library entry).
  */
 @Data
 public class PassiveSpec {

@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Performance (演出) trigger and its bonus effects. Triggering upgrades the
+ * Performance (Performance) trigger and its bonus effects. Triggering upgrades the
  * character and grants the listed effects.
  */
 @Data
@@ -17,7 +17,7 @@ public class PerformanceSpec {
     private int threshold;
     /** Human readable trigger condition. */
     private String description;
-    /** Human readable reward text (追加效果), shown after the trigger. */
+    /** Human readable reward text (bonus effect), shown after the trigger. */
     private String rewardDescription;
     /** Effects applied when the performance triggers. */
     private List<EffectSpec> effects;

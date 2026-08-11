@@ -4,7 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * A temporary taunt minion summoned by the 木偶挡刀 universal skill.
+ * A temporary taunt minion summoned by the Puppet Block universal skill.
  * Expires at the end of the round it was summoned in.
  */
 @Getter

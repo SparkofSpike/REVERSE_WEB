@@ -59,7 +59,7 @@ public class CombatState {
     private Integer firstStrikeSide;
     private List<ActionDecision> pendingDecisions = new ArrayList<>();
     private Map<String, Integer> roundSpeed = new LinkedHashMap<>();
-    /** True while a side may spend extra base actions (连续奔袭 etc.). */
+    /** True while a side may spend extra base actions (Relentless Charge etc.). */
     private boolean extraActionRound;
     /** PVP: which side's extra-action window is currently open. */
     private CombatSide extraRoundSide;
@@ -130,14 +130,14 @@ public class CombatState {
 
     /**
      * Central death adjudication shared by every damage source (plain
-     * attacks, skills, cards, hp costs): undying (宁死不屈) keeps the
+     * attacks, skills, cards, hp costs): undying (Unyielding) keeps the
      * combatant alive, otherwise the combatant dies and logs a death event.
      */
     public void resolvePotentialDeath(Combatant c) {
         if (c.getHp() > 0 || c.isDead()) {
             return;
         }
-        // undying: 宁死不屈 keeps the combatant alive for this and next round
+        // undying: Unyielding keeps the combatant alive for this and next round
         if (c.getTemplate() != null && c.getTemplate().getCorePassive() != null
                 && "undying".equals(c.getTemplate().getCorePassive().getType()) && !c.isUndyingUsed()) {
             c.setUndyingUsed(true);

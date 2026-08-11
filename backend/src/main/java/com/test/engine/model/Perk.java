@@ -3,7 +3,7 @@ package com.test.engine.model;
 import lombok.Data;
 
 /**
- * A perk (外在词条) offered during battle setup or special rounds.
+ * A perk (external perk) offered during battle setup or special rounds.
  *
  * <p>Initial perks have roundRequirement 0. Special perks carry a round
  * requirement: positive value = pickable on that round number, -1 = only on

@@ -75,7 +75,7 @@ public class Combatant {
     private String lastAttackedTarget;
     /** Stone-shield pending payout from last round's defense. */
     private boolean stoneShieldPending;
-    /** Remaining undying protection rounds (宁死不屈). */
+    /** Remaining undying protection rounds (Unyielding). */
     private int undyingRounds;
     /** Dodging state and its resolved dodge value this round. */
     private boolean dodging;

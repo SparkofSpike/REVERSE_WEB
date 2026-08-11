@@ -15,13 +15,13 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * Resolves per-round speed order per the design doc (TEST.游戏玩法.pdf, 行动轮):
+ * Resolves per-round speed order per the design doc (TEST Gameplay Design.pdf, action rounds):
  *
  * <ol>
  *   <li>Every combatant rolls its speed dice.</li>
  *   <li>A tie of more than two combatants is re-rolled until distinct, as
  *       long as the dice range can realistically separate the group.</li>
- *   <li>A tie of exactly two combatants triggers 生死时速 (last dash)
+ *   <li>A tie of exactly two combatants triggers Last Dash (last dash)
  *       immediately, no matter how many combatants are on the field.</li>
  *   <li>When the field's speed value range is smaller than the combatant
  *       count (guaranteed collision), or a group cannot be separated by
@@ -38,7 +38,7 @@ public class SpeedAdjudicator {
      * Defensive cap on re-roll rounds. Re-rolling cannot be relied on to
      * converge (e.g. fixed dice like "1d1"), so after this many rounds the
      * remaining ties are forced into the last dash — the design doc says the
-     * un-re-rollable ties "顺位加入生死时速".
+     * un-re-rollable ties "join the Last Dash in order".
      */
     private static final int MAX_RE_ROLLS = 200;
 
@@ -156,7 +156,7 @@ public class SpeedAdjudicator {
     }
 
     /**
-     * 生死时速: every member duels every other member best-of-three; members
+     * Last Dash: every member duels every other member best-of-three; members
      * are ranked by duel wins (initial roll as tie-breaker). Speeds are then
      * assigned so the winner is the fastest on the whole field, the loser the
      * slowest, and the remaining members are ranked strictly between — the

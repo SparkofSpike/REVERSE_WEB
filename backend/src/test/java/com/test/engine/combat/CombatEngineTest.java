@@ -86,7 +86,7 @@ class CombatEngineTest {
         Combatant mage = state.alive(CombatSide.PLAYER).get(0);
         int energyBefore = mage.getEnergy();
 
-        // mage uses 聚求 (draw 1 generic skill), costs 28 - 2 (discount) = 26
+        // mage uses Supplication (draw 1 generic skill), costs 28 - 2 (discount) = 26
         List<ActionDecision> decisions = List.of(
                 ActionDecision.skill(mage.getId(), "mage-s2", null));
         engine.decide(state.getId(), decisions);
@@ -179,13 +179,13 @@ class CombatEngineTest {
         int drawBefore = state.getPlayerDrawEnergy();
 
         engine.decide(state.getId(), List.of(
-                ActionDecision.skill(mage.getId(), "mage-s2", null))); // 聚求: draw a card
+                ActionDecision.skill(mage.getId(), "mage-s2", null))); // Supplication: draw a card
 
         assertThat(mage.isPerforming()).isTrue();
         // mage performance has no upgrade_skills effect
         assertThat(mage.isSkillsUpgraded()).isFalse();
         assertThat(state.getPlayerDrawEnergy()).isGreaterThanOrEqualTo(drawBefore + 2);
-        // mage-s2 costs 28, discount -2 (技艺生疏): 30 - 26 + 20 default restore = 24
+        // mage-s2 costs 28, discount -2 (Skill Rust): 30 - 26 + 20 default restore = 24
         assertThat(mage.getEnergy()).isEqualTo(24);
     }
 
@@ -202,7 +202,7 @@ class CombatEngineTest {
 
         // using a skill triggers the caster's performance check (hp 35 < 40)
         engine.decide(state.getId(), List.of(
-                ActionDecision.skill(warrior.getId(), "warrior-s2", null))); // 嗜血突袭: 20 energy
+                ActionDecision.skill(warrior.getId(), "warrior-s2", null))); // Bloodthirsty Strike: 20 energy
 
         assertThat(warrior.isPerforming()).isTrue();
         // warrior performance upgrades all three skills
@@ -253,7 +253,7 @@ class CombatEngineTest {
         Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
         warrior.setEnergy(100);
 
-        // round 1: 钟表加速
+        // round 1: Clock Acceleration
         GenericSkillTemplate card = state.getPlayerHand().stream()
                 .filter(c -> "g-clock-accelerate".equals(c.getId()))
                 .findFirst()
@@ -331,7 +331,7 @@ class CombatEngineTest {
         warrior.setHp(35); // below 40: the next skill use triggers the performance
         warrior.setEnergy(100);
 
-        // 连续奔袭: cost 25, cooldown 3, self target; the cast also triggers
+        // Relentless Charge: cost 25, cooldown 3, self target; the cast also triggers
         // the hp_below performance, which upgrades all three warrior skills
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
@@ -342,7 +342,7 @@ class CombatEngineTest {
         assertThat(warrior.hasCooldown("warrior-s3-up")).isTrue();
         assertThat(warrior.hasCooldown("warrior-s3")).isFalse();
 
-        // 连续奔袭 grants extra actions, opening the extra-action round;
+        // Relentless Charge grants extra actions, opening the extra-action round;
         // skip it so the round finalizes before the next main decision
         if (state.isExtraActionRound()) {
             engine.skipExtraActions(state.getId());
@@ -362,9 +362,9 @@ class CombatEngineTest {
 
     @Test
     void chaseIsActiveActionNotPassiveBonus() {
-        // design doc (TEST.游戏玩法.pdf): 追击 is one of the base action
-        // types ("若目标是上次攻击过的目标，则本次攻击会追加0d4点伤害，
-        // 并恢复2点生命"). It must be actively chosen - a plain ATTACK must
+        // design doc (TEST Gameplay Design.pdf): Chase is one of the base action
+        // types ("if the target is the one attacked last time, this attack adds 0d4 damage,
+        // and restores 2 HP"). It must be actively chosen - a plain ATTACK must
         // never trigger the bonus on its own.
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
@@ -420,7 +420,7 @@ class CombatEngineTest {
 
     @Test
     void extraActionsArePlayerChosenFollowUpRounds() {
-        // 连续奔袭 (warrior-s3): "使用后，获得仅限本回合使用的3次额外基础行动"
+        // Relentless Charge (warrior-s3): "after use, gain 3 extra base actions usable this round only"
         // The player must be able to freely choose each extra action, not
         // have the engine auto-attack three times.
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
@@ -434,7 +434,7 @@ class CombatEngineTest {
         assertThat(state.isExtraActionRound()).as("plain round must not open an extra-action round")
                 .isFalse();
 
-        // round 2: 连续奔袭 opens the extra-action round with 3 charges
+        // round 2: Relentless Charge opens the extra-action round with 3 charges
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
         assertThat(state.isExtraActionRound()).as("连续奔袭 must open an extra-action round")
@@ -507,7 +507,7 @@ class CombatEngineTest {
     @Test
     void effectDamageKillRespectsUndying() throws Exception {
         // regression: effect-executor kills bypassed the engine's undying
-        // check, so lethal skill damage ignored 宁死不屈 entirely
+        // check, so lethal skill damage ignored Unyielding entirely
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
         Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
@@ -543,7 +543,7 @@ class CombatEngineTest {
 
     @Test
     void sacrificeBuffNeverLeavesZeroHpZombies() throws Exception {
-        // regression: 冷漠实现 could drive an ally to 0 HP without death
+        // regression: Cold Indifference could drive an ally to 0 HP without death
         // handling, leaving a "living" zombie that kept acting and could
         // receive the permanent extra action
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior", "mage"), "tester");
@@ -575,7 +575,7 @@ class CombatEngineTest {
     @Test
     void extraActionRoundRejectsSkillsWithoutOverlimit() {
         // regression: extra-action rounds accepted SKILL decisions even
-        // though they grant "extra base actions" (连续奔袭); only 超限技能
+        // though they grant "extra base actions" (Relentless Charge); only Overlimit Skill
         // (extra_skill) unlocks a skill inside the extra round
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
@@ -602,18 +602,18 @@ class CombatEngineTest {
 
     @Test
     void extraSkillUnlocksSkillInsideExtraActionRound() {
-        // 超限技能 (g-overlimit): "使一个角色在本回合内可以额外使用一个技能"
+        // Overlimit Skill (g-overlimit): "lets a character use one extra skill this round"
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
         engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
         Combatant warrior = state.alive(CombatSide.PLAYER).get(0);
         warrior.setEnergy(100);
 
-        // round 1: 连续奔袭 opens the extra round with 3 base actions
+        // round 1: Relentless Charge opens the extra round with 3 base actions
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
         assertThat(state.isExtraActionRound()).isTrue();
 
-        // 超限技能 card grants +1 extra skill for this turn (deal it first)
+        // Overlimit Skill card grants +1 extra skill for this turn (deal it first)
         GenericSkillTemplate overlimit = state.getPlayerDeck().stream()
                 .filter(c -> "g-overlimit".equals(c.getId()))
                 .findFirst()
@@ -635,7 +635,7 @@ class CombatEngineTest {
 
     @Test
     void secondGuardSameTurnNeedsExtraGuardCharge() {
-        // 蟹壳拓展 (crab-s1): "仅限本回合，获得2次额外的守护行动次数" - a
+        // Crab Shell Extension (crab-s1): "gain 2 extra guard actions this round only" - a
         // character can only guard once per turn unless it holds extra guard
         // charges (the extra-action round is the same-turn second action slot)
         CombatState state = engine.createDummyBattle("test-1", List.of("warrior", "crab-dwarf"), "tester");
@@ -644,7 +644,7 @@ class CombatEngineTest {
         Combatant crab = state.alive(CombatSide.PLAYER).get(1);
         warrior.setEnergy(100);
 
-        // main round: 连续奔袭 opens the extra-action round
+        // main round: Relentless Charge opens the extra-action round
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null),
                 ActionDecision.base(crab.getId(), "ATTACK", "dummy")));
@@ -662,7 +662,7 @@ class CombatEngineTest {
         assertThat(state.getLogs().stream().anyMatch(e -> "action".equals(e.getType())
                 && (e.getMessage() != null && e.getMessage().contains("没有额外的守护次数")))).isTrue();
 
-        // 蟹壳拓展 grants the charge: the second guard now succeeds (the
+        // Crab Shell Extension grants the charge: the second guard now succeeds (the
         // guard target itself is cleared by endRound, so verify via the log)
         warrior.setExtraGuardsThisTurn(1);
         engine.decideExtraActions(state.getId(), List.of(
@@ -693,7 +693,7 @@ class CombatEngineTest {
                 engine.skipSpecialPerk(state.getId());
             }
         }
-        // round 4: 连续奔袭 opens the extra-action round on the perk round
+        // round 4: Relentless Charge opens the extra-action round on the perk round
         engine.decide(state.getId(), List.of(
                 ActionDecision.skill(warrior.getId(), "warrior-s3", null)));
         assertThat(state.isExtraActionRound()).isTrue();
@@ -765,7 +765,7 @@ class CombatEngineTest {
         Combatant mage = state.alive(CombatSide.PLAYER).get(0);
         mage.setHp(5);
 
-        // put 团队奉献 (hp_cost 10 on an ally) into hand and play it on the mage
+        // put Team Sacrifice (hp_cost 10 on an ally) into hand and play it on the mage
         GenericSkillTemplate card = state.getPlayerDeck().stream()
                 .filter(c -> "g-team-sacrifice".equals(c.getId()))
                 .findFirst()

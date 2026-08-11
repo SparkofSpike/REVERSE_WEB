@@ -89,7 +89,7 @@ public class DamageResolver {
         }
 
         applyHpDamage(target, outcome.getHpDamage(), outcome);
-        // 放血: while the attacker holds the bloodletting buff, any direct
+        // Bloodletting: while the attacker holds the bloodletting buff, any direct
         // damage it deals piles 2 extra bleed stacks onto the target (never
         // triggered by bleed damage itself, which bypasses dealDamage)
         if (attacker != null && attacker.statusesOfType("bloodletting").stream().anyMatch(e -> !e.expired())

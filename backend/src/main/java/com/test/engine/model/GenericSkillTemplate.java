@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * Universal skill (通用技能) played directly from hand as a card.
+ * Universal skill (Universal Skill) played directly from hand as a card.
  */
 @Data
 public class GenericSkillTemplate {

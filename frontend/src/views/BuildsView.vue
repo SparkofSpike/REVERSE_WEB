@@ -132,7 +132,7 @@ function characterName(id: string): string {
     <n-modal v-model:show="showModal" preset="card" :title="editing ? '编辑构筑' : '新建构筑'" style="width: min(520px, 94vw)">
       <div class="form">
         <label>构筑名称</label>
-        <n-input v-model:value="name" placeholder="例如：极限爆发队" />
+        <n-input v-model:value="name" placeholder="构筑名称" />
 
         <label>出战角色（1-4 个）</label>
         <n-select

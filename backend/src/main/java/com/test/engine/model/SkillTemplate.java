@@ -18,6 +18,6 @@ public class SkillTemplate {
     private String targetType;
     private java.util.List<EffectSpec> effects;
     private String description;
-    /** Evolved (升变) version, null until performance upgrades it. */
+    /** Evolved (Evolved) version, null until performance upgrades it. */
     private SkillTemplate upgraded;
 }

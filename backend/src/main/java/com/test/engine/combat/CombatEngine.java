@@ -572,7 +572,7 @@ public class CombatEngine {
         }
     }
 
-    /** Human-readable side label for logs (username in PVP, 玩家/木桩 in solo). */
+    /** Human-readable side label for logs (username in PVP, player/training dummy in solo). */
     private String sideLabel(CombatState state, CombatSide side) {
         if (state.isPvp()) {
             String username = state.sideUsername(side);
@@ -772,7 +772,7 @@ public class CombatEngine {
 
     /**
      * Extra-action round: the player submits decisions for characters that
-     * still hold extra base actions (连续奔袭). Each submitted decision
+     * still hold extra base actions (Relentless Charge). Each submitted decision
      * consumes one extra action; when none are left the round finalizes.
      */
     /** Solo alias: the player spends its extra actions. */
@@ -802,7 +802,7 @@ public class CombatEngine {
             if (c == null || c.getSide() != side || c.isDead() || c.getExtraActionsThisTurn() - claimed <= 0) {
                 throw new IllegalArgumentException("no extra actions left for " + d.getCombatantId());
             }
-            // extra actions are base actions only; 超限技能 grants extra
+            // extra actions are base actions only; Overlimit Skill grants extra
             // skill usage on top (one charge per extra skill)
             if (d.isSkill() && c.getExtraSkillsThisTurn() <= 0) {
                 throw new IllegalArgumentException(
@@ -1051,7 +1051,7 @@ public class CombatEngine {
             return;
         }
         // Solo: a round whose player decisions include an extra-action skill
-        // (连续奔袭 etc.) splits into player phase -> extra-action round ->
+        // (Relentless Charge etc.) splits into player phase -> extra-action round ->
         // enemy phase, so the player's turn continues after the skill and
         // the enemy acts only once the extra actions are spent. Ordinary
         // rounds keep the regular speed-order resolution untouched.
@@ -1235,7 +1235,7 @@ public class CombatEngine {
             }
             if (d.isSkill()) {
                 executeSkill(state, c, d);
-                // permanent-extra-action units (冷漠实现) still auto-strike
+                // permanent-extra-action units (Cold Indifference) still auto-strike
                 executeExtraActions(state, c, d);
                 continue;
             }
@@ -1302,15 +1302,15 @@ public class CombatEngine {
     }
 
     /**
-     * Consumes this round's extra base actions (连续奔袭 etc.): after the
+     * Consumes this round's extra base actions (Relentless Charge etc.): after the
      * main decision the combatant automatically strikes the chosen target
      * (falling back to the last attacked target, then the first alive foe)
      * once per extra action. Extra actions are base actions, so a skill
      * decision contributes nothing itself - it only grants the count.
      */
     private void executeExtraActions(CombatState state, Combatant c, ActionDecision main) {
-        // 冷漠实现: a permanently held extra action auto-strikes the last
-        // target each round; 连续奔袭 extra actions are player-chosen via
+        // Cold Indifference: a permanently held extra action auto-strikes the last
+        // target each round; Relentless Charge extra actions are player-chosen via
         // the extra-action round instead
         int runs = c.isPermanentExtraAction() ? 1 : 0;
         if (runs <= 0) {
@@ -1461,7 +1461,7 @@ public class CombatEngine {
                     return c;
                 }
             }
-            // 盾山 guard bind: the binder absorbs ALL damage for the bound ally
+            // Shield Mountain guard bind: the binder absorbs ALL damage for the bound ally
             for (Combatant c : state.alive(CombatSide.PLAYER)) {
                 if (target.getId().equals(c.getGuardBindTargetId()) && !c.getId().equals(target.getId())) {
                     return c;
@@ -1515,7 +1515,7 @@ public class CombatEngine {
         if (receiver.getHp() <= 0) {
             state.resolvePotentialDeath(receiver);
         }
-        // compassion heal (老牧师): on losing hp, heal a random ally
+        // compassion heal (Elder Priest): on losing hp, heal a random ally
         if (receiver.isPlayerSide() && receiver.getTemplate() != null
                 && receiver.getTemplate().getCorePassive() != null
                 && "compassion_heal".equals(receiver.getTemplate().getCorePassive().getType())) {
@@ -1556,7 +1556,7 @@ public class CombatEngine {
         if (actor.getDodgePenalty() != null) {
             penalty = dice.roll(actor.getDodgePenalty()).total();
         }
-        // 教导有方: a teammate with the dodge-training passive shaves 1 point
+        // Mentorship: a teammate with the dodge-training passive shaves 1 point
         // off the dodge penalty of every other combatant (min 0)
         if (penalty > 0 && hasDodgeTrainingTeammate(state, actor)) {
             penalty = Math.max(0, penalty - 1);
@@ -1577,7 +1577,7 @@ public class CombatEngine {
         if (target == null || target.isDead() || target.getId().equals(actor.getId())) {
             target = actor;
         }
-        // one guard per turn by default; 蟹壳拓展 grants extra guard actions
+        // one guard per turn by default; Crab Shell Extension grants extra guard actions
         if (actor.getGuardTargetId() != null && actor.getExtraGuardsThisTurn() <= 0) {
             state.log(CombatEvent.of(state.getRound(), "action",
                     actor.getName() + " 本回合已守护过，且没有额外的守护次数。")
@@ -2131,13 +2131,13 @@ public class CombatEngine {
                         }
                     }
                     case "bloodletting" -> {
-                        // 放血: one extra base action per round while active
+                        // Bloodletting: one extra base action per round while active
                         c.setExtraActionsThisTurn(c.getExtraActionsThisTurn() + 1);
                         state.log(CombatEvent.of(state.getRound(), "action",
                                 c.getName() + " 放血效果：本回合获得一次额外行动。"));
                     }
                     case "collapse" -> {
-                        // 崩溃: lose hp every round start; teammates gain a
+                        // Collapse: lose hp every round start; teammates gain a
                         // one-round shield
                         int loss = Math.min(e.getAmount() > 0 ? e.getAmount() : 10, c.getHp());
                         c.setHp(c.getHp() - loss);
@@ -2282,7 +2282,7 @@ public class CombatEngine {
         boolean normalPerkRound = state.getRound() % SPECIAL_PERK_INTERVAL == 0;
         boolean acceleratedPerkRound = state.isSpecialPerkAdvancePending()
                 && state.getRound() % SPECIAL_PERK_INTERVAL == SPECIAL_PERK_INTERVAL - 1;
-        // 钟表加速 pulls the next offer one round early: the accelerated
+        // Clock Acceleration pulls the next offer one round early: the accelerated
         // offer SUBSTITUTES the following normal round instead of stacking
         boolean specialPerkDue = !state.isSpecialPerkAcceleratedConsumed()
                 && (normalPerkRound || acceleratedPerkRound);
@@ -2390,7 +2390,7 @@ public class CombatEngine {
     }
 
     /**
-     * 流血: performing any action costs HP equal to the current bleed stacks
+     * Bleed: performing any action costs HP equal to the current bleed stacks
      * and halves the stacks afterwards. Returns false when the combatant died
      * to the bleed (the pending action is cancelled).
      */

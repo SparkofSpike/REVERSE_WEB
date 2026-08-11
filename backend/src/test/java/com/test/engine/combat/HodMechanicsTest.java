@@ -69,7 +69,7 @@ class HodMechanicsTest {
         Combatant dummy = state.alive(CombatSide.ENEMY).get(0);
         int dummyHpBefore = dummy.getHp();
 
-        // 横切斩开: 1d11 damage + 2 bleed stacks on the dummy
+        // Cross Slash: 1d11 damage + 2 bleed stacks on the dummy
         decideAll(state, List.of(ActionDecision.skill(hod.getId(), "hod-s2", dummy.getId())));
 
         // whenever the dummy acts, it loses hp equal to the stacks and they halve
@@ -84,12 +84,12 @@ class HodMechanicsTest {
         Combatant hod = state.alive(CombatSide.PLAYER).get(0);
         Combatant dummy = state.alive(CombatSide.ENEMY).get(0);
 
-        // 重槌制服: 1d6 damage + stun on the dummy (next turn cannot act)
+        // Hammer Subdue: 1d6 damage + stun on the dummy (next turn cannot act)
         decideAll(state, List.of(ActionDecision.skill(hod.getId(), "hod-s1", dummy.getId())));
 
         // the dummy either got stunned now (acted before hod this round) or
         // will be stunned next round - in both cases a stun state exists at
-        // some point and a "晕眩中" skip log appears
+        // some point and a "stunned" skip log appears
         assertThat(state.getLogs().stream()
                 .anyMatch(e -> e.getMessage() != null && e.getMessage().contains("晕眩"))).isTrue();
     }
@@ -100,7 +100,7 @@ class HodMechanicsTest {
         Combatant hod = state.alive(CombatSide.PLAYER).get(0);
         Combatant dummy = state.alive(CombatSide.ENEMY).get(0);
 
-        // 放血: 3 rounds of +1 extra action per round + bleed on any damage.
+        // Bloodletting: 3 rounds of +1 extra action per round + bleed on any damage.
         // decideAll runs many rounds (extra-action windows), so the buff may
         // already expire - assert on the logs instead of the live state.
         decideAll(state, List.of(ActionDecision.skill(hod.getId(), "hod-s3", null)));

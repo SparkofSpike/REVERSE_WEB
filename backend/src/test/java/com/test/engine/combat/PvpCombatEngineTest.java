@@ -31,7 +31,7 @@ class PvpCombatEngineTest {
                 new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
                 new PuppetAi(dice), null);
         // enemy side leads with a warrior so the extra-action tests can grant
-        // it 连续奔袭 (warrior-s3) on both sides
+        // it Relentless Charge (warrior-s3) on both sides
         state = engine.createPvpBattle("test-1",
                 List.of("warrior", "mage"), List.of("warrior", "priest"),
                 "host", "guest");
@@ -142,7 +142,7 @@ class PvpCombatEngineTest {
     @Test
     void extraActionWindowsAlternateBetweenSides() {
         pickInitialPerks();
-        // both sides use 连续奔袭 (warrior-s3) so both earn extra charges;
+        // both sides use Relentless Charge (warrior-s3) so both earn extra charges;
         // every alive unit needs a decision, the mage just attacks
         grantEnergy(state, CombatSide.PLAYER);
         grantEnergy(state, CombatSide.ENEMY);
@@ -256,10 +256,10 @@ class PvpCombatEngineTest {
         pickInitialPerks();
         grantEnergy(state, CombatSide.PLAYER);
         grantEnergy(state, CombatSide.ENEMY);
-        // simulate the 冷漠实现 special perk on the guest's leading unit
+        // simulate the Cold Indifference special perk on the guest's leading unit
         Combatant guestUnit = state.alive(CombatSide.ENEMY).get(0);
         guestUnit.setPermanentExtraAction(true);
-        // host uses 连续奔袭 so the guest main actions run deferred
+        // host uses Relentless Charge so the guest main actions run deferred
         engine.decideSide(state.getId(), CombatSide.PLAYER, decisionsWithSkill(CombatSide.PLAYER, "warrior-s3"));
         engine.decideSide(state.getId(), CombatSide.ENEMY, attackAll(CombatSide.ENEMY));
         assertThat(state.isExtraActionRound()).isTrue();

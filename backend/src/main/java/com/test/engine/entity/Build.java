@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A saved deck (构筑) owned by a user: card pack, deployed characters and
+ * A saved deck (Build) owned by a user: card pack, deployed characters and
  * the chosen initial perk.
  */
 @Entity
