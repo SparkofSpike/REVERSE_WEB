@@ -1835,7 +1835,6 @@ function statusText(c: CombatantView): string {
               <div class="name">
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
-                <span v-if="isPve" class="owner-tag enemy">敌人</span>
                 <span
                   v-if="inDecision && !c.dead && canControl(c)"
                   class="tag-decision"
@@ -2780,11 +2779,6 @@ function statusText(c: CombatantView): string {
 .owner-tag.me {
   color: var(--accent, #4cc2ff);
   border-color: var(--accent, #4cc2ff);
-}
-
-.owner-tag.enemy {
-  color: var(--danger, #ff5d6c);
-  border-color: var(--danger, #ff5d6c);
 }
 
 .waiting-hint {
