@@ -35,7 +35,7 @@ class PveCombatEngineTest {
         LinkedHashMap<String, List<String>> players = new LinkedHashMap<>();
         players.put("host", List.of("warrior", "mage"));
         players.put("guest", List.of("priest"));
-        state = engine.createPveBattle("test-1", List.of("scout", "guard"), players);
+        state = engine.createPveBattle("test-1", List.of("training-dummy", "training-dummy"), players);
     }
 
     private void pickAllInitialPerks() {

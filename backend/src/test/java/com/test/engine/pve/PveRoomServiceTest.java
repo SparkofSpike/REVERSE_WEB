@@ -40,9 +40,9 @@ class PveRoomServiceTest {
 
     @Test
     void createdRoomSitsTheHostAndListsEnemies() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout", "guard"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy", "training-dummy"));
         assertThat(room.isLocked()).isFalse();
-        assertThat(room.getEnemyIds()).containsExactly("scout", "guard");
+        assertThat(room.getEnemyIds()).containsExactly("training-dummy", "training-dummy");
         assertThat(room.getSeats()).extracting(PveRoomView.SeatView::getUsername).containsExactly("host");
         assertThat(room.getSeats().get(0).isReady()).isFalse();
         assertThat(room.getSeats().get(0).isHost()).isTrue();
@@ -58,7 +58,7 @@ class PveRoomServiceTest {
 
     @Test
     void lockedRoomRejectsWrongPassword() {
-        PveRoomView room = rooms.create("host", "test-1", "s3cret", List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", "s3cret", List.of("training-dummy"));
         assertThat(room.isLocked()).isTrue();
 
         assertThatThrownBy(() -> rooms.join("guest", room.getId(), "nope"))
@@ -71,7 +71,7 @@ class PveRoomServiceTest {
 
     @Test
     void readyRequiresCharactersFromThePack() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         assertThatThrownBy(() -> rooms.ready("host", room.getId(), List.of("unknown-char")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不属于卡包");
@@ -82,7 +82,7 @@ class PveRoomServiceTest {
 
     @Test
     void battleAutoStartsWhenEverySeatIsReady() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         rooms.join("guest", room.getId(), null);
 
         // host ready alone does not start
@@ -100,13 +100,13 @@ class PveRoomServiceTest {
 
     @Test
     void unreadyUnlocksTheRoomAgain() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         rooms.join("guest", room.getId(), null);
         rooms.ready("host", room.getId(), List.of("warrior"));
         rooms.ready("guest", room.getId(), List.of("mage"));
         assertThat(rooms.get(room.getId()).getStatus()).isEqualTo("PLAYING");
 
-        PveRoomView room2 = rooms.create("host2", "test-1", null, List.of("scout"));
+        PveRoomView room2 = rooms.create("host2", "test-1", null, List.of("training-dummy"));
         rooms.join("guest2", room2.getId(), null);
         rooms.ready("host2", room2.getId(), List.of("warrior"));
         rooms.unready("host2", room2.getId());
@@ -117,7 +117,7 @@ class PveRoomServiceTest {
 
     @Test
     void singleHostRoomStartsWhenTheHostReadies() {
-        PveRoomView room = rooms.create("solo", "test-1", null, List.of("warlord"));
+        PveRoomView room = rooms.create("solo", "test-1", null, List.of("training-dummy"));
         PveRoomView started = rooms.ready("solo", room.getId(), List.of("warrior"));
         assertThat(started.getStatus()).isEqualTo("PLAYING");
         assertThat(started.getBattleId()).isNotBlank();
@@ -125,7 +125,7 @@ class PveRoomServiceTest {
 
     @Test
     void guestLeavesFreeTheSeat() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         rooms.join("guest", room.getId(), null);
         PveRoomView afterLeave = rooms.leave("guest", room.getId());
         assertThat(afterLeave.getSeats()).extracting(PveRoomView.SeatView::getUsername)
@@ -134,7 +134,7 @@ class PveRoomServiceTest {
 
     @Test
     void hostLeavingCancelsTheRoom() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         PveRoomView result = rooms.leave("host", room.getId());
         assertThat(result).isNull();
         assertThatThrownBy(() -> rooms.get(room.getId()))
@@ -143,13 +143,13 @@ class PveRoomServiceTest {
 
     @Test
     void deleteRequiresHostRoleAndWaitingStatus() {
-        PveRoomView room = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room = rooms.create("host", "test-1", null, List.of("training-dummy"));
         rooms.join("guest", room.getId(), null);
         assertThatThrownBy(() -> rooms.delete("guest", room.getId()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("房主");
 
-        PveRoomView room2 = rooms.create("host", "test-1", null, List.of("scout"));
+        PveRoomView room2 = rooms.create("host", "test-1", null, List.of("training-dummy"));
         rooms.ready("host", room2.getId(), List.of("warrior"));
         assertThatThrownBy(() -> rooms.delete("host", room2.getId()))
                 .isInstanceOf(BusinessException.class)

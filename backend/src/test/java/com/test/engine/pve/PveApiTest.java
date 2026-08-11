@@ -67,11 +67,8 @@ class PveApiTest {
     void enemiesEndpointListsTheBuiltInTemplates() throws Exception {
         String token = registerAndToken("pve_enemies");
         JsonNode enemies = getJson("/api/pve/enemies", token);
-        assertThat(enemies).anyMatch(e -> e.get("id").asText().equals("scout"));
-        assertThat(enemies).anyMatch(e -> e.get("id").asText().equals("guard"));
-        assertThat(enemies).anyMatch(e -> e.get("id").asText().equals("warlord"));
-        JsonNode scout = enemies.findValue("scout");
-        assertThat(scout).isNull(); // list, not a map
+        assertThat(enemies).anyMatch(e -> e.get("id").asText().equals("training-dummy"));
+        assertThat(enemies).hasSize(1); // only the training dummy for now
         assertThat(enemies.get(0).get("name").asText()).isNotBlank();
     }
 
@@ -83,7 +80,7 @@ class PveApiTest {
         // host creates a locked PVE room with two enemies
         JsonNode room = postJson("/api/pve/rooms", hostToken,
                 Map.of("packId", "test-1", "password", "pw123",
-                        "enemyIds", List.of("scout", "guard")));
+                        "enemyIds", List.of("training-dummy", "training-dummy")));
         String roomId = room.get("id").asText();
         assertThat(room.get("locked").asBoolean()).isTrue();
         assertThat(room.get("enemyIds").size()).isEqualTo(2);
@@ -182,7 +179,7 @@ class PveApiTest {
         String outsiderToken = registerAndToken("pve_out_snoop");
 
         JsonNode room = postJson("/api/pve/rooms", hostToken,
-                Map.of("packId", "test-1", "enemyIds", List.of("scout")));
+                Map.of("packId", "test-1", "enemyIds", List.of("training-dummy")));
         String roomId = room.get("id").asText();
         postJson("/api/pve/rooms/" + roomId + "/ready", hostToken,
                 Map.of("characterIds", List.of("warrior")));
