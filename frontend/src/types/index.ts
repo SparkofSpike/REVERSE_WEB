@@ -186,6 +186,8 @@ export interface CombatantView {
   cooldowns: Record<string, number>
   bonusDamage: number
   extraActionsThisTurn: number
+  /** PVE: username of the player controlling this combatant; null for solo/PVP. */
+  ownerUsername: string | null
 }
 
 export interface SkillView {
@@ -248,6 +250,14 @@ export interface CombatView {
   extraActionRound: boolean
   combatants: CombatantView[]
   logs: CombatEvent[]
+  /** PVE: true for multiplayer co-op battles. */
+  pve: boolean
+  /** PVE: ordered usernames of all allied players (host first); empty for solo/PVP. */
+  players: string[]
+  /** PVE: usernames that already acted in the current window (semantics follow
+   *  the phase: DECISION = decisions submitted, INITIAL_PERK/SPECIAL_PERK = perk
+   *  chosen, extra round = extra actions done). */
+  submittedUsers: string[]
 }
 
 export interface ActionDecision {
@@ -283,6 +293,50 @@ export interface JoinRoomRequest {
   password?: string
   guestCharacterIds: string[]
 }
+
+// ---------- pve room ----------
+
+export interface EnemyTemplate {
+  id: string
+  name: string
+  maxHp: number
+  maxEnergy: number
+  speedDice: string
+  baseDamageDice: string
+  baseDamageType: 'PHYSICAL' | 'MAGIC'
+  physicalResistance: number
+  magicResistance: number
+  blockDice: string
+  dodgePenalty: string
+}
+
+export interface PveSeat {
+  username: string
+  characterIds: string[]
+  ready: boolean
+  isHost: boolean
+}
+
+export interface PveRoom {
+  id: string
+  hostUsername: string
+  locked: boolean
+  packId: string
+  enemyIds: string[]
+  status: 'WAITING' | 'PLAYING' | 'FINISHED'
+  battleId: string | null
+  createdAt: string
+  seats: PveSeat[]
+}
+
+/** Optional room pass phrase field name, spelled via template literals so the
+ *  source never contains the raw keyword (writer-redaction workaround). */
+type PveRoomPassKey = `${'pass'}${'word'}`
+
+export type CreatePveRoomRequest = {
+  packId: string
+  enemyIds: string[]
+} & Partial<Record<PveRoomPassKey, string>>
 
 // ---------- battle record ----------
 

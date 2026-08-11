@@ -32,7 +32,7 @@ const router = createRouter({
       path: '/pvp',
       name: 'pvp',
       component: () => import('@/views/PvpLobbyView.vue'),
-      meta: { title: 'PVP 对战' }
+      meta: { title: '房间大厅' }
     },
     {
       path: '/builds',

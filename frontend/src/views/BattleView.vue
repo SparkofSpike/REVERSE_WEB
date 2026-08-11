@@ -8,6 +8,7 @@ import {
   selectInitialPerk,
   decide,
   decideExtraActions,
+  saveDraft,
   skipExtraActions,
   playCard,
   selectSpecialPerk,
@@ -207,13 +208,23 @@ const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 const inExtraRound = computed(() => battle.value?.extraActionRound ?? false)
-const extraActors = computed(() => alivePlayers.value.filter((c) => c.extraActionsThisTurn > 0))
+// PVE: every player only commands their own characters (ownerUsername);
+// solo/PVP still command the whole side
+const myActors = computed(() =>
+  isPve.value
+    ? alivePlayers.value.filter((c) => c.ownerUsername === myUsername.value)
+    : alivePlayers.value
+)
+const extraActors = computed(() => myActors.value.filter((c) => c.extraActionsThisTurn > 0))
 // main rounds decide for every alive player; extra rounds only for those
 // who still hold extra base actions
-const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : alivePlayers.value))
+const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : myActors.value))
 
 // PVP helpers: opponent name, submission gates and the 30s decision window
 const isPvp = computed(() => !!battle.value?.guestUsername)
+/** PVE: multiplayer co-op battle against AI enemies. */
+const isPve = computed(() => battle.value?.pve ?? false)
+const myUsername = ref('')
 const opponentName = computed(() =>
   isPvp.value
     ? (battle.value?.mySide === 'ENEMY' ? battle.value?.ownerUsername : battle.value?.guestUsername)
@@ -221,6 +232,10 @@ const opponentName = computed(() =>
 )
 const mySubmitted = computed(() => battle.value?.mySubmitted ?? false)
 const opponentSubmitted = computed(() => battle.value?.opponentSubmitted ?? false)
+/** PVE: "alice ✓、bob ✓" for usernames that already acted this window. */
+const submittedUsersText = computed(() =>
+  (battle.value?.submittedUsers ?? []).map((u) => `${u} ✓`).join('、')
+)
 /** Extra window held by the opponent (PVP): my team waits. */
 const opponentsExtraRound = computed(() =>
   isPvp.value && inExtraRound.value && battle.value?.extraRoundSide
@@ -232,6 +247,10 @@ const awaitingOpponent = computed(() =>
   isPvp.value && inDecision.value && !isFinished.value
     ? (inExtraRound.value ? opponentsExtraRound.value : mySubmitted.value)
     : false
+)
+/** PVE: decision window locked because I already acted and await teammates. */
+const pveWaiting = computed(() =>
+  isPve.value && inDecision.value && !isFinished.value && mySubmitted.value
 )
 /** Countdown seconds for the current PVP decision window (0 when idle). */
 const countdown = ref(0)
@@ -264,7 +283,7 @@ function startCountdown() {
 let eventSource: EventSource | null = null
 
 function connectSse(battleId: string) {
-  if (!isPvp.value) {
+  if (!isPvp.value && !isPve.value) {
     return
   }
   if (eventSource) {
@@ -288,6 +307,12 @@ onMounted(() => {
   // fire-and-forget warm-up: never blocks the battle screen
   preloadAssets()
   load()
+  // own username: PVE ownership labels highlight my characters
+  import('@/stores/auth')
+    .then((m) => {
+      myUsername.value = m.useAuthStore().username
+    })
+    .catch(() => {})
 })
 
 onUnmounted(() => {
@@ -1078,7 +1103,7 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
 // actions (attack/guard) enter aim mode; re-clicking the picked action
 // cancels the choice.
 function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
-  if (c.side !== mySide.value || animating.value) return
+  if (!canControl(c) || animating.value) return
   const cur = pending.value[c.id]
   if (cur?.actionType === action && cur.skillId === null) {
     pending.value[c.id] = newPending()
@@ -1106,7 +1131,7 @@ function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
 // skills enter aim mode (click a unit to lock). Re-clicking the picked
 // card cancels the choice.
 function pickSkill(c: CombatantView, s: SkillView, ev: MouseEvent) {
-  if (c.side !== mySide.value || animating.value) return
+  if (!canControl(c) || animating.value) return
   if ((c.cooldowns[s.id] ?? 0) > 0) {
     message.warning(`${s.name} 冷却中（还需 ${c.cooldowns[s.id] ?? 0} 回合）`)
     return
@@ -1318,6 +1343,51 @@ watch(inExtraRound, (on) => {
   }
 })
 
+// ---- decision ownership: PVE players only command their own characters ----
+function canControl(c: CombatantView): boolean {
+  if (!isPve.value) return c.side === mySide.value
+  return c.ownerUsername === myUsername.value
+}
+
+// ---- PVE draft reporting: the server auto-submits the latest draft on
+// timeout, so keep it in sync with the local selection (no AI stand-in).
+let draftTimer = 0
+
+function scheduleDraft() {
+  if (!isPve.value || !inDecision.value || isFinished.value || mySubmitted.value || submitting.value) {
+    return
+  }
+  window.clearTimeout(draftTimer)
+  draftTimer = window.setTimeout(() => {
+    void pushDraft()
+  }, 600)
+}
+
+async function pushDraft() {
+  const b = battle.value
+  if (!b || !isPve.value || !inDecision.value || isFinished.value || mySubmitted.value || submitting.value) {
+    return
+  }
+  const decisions = buildDecisionList(true)
+  if (!decisions || decisions.length === 0) {
+    return
+  }
+  const seq = loadSeq
+  try {
+    const view = await saveDraft(b.id, decisions)
+    if (seq !== loadSeq) {
+      return // a newer submit/load already landed; the draft is stale
+    }
+    battle.value = view
+    processLogs(view.logs)
+  } catch (e) {
+    console.warn('draft save failed', e)
+  }
+}
+
+// only the user's own selection changes trigger a draft report
+watch(pending, () => scheduleDraft(), { deep: true })
+
 
 
 /** True when a pending decision is fully configured (target locked when needed). */
@@ -1333,7 +1403,9 @@ function isConfigured(c: CombatantView, p: PendingDecision): boolean {
   return true
 }
 
-async function submitDecisions(partial = false) {
+/** Build the current decision list for my actors. partial=true skips units
+ *  that are not fully configured (draft / timeout auto-submit semantics). */
+function buildDecisionList(partial = false): ActionDecision[] | null {
   const decisions: ActionDecision[] = []
   for (const c of decisionActors.value) {
     const p = pending.value[c.id]
@@ -1345,14 +1417,14 @@ async function submitDecisions(partial = false) {
         if (!partial) {
           message.warning(`${c.name} 未选择技能`)
         }
-        return
+        return null
       }
       const s = c.skills.find((x) => x.id === p.skillId)
       if (s && skillNeedsTarget(s) && p.targetIds.length === 0) {
         if (!partial) {
           message.warning(`${c.name} 的技能 ${s.name} 未锁定目标`)
         }
-        return
+        return null
       }
       decisions.push({
         combatantId: c.id,
@@ -1366,13 +1438,13 @@ async function submitDecisions(partial = false) {
         if (!partial) {
           message.warning(`${c.name} 未选择攻击目标`)
         }
-        return
+        return null
       }
       if (actionNeedsAllyTarget(p.actionType) && p.targetIds.length === 0) {
         if (!partial) {
           message.warning(`${c.name} 未选择守护目标`)
         }
-        return
+        return null
       }
       decisions.push({
         combatantId: c.id,
@@ -1382,10 +1454,19 @@ async function submitDecisions(partial = false) {
       })
     }
   }
+  return decisions
+}
+
+async function submitDecisions(partial = false) {
+  const decisions = buildDecisionList(partial)
+  if (!decisions) {
+    return
+  }
   if (!partial && decisions.length !== decisionActors.value.length) {
     message.warning(inExtraRound.value ? '请为拥有额外行动的角色下达指令' : '请为所有存活角色下达指令')
     return
   }
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     // decision round over: raise the curtain and gate the settlement
@@ -1423,7 +1504,10 @@ async function surrenderAndLeave() {
     router.push({ name: 'home' })
     return
   }
-  if (!window.confirm('投降将立即结束本场比赛（判负），确定退出吗？')) {
+  const confirmText = isPve.value
+    ? '投降后你的角色将退出战斗（队友继续），确定退出吗？'
+    : '投降将立即结束本场比赛（判负），确定退出吗？'
+  if (!window.confirm(confirmText)) {
     return
   }
   submitting.value = true
@@ -1438,6 +1522,7 @@ async function surrenderAndLeave() {
 }
 
 async function skipExtra() {
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     battle.value = await skipExtraActions(battle.value!.id)
@@ -1450,6 +1535,7 @@ async function skipExtra() {
 }
 
 async function chooseInitialPerk(perkId: string) {
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     battle.value = await selectInitialPerk(battle.value!.id, perkId)
@@ -1462,6 +1548,7 @@ async function chooseInitialPerk(perkId: string) {
 }
 
 async function chooseSpecialPerk(perkId: string) {
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     battle.value = await selectSpecialPerk(battle.value!.id, perkId)
@@ -1474,6 +1561,7 @@ async function chooseSpecialPerk(perkId: string) {
 }
 
 async function skipPerk() {
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     battle.value = await skipSpecialPerk(battle.value!.id)
@@ -1486,6 +1574,7 @@ async function skipPerk() {
 }
 
 async function playCardFromHand(skillId: string, targetId?: string) {
+  loadSeq++ // invalidate in-flight draft responses
   submitting.value = true
   try {
     battle.value = await playCard(battle.value!.id, skillId, targetId)
@@ -1534,6 +1623,7 @@ function statusText(c: CombatantView): string {
           <span v-if="isPvp" class="pvp-tag" :class="battle.mySide === 'PLAYER' ? 'host' : 'guest'">
             {{ battle.mySide === 'PLAYER' ? '先手方' : '后手方' }} · VS {{ opponentName }}
           </span>
+          <span v-else-if="isPve" class="pvp-tag host">PVE 联机 · {{ battle.players.length }} 人</span>
           <span v-else class="dim">先手：{{ battle.firstStrikeSide === 0 ? '玩家' : '木桩' }}</span>
           <span class="dim">抽牌能量 {{ battle.playerDrawEnergy }}/10</span>
         </div>
@@ -1564,8 +1654,9 @@ function statusText(c: CombatantView): string {
       <!-- initial perk (PVP: each side picks its own, then waits) -->
       <section v-if="inInitialPerk" class="panel perk-panel">
         <h3 v-if="isPvp && battle.mySubmitted">等待对方选择初始词条…</h3>
+        <h3 v-else-if="isPve && battle.mySubmitted">等待其他玩家选择：{{ battle.submittedUsers.length }}/{{ battle.players.length }}</h3>
         <h3 v-else>选择初始词条</h3>
-        <div class="perk-grid" :class="{ disabled: isPvp && battle.mySubmitted }">
+        <div class="perk-grid" :class="{ disabled: (isPvp || isPve) && battle.mySubmitted }">
           <div
             v-for="p in battle.initialPerkOptions"
             :key="p.id"
@@ -1581,6 +1672,9 @@ function statusText(c: CombatantView): string {
         </div>
         <p v-if="isPvp && battle.opponentSubmitted && !battle.mySubmitted" class="dim wait-hint">
           对方已选好词条，等待你选择…
+        </p>
+        <p v-else-if="isPve && !battle.mySubmitted && battle.submittedUsers.length > 0" class="dim wait-hint">
+          已选择：{{ submittedUsersText }}
         </p>
       </section>
 
@@ -1650,7 +1744,14 @@ function statusText(c: CombatantView): string {
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
                 <span
-                  v-if="inDecision && !c.dead && c.side === mySide"
+                  v-if="isPve && battle.players.length > 1 && c.ownerUsername"
+                  class="owner-tag"
+                  :class="{ me: c.ownerUsername === myUsername }"
+                >
+                  {{ c.ownerUsername }}
+                </span>
+                <span
+                  v-if="inDecision && !c.dead && canControl(c)"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
@@ -1734,8 +1835,9 @@ function statusText(c: CombatantView): string {
               <div class="name">
                 {{ c.name }}
                 <span v-if="c.shield > 0" class="shield-tag">盾 {{ c.shield }}</span>
+                <span v-if="isPve" class="owner-tag enemy">敌人</span>
                 <span
-                  v-if="inDecision && !c.dead && c.side === mySide"
+                  v-if="inDecision && !c.dead && canControl(c)"
                   class="tag-decision"
                   :class="{ ready: decisionReady(c), waiting: hasDecision(c) && !decisionReady(c) }"
                 >
@@ -1815,6 +1917,9 @@ function statusText(c: CombatantView): string {
           <template v-if="isPvp && battle.mySubmitted">
             <p class="perk-wait">等待对方选择特殊词条…</p>
           </template>
+          <template v-else-if="isPve && battle.mySubmitted">
+            <p class="perk-wait">等待其他玩家选择：{{ battle.submittedUsers.length }}/{{ battle.players.length }}</p>
+          </template>
           <template v-else>
             <div
               v-for="p in battle.specialPerkOptions"
@@ -1849,7 +1954,7 @@ function statusText(c: CombatantView): string {
           </div>
           <!-- order tabs only exist for player combatants; the enemy panel
                is read-only (skill info only, no order controls) -->
-          <div v-if="selectedCombatant.side === mySide" class="panel-tabs">
+          <div v-if="canControl(selectedCombatant)" class="panel-tabs">
             <button
               class="panel-tab"
               :class="{ active: panelTab === 'actions' }"
@@ -1873,7 +1978,7 @@ function statusText(c: CombatantView): string {
               :key="a"
               class="action-chip"
               :class="{ active: pending[selectedCombatant.id]?.actionType === a }"
-              :disabled="selectedCombatant.side !== mySide || animating"
+              :disabled="!canControl(selectedCombatant) || animating"
               @click="pickAction(selectedCombatant, a, $event)"
             >
               {{ actionLabel(a) }}
@@ -1881,19 +1986,19 @@ function statusText(c: CombatantView): string {
           </div>
 
           <!-- skills tab (default): click to use, drag onto units to lock -->
-          <div v-else class="skill-cards" :class="{ readonly: selectedCombatant.side !== mySide }">
+          <div v-else class="skill-cards" :class="{ readonly: !canControl(selectedCombatant) }">
             <div
               v-for="sk in selectedCombatant.skills"
               :key="sk.id"
               class="card-face skill"
               :class="{
                 upgraded: sk.upgraded,
-                active: selectedCombatant.side === mySide && skillActive(selectedCombatant, sk),
+                active: canControl(selectedCombatant) && skillActive(selectedCombatant, sk),
                 disabled:
-                  selectedCombatant.side === mySide &&
+                  canControl(selectedCombatant) &&
                   ((selectedCombatant.cooldowns[sk.id] ?? 0) > 0 || animating)
               }"
-              @click="selectedCombatant.side === mySide && pickSkill(selectedCombatant, sk, $event)"
+              @click="canControl(selectedCombatant) && pickSkill(selectedCombatant, sk, $event)"
             >
               <img
                 class="face-img"
@@ -1926,7 +2031,7 @@ function statusText(c: CombatantView): string {
 
           <!-- current decision summary (player only) -->
           <div
-            v-if="selectedCombatant.side === mySide"
+            v-if="canControl(selectedCombatant)"
             class="decision-summary"
             :class="{ ready: decisionReady(selectedCombatant) }"
           >
@@ -1950,17 +2055,23 @@ function statusText(c: CombatantView): string {
       <div
         v-if="inDecision"
         class="panel decision-panel"
-        :class="{ locked: animating || awaitingOpponent }"
+        :class="{ locked: animating || awaitingOpponent || pveWaiting }"
       >
         <div v-if="inExtraRound" class="extra-round-hint">
           ⚡ 额外行动轮：{{ extraActors.map((a) => `${a.name}（剩余 ${a.extraActionsThisTurn}）`).join('、') }}
+        </div>
+        <div v-if="isPve" class="waiting-hint">
+          <span class="dim">
+            <template v-if="inExtraRound && !mySubmitted">额外行动中，等待你提交…</template>
+            <template v-else>已提交 {{ battle.submittedUsers.length }}/{{ battle.players.length }}<template v-if="battle.submittedUsers.length > 0">：{{ submittedUsersText }}</template></template>
+          </span>
         </div>
         <div v-if="awaitingOpponent" class="waiting-hint">
           <span v-if="opponentsExtraRound" class="dim">等待 {{ opponentName }} 完成额外行动…</span>
           <span v-else class="dim">已提交，等待 {{ opponentName }}…</span>
           <span v-if="countdown > 0" class="countdown">⏱ {{ countdown }}s</span>
         </div>
-        <div v-else class="decision-actions">
+        <div v-else-if="!pveWaiting" class="decision-actions">
           <span v-if="isPvp && opponentSubmitted && !mySubmitted" class="dim wait-hint">
             对方已提交指令，等待你…
           </span>
@@ -2654,6 +2765,26 @@ function statusText(c: CombatantView): string {
 .pvp-tag.guest {
   color: var(--warn, #f0a020);
   border-color: var(--warn, #f0a020);
+}
+
+/* PVE: per-owner labels on unit cards */
+.owner-tag {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  vertical-align: middle;
+}
+
+.owner-tag.me {
+  color: var(--accent, #4cc2ff);
+  border-color: var(--accent, #4cc2ff);
+}
+
+.owner-tag.enemy {
+  color: var(--danger, #ff5d6c);
+  border-color: var(--danger, #ff5d6c);
 }
 
 .waiting-hint {
