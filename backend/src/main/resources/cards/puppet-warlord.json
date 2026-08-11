@@ -1,0 +1,14 @@
+{
+  "id": "warlord",
+  "name": "精英指挥官",
+  "maxHp": 250,
+  "maxEnergy": 150,
+  "speedDice": "2d6",
+  "physicalResistance": 1.0,
+  "magicResistance": 1.0,
+  "baseDamageDice": "2d6",
+  "baseDamageType": "PHYSICAL",
+  "blockDice": "1d6",
+  "dodgePenalty": "0d2",
+  "baseActions": ["ATTACK", "DEFEND", "DODGE"]
+}

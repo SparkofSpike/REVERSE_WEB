@@ -23,6 +23,8 @@ public class Combatant {
     private String templateId;
     private String name;
     private CombatSide side;
+    /** PVE: username controlling this combatant; null in solo/PVP. */
+    private String ownerUsername;
 
     // base stats (from template)
     private int maxHp;

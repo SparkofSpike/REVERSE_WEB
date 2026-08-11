@@ -8,6 +8,7 @@ import lombok.Setter;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +79,25 @@ public class CombatState {
     private final Map<CombatSide, Integer> idleRounds = new EnumMap<>(CombatSide.class);
     /** Enemy decisions deferred while a side spends extra actions. */
     private List<ActionDecision> pendingEnemyDecisions = new ArrayList<>();
+
+    // ---- PVE multi-player structures ----
+    /** True when N humans share the PLAYER side against AI enemies. */
+    private boolean pve;
+    /** PVE: ordered usernames controlling the PLAYER side (host first). */
+    private final List<String> playerUsers = new ArrayList<>();
+    /** PVE: per-player generic skill deck, hand and draw energy. */
+    private final Map<String, List<GenericSkillTemplate>> handsByUser = new HashMap<>();
+    private final Map<String, List<GenericSkillTemplate>> decksByUser = new HashMap<>();
+    private final Map<String, Integer> drawEnergyByUser = new HashMap<>();
+    /** PVE: per-player submissions for the current decision window. */
+    private final Map<String, List<ActionDecision>> pendingByUser = new HashMap<>();
+    private final Map<String, Boolean> submittedByUser = new HashMap<>();
+    private final Map<String, Boolean> initialPerkSelectedByUser = new HashMap<>();
+    private final Map<String, Boolean> specialPerkSubmittedByUser = new HashMap<>();
+    private final Map<String, Boolean> extraDoneByUser = new HashMap<>();
+    private final Map<String, Integer> idleRoundsByUser = new HashMap<>();
+    /** PVE: last reported decision draft per player; timeouts submit the draft. */
+    private final Map<String, List<ActionDecision>> draftByUser = new HashMap<>();
 
     private String winner;
     private List<CombatEvent> logs = new ArrayList<>();
@@ -248,6 +268,123 @@ public class CombatState {
         }
         if (enemy != null) {
             all.addAll(enemy);
+        }
+        return all;
+    }
+
+    // ----- PVE helpers (multi-player battles share the PLAYER side) -----
+
+    /** The PLAYER side's controlling usernames in join order (host first). */
+    public List<String> playerUsers() {
+        return List.copyOf(playerUsers);
+    }
+
+    /** Alive combatants controlled by the given PVE player. */
+    public List<Combatant> aliveOf(String username) {
+        return alive(CombatSide.PLAYER).stream()
+                .filter(c -> username.equals(c.getOwnerUsername()))
+                .toList();
+    }
+
+    /** PVE: the player's own generic skill hand. */
+    public List<GenericSkillTemplate> handOf(String username) {
+        return handsByUser.computeIfAbsent(username, k -> new ArrayList<>());
+    }
+
+    /** PVE: the player's own generic skill deck. */
+    public List<GenericSkillTemplate> deckOf(String username) {
+        return decksByUser.computeIfAbsent(username, k -> new ArrayList<>());
+    }
+
+    public int drawEnergyOf(String username) {
+        return drawEnergyByUser.getOrDefault(username, 0);
+    }
+
+    public void addDrawEnergy(String username, int amount) {
+        drawEnergyByUser.put(username, Math.min(10, drawEnergyByUser.getOrDefault(username, 0) + amount));
+    }
+
+    public boolean submittedBy(String username) {
+        return submittedByUser.getOrDefault(username, false);
+    }
+
+    /** PVE: every player already submitted the current window. */
+    public boolean allSubmitted() {
+        return !playerUsers.isEmpty() && playerUsers.stream().allMatch(this::submittedBy);
+    }
+
+    public boolean extraDoneBy(String username) {
+        return extraDoneByUser.getOrDefault(username, false);
+    }
+
+    /** PVE: every player finished their extra-action window. */
+    public boolean allExtraDone() {
+        return !playerUsers.isEmpty() && playerUsers.stream().allMatch(this::extraDoneBy);
+    }
+
+    public boolean specialPerkPickedBy(String username) {
+        return specialPerkSubmittedByUser.getOrDefault(username, false);
+    }
+
+    public boolean allSpecialPerksPicked() {
+        return !playerUsers.isEmpty() && playerUsers.stream().allMatch(this::specialPerkPickedBy);
+    }
+
+    public boolean initialPerkPickedBy(String username) {
+        return initialPerkSelectedByUser.getOrDefault(username, false);
+    }
+
+    public boolean allInitialPerksPicked() {
+        return !playerUsers.isEmpty() && playerUsers.stream().allMatch(this::initialPerkPickedBy);
+    }
+
+    /** PVE: who already acted in the current window (viewer-facing list). */
+    public List<String> submittedUsers() {
+        if (phase == CombatPhase.DECISION) {
+            if (isExtraActionRound()) {
+                return playerUsers.stream().filter(this::extraDoneBy).toList();
+            }
+            return playerUsers.stream().filter(this::submittedBy).toList();
+        }
+        if (phase == CombatPhase.SPECIAL_PERK) {
+            return playerUsers.stream().filter(this::specialPerkPickedBy).toList();
+        }
+        if (phase == CombatPhase.INITIAL_PERK) {
+            return playerUsers.stream().filter(this::initialPerkPickedBy).toList();
+        }
+        return List.of();
+    }
+
+    public int idleRoundsOf(String username) {
+        return idleRoundsByUser.getOrDefault(username, 0);
+    }
+
+    /** A submitted round resets the idle streak. */
+    public void markActive(String username) {
+        idleRoundsByUser.put(username, 0);
+    }
+
+    /** A timed-out round extends the idle streak. */
+    public void markIdle(String username) {
+        idleRoundsByUser.put(username, idleRoundsOf(username) + 1);
+    }
+
+    /** Clears the per-round PVE gates (called at every round start). */
+    public void resetPveRoundGates() {
+        submittedByUser.clear();
+        extraDoneByUser.clear();
+        specialPerkSubmittedByUser.clear();
+        pendingByUser.clear();
+    }
+
+    /** PVE: all players' decisions merged in player order. */
+    public List<ActionDecision> mergedPendingPveDecisions() {
+        List<ActionDecision> all = new ArrayList<>();
+        for (String username : playerUsers) {
+            List<ActionDecision> d = pendingByUser.get(username);
+            if (d != null) {
+                all.addAll(d);
+            }
         }
         return all;
     }

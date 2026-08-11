@@ -19,6 +19,8 @@ public class CombatantView {
     private String templateId;
     private String name;
     private String side;
+    /** PVE: username controlling this combatant; null in solo/PVP. */
+    private String ownerUsername;
 
     private int hp;
     private int maxHp;

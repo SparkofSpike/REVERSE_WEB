@@ -82,8 +82,12 @@ public class EffectExecutor {
             case "sacrifice_buff" -> applySacrificeBuff(spec, caster, state);
             case "upgrade_skills" -> upgradeSkills(caster, state);
             case "draw_energy" -> {
-                // the effect feeds the caster's OWN side (PVP: each human's deck)
-                state.addDrawEnergy(caster.getSide(), spec.getAmount());
+                // the effect feeds the caster's OWN pool (PVE: per player)
+                if (state.isPve() && caster.getOwnerUsername() != null) {
+                    state.addDrawEnergy(caster.getOwnerUsername(), spec.getAmount());
+                } else {
+                    state.addDrawEnergy(caster.getSide(), spec.getAmount());
+                }
                 state.log(CombatEvent.of(state.getRound(), "energy",
                         caster.getName() + " 获得 " + spec.getAmount() + " 点抽牌能量。"));
             }
@@ -420,6 +424,8 @@ public class EffectExecutor {
         minion.setTaunt(true);
         minion.setExpiresEndOfRound(true);
         minion.setOwnerId(caster.getId());
+        // PVE: the summoner keeps control of their own minion
+        minion.setOwnerUsername(caster.getOwnerUsername());
         state.getCombatants().add(minion);
         state.log(CombatEvent.of(state.getRound(), "status",
                 caster.getName() + " 生成一个嘲讽木偶（" + spec.getAmount() + " 生命，本回合结束消失）。"));
@@ -449,10 +455,19 @@ public class EffectExecutor {
     public void drawCards(Combatant caster, CombatState state, int count) {
         int actual = count + (state.isDrawBoostPending() ? 2 : 0);
         state.setDrawBoostPending(false);
-        // each side owns its own generic skill deck (PVP: the guest draws
-        // into the enemy-side hand; solo keeps the legacy player-side fields)
-        List<GenericSkillTemplate> deck = state.sideDeck(caster.getSide());
-        List<GenericSkillTemplate> hand = state.sideHand(caster.getSide());
+        // each controller owns its own generic skill deck: PVE draws into the
+        // caster's PLAYER hand; PVP draws into the side hand; solo keeps the
+        // legacy player-side fields
+        List<GenericSkillTemplate> deck;
+        List<GenericSkillTemplate> hand;
+        if (state.isPve()) {
+            String owner = caster.getOwnerUsername();
+            deck = owner != null ? state.deckOf(owner) : state.sideDeck(caster.getSide());
+            hand = owner != null ? state.handOf(owner) : state.sideHand(caster.getSide());
+        } else {
+            deck = state.sideDeck(caster.getSide());
+            hand = state.sideHand(caster.getSide());
+        }
         for (int i = 0; i < actual; i++) {
             if (deck.isEmpty()) {
                 break;

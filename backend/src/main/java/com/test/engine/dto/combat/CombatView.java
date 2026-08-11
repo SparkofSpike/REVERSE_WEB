@@ -18,6 +18,12 @@ public class CombatView {
     private String ownerUsername;
     /** Opposing human player; null for solo dummy battles. */
     private String guestUsername;
+    /** True when N humans share the PLAYER side against AI enemies. */
+    private boolean pve;
+    /** PVE: usernames controlling the PLAYER side (host first). */
+    private List<String> players;
+    /** PVE: who already acted in the current window (submitted / perk picked). */
+    private List<String> submittedUsers;
     private CombatPhase phase;
     private int round;
     private String winner;

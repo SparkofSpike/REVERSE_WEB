@@ -60,6 +60,17 @@ public class CombatController {
         return combatService.skipExtraActions(authentication.getName(), battleId);
     }
 
+    /**
+     * Stores the player's currently selected but not yet submitted decisions;
+     * the 30s decision timeout auto-submits this draft instead of generating
+     * AI moves for the player (PVE battles).
+     */
+    @PostMapping("/{battleId}/draft")
+    public CombatView saveDraft(Authentication authentication, @PathVariable String battleId,
+                                @RequestBody List<ActionDecision> decisions) {
+        return combatService.saveDraft(authentication.getName(), battleId, decisions);
+    }
+
     @PostMapping("/{battleId}/card")
     public CombatView playCard(Authentication authentication, @PathVariable String battleId,
                                @RequestBody Map<String, String> body) {

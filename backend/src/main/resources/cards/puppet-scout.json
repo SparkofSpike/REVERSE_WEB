@@ -1,0 +1,14 @@
+{
+  "id": "scout",
+  "name": "斥候",
+  "maxHp": 150,
+  "maxEnergy": 120,
+  "speedDice": "2d6",
+  "physicalResistance": 0.9,
+  "magicResistance": 0.9,
+  "baseDamageDice": "1d8",
+  "baseDamageType": "PHYSICAL",
+  "blockDice": "1d4",
+  "dodgePenalty": "0d2",
+  "baseActions": ["ATTACK", "DEFEND", "DODGE"]
+}

@@ -50,7 +50,7 @@ public class CombatService {
     public CombatView createDummy(String username, String packId, List<String> characterIds) {
         CombatState state = engine.createDummyBattle(packId, characterIds, username);
         // solo battles: the owner always views from the PLAYER side
-        return toView(state, CombatSide.PLAYER);
+        return toView(state, CombatSide.PLAYER, username);
     }
 
     public CombatView get(String username, String battleId) {
@@ -58,67 +58,101 @@ public class CombatService {
         CombatSide side = sideOf(state, username);
         // a battle settled by the timeout sweeper still needs its records
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView selectInitialPerk(String username, String battleId, String perkId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.selectInitialPerk(battleId, perkId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.selectInitialPerkForUser(battleId, username, perkId)
+                : engine.selectInitialPerk(battleId, perkId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView decide(String username, String battleId, List<ActionDecision> decisions) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.decideSide(battleId, side, decisions);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.decideForUser(battleId, username, decisions)
+                : engine.decideSide(battleId, side, decisions);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView decideExtraActions(String username, String battleId, List<ActionDecision> decisions) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.decideExtraActions(battleId, decisions, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.decideExtraActionsForUser(battleId, username, decisions)
+                : engine.decideExtraActions(battleId, decisions, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView skipExtraActions(String username, String battleId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.skipExtraActions(battleId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.skipExtraActionsForUser(battleId, username)
+                : engine.skipExtraActions(battleId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView playCard(String username, String battleId, String skillId, String targetId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.playGenericSkill(battleId, skillId, targetId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.playGenericSkillForUser(battleId, username, skillId, targetId)
+                : engine.playGenericSkill(battleId, skillId, targetId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView selectSpecialPerk(String username, String battleId, String perkId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.selectSpecialPerk(battleId, perkId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.selectSpecialPerkForUser(battleId, username, perkId)
+                : engine.selectSpecialPerk(battleId, perkId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView skipSpecialPerk(String username, String battleId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.skipSpecialPerk(battleId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.skipSpecialPerkForUser(battleId, username)
+                : engine.skipSpecialPerk(battleId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
     }
 
     public CombatView surrender(String username, String battleId) {
         CombatSide side = sideOf(engine.getBattle(battleId), username);
-        CombatState state = engine.surrender(battleId, side);
+        CombatState state = engine.getBattle(battleId).isPve()
+                ? engine.surrenderForUser(battleId, username)
+                : engine.surrender(battleId, side);
         persistIfFinished(state);
-        return toView(state, side);
+        return toView(state, side, username);
+    }
+
+    /**
+     * Stores the player's currently selected but not yet submitted decisions.
+     * On a 30s timeout the engine auto-submits this draft (no AI fills in for
+     * a human). PVE only; solo/PVP ignore drafts.
+     */
+    public CombatView saveDraft(String username, String battleId, List<ActionDecision> decisions) {
+        sideOf(engine.getBattle(battleId), username);
+        CombatState state = engine.saveDraft(battleId, username, decisions);
+        return toView(state, CombatSide.PLAYER, username);
     }
 
     /** The side controlled by the requesting user (owner=PLAYER, guest=ENEMY). */
     private CombatSide sideOf(CombatState state, String username) {
+        if (state.isPve()) {
+            // every PVE player is on the PLAYER side; only room members may join
+            if (state.getPlayerUsers().contains(username)) {
+                return CombatSide.PLAYER;
+            }
+            throw new BusinessException("无权访问该战斗");
+        }
         if (state.getOwnerUsername().equals(username)) {
             return CombatSide.PLAYER;
         }
@@ -130,22 +164,30 @@ public class CombatService {
 
     // ===================== view conversion =====================
 
-    private CombatView toView(CombatState state, CombatSide viewer) {
+    private CombatView toView(CombatState state, CombatSide viewer, String username) {
         CombatView view = new CombatView();
         view.setId(state.getId());
         view.setOwnerUsername(state.getOwnerUsername());
         view.setGuestUsername(state.getGuestUsername());
+        view.setPve(state.isPve());
         view.setPhase(state.getPhase());
         view.setRound(state.getRound());
         view.setWinner(state.getWinner());
         view.setMySide(viewer.name());
         view.setDecisionDeadlineAt(state.getDecisionDeadlineAt());
         view.setExtraRoundSide(state.getExtraRoundSide() == null ? null : state.getExtraRoundSide().name());
-        applySubmissionGates(view, state, viewer);
+        applySubmissionGates(view, state, viewer, username);
         view.setFirstStrikeSide(state.getFirstStrikeSide());
         // fog of war: each viewer only sees their OWN hand and draw energy
-        view.setPlayerDrawEnergy(state.sideDrawEnergy(viewer));
-        view.setPlayerHand(state.sideHand(viewer));
+        if (state.isPve()) {
+            view.setPlayers(state.getPlayerUsers());
+            view.setSubmittedUsers(state.submittedUsers());
+            view.setPlayerDrawEnergy(state.drawEnergyOf(username));
+            view.setPlayerHand(state.handOf(username));
+        } else {
+            view.setPlayerDrawEnergy(state.sideDrawEnergy(viewer));
+            view.setPlayerHand(state.sideHand(viewer));
+        }
         view.setInitialPerkOptions(state.getInitialPerkOptions());
         view.setSpecialPerkOptions(state.getSpecialPerkOptions());
         view.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken());
@@ -158,8 +200,24 @@ public class CombatService {
     /**
      * mySubmitted/opponentSubmitted carry the phase-specific meaning: round
      * decisions, extra-action window, perk picks or initial perk choice.
+     * PVE renders per-player gates: mySubmitted = my own status, submittedUsers
+     * = everyone who already acted (opponentSubmitted stays false).
      */
-    private void applySubmissionGates(CombatView view, CombatState state, CombatSide viewer) {
+    private void applySubmissionGates(CombatView view, CombatState state, CombatSide viewer, String username) {
+        if (state.isPve()) {
+            if (state.getPhase() == CombatPhase.DECISION) {
+                if (state.isExtraActionRound()) {
+                    view.setMySubmitted(state.extraDoneBy(username));
+                } else {
+                    view.setMySubmitted(state.submittedBy(username));
+                }
+            } else if (state.getPhase() == CombatPhase.SPECIAL_PERK) {
+                view.setMySubmitted(state.specialPerkPickedBy(username));
+            } else if (state.getPhase() == CombatPhase.INITIAL_PERK) {
+                view.setMySubmitted(state.initialPerkPickedBy(username));
+            }
+            return;
+        }
         if (!state.isPvp()) {
             return;
         }
@@ -187,6 +245,7 @@ public class CombatService {
         v.setTemplateId(c.getTemplateId());
         v.setName(c.getName());
         v.setSide(c.getSide().name());
+        v.setOwnerUsername(c.getOwnerUsername());
         v.setHp(c.getHp());
         v.setMaxHp(c.getMaxHp());
         v.setEnergy(c.getEnergy());
@@ -246,6 +305,13 @@ public class CombatService {
         if (!state.isOver() || state.getWinner() == null) {
             return;
         }
+        if (state.isPve()) {
+            // every player gets their own record (no human opponent)
+            for (String username : state.getPlayerUsers()) {
+                persistRecord(state, username, CombatSide.PLAYER, null);
+            }
+            return;
+        }
         if (!state.isPvp()) {
             persistRecord(state, state.getOwnerUsername(), CombatSide.PLAYER, null);
             return;
@@ -293,7 +359,7 @@ public class CombatService {
             if ("damage".equals(event.getType())) {
                 Object target = event.getData().get("target");
                 Object hpDamage = event.getData().get("hpDamage");
-                boolean onEnemy = state.isPvp()
+                boolean onEnemy = state.isPvp() || state.isPve()
                         ? target instanceof String s && enemyIds.contains(s)
                         : "dummy".equals(target);
                 if (onEnemy && hpDamage instanceof Number n) {

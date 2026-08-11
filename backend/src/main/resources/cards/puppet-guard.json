@@ -1,0 +1,14 @@
+{
+  "id": "guard",
+  "name": "重装卫士",
+  "maxHp": 350,
+  "maxEnergy": 80,
+  "speedDice": "1d6",
+  "physicalResistance": 0.8,
+  "magicResistance": 0.9,
+  "baseDamageDice": "1d6",
+  "baseDamageType": "PHYSICAL",
+  "blockDice": "2d6",
+  "dodgePenalty": "0d2",
+  "baseActions": ["ATTACK", "DEFEND", "GUARD"]
+}

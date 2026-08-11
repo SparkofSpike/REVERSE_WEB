@@ -19,7 +19,7 @@ import java.util.Map;
  * Adding new definitions only requires dropping a JSON file in.
  */
 @Component
-public class CardPackLoader {
+public class CardPackLoader implements PuppetTemplateProvider {
 
     private final Map<String, CardPack> packs = new LinkedHashMap<>();
     private final Map<String, PuppetTemplate> puppets = new LinkedHashMap<>();
@@ -47,12 +47,18 @@ public class CardPackLoader {
         return pack;
     }
 
+    @Override
     public PuppetTemplate getPuppet(String id) {
         PuppetTemplate puppet = puppets.get(id);
         if (puppet == null) {
             throw new IllegalArgumentException("unknown puppet template: " + id);
         }
         return puppet;
+    }
+
+    @Override
+    public List<PuppetTemplate> list() {
+        return new ArrayList<>(puppets.values());
     }
 
     public List<CardPack> all() {
