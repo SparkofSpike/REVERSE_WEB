@@ -6,7 +6,6 @@ import com.test.engine.model.PuppetTemplate;
 import com.test.engine.model.PuppetTemplateProvider;
 import com.test.engine.service.PveRoomService;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Size;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -105,7 +104,6 @@ public class PveRoomController {
             @NotEmpty(message = "请选择卡包") String packId,
             String password,
             @NotEmpty(message = "至少选择一个敌人")
-            @Size(min = 1, max = 8, message = "敌人数量需在 1-8 之间")
             List<String> enemyIds) {
     }
 
