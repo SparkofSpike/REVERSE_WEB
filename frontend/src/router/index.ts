@@ -53,6 +53,24 @@ const router = createRouter({
       meta: { title: '战报详情' }
     },
     {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('@/views/ProfileView.vue'),
+      meta: { title: '编辑资料' }
+    },
+    {
+      path: '/design',
+      name: 'design',
+      component: () => import('@/views/DesignView.vue'),
+      meta: { title: '设计管理', requiresAdmin: true }
+    },
+    {
+      path: '/admin/users',
+      name: 'admin-users',
+      component: () => import('@/views/AdminUsersView.vue'),
+      meta: { title: '权限管理', requiresOp: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }
@@ -65,6 +83,13 @@ router.beforeEach((to) => {
     return { name: 'login' }
   }
   if (to.meta.public && auth.isLoggedIn) {
+    return { name: 'home' }
+  }
+  // role-guarded routes: the nav menu hides them, the guard is the backstop
+  if (to.meta.requiresOp && !auth.isOp) {
+    return { name: 'home' }
+  }
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
     return { name: 'home' }
   }
   return true
