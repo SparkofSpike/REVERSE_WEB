@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { NButton, NPopconfirm, NSelect, NSpace, NTabPane, NTabs, useMessage } from 'naive-ui'
+import {
+  NButton,
+  NPopconfirm,
+  NRadioButton,
+  NRadioGroup,
+  NSelect,
+  NSpace,
+  NTabPane,
+  NTabs,
+  useMessage
+} from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
 import {
   addCharacter,
@@ -20,12 +30,32 @@ import {
 } from '@/api/design'
 import { errorMessage } from '@/api/http'
 import type { DesignEntry } from '@/types'
+import EnemyForm from './design/EnemyForm.vue'
+import CharacterForm from './design/CharacterForm.vue'
+import PackForm from './design/PackForm.vue'
+import {
+  emptyCharacter,
+  emptyEnemy,
+  emptyPack,
+  enemyToJson,
+  jsonToCharacter,
+  jsonToEnemy,
+  jsonToPack,
+  characterToJson,
+  packToJson,
+  type CharacterFormState,
+  type EnemyFormState,
+  type PackFormState
+} from './design/converters'
 
 type Tab = 'packs' | 'enemies' | 'characters'
+type Mode = 'form' | 'json'
 
 const message = useMessage()
 
 const tab = ref<Tab>('packs')
+// form-first editing: the JSON view is the advanced escape hatch
+const mode = ref<Mode>('form')
 
 const packs = ref<DesignEntry[]>([])
 const enemies = ref<DesignEntry[]>([])
@@ -34,12 +64,17 @@ const enemies = ref<DesignEntry[]>([])
 const charPackId = ref<string | null>(null)
 const characters = ref<DesignEntry[]>([])
 
-// JSON editor state (shared across tabs)
+// editor state (shared across tabs)
 const editorTitle = ref('')
 const editor = ref('')
 const editorError = ref('')
 const isNew = ref(false)
 const saving = ref(false)
+
+// form state per tab kind
+const packForm = ref<PackFormState>(emptyPack())
+const enemyForm = ref<EnemyFormState>(emptyEnemy())
+const characterForm = ref<CharacterFormState>(emptyCharacter())
 
 const PACK_TEMPLATE = `{
   "id": "",
@@ -124,8 +159,9 @@ function openEditor(title: string, json: string, isCreate: boolean) {
 
 async function selectPack(entry: DesignEntry) {
   try {
-    const data = await getPack(entry.id)
-    openEditor(`卡牌包 · ${entry.id}`, JSON.stringify(data, null, 2), false)
+    const data = (await getPack(entry.id)) as Record<string, unknown>
+    openEditor(`卡牌包 ${entry.id}`, JSON.stringify(data, null, 2), false)
+    packForm.value = jsonToPack(data)
   } catch (err) {
     message.error(errorMessage(err))
   }
@@ -133,8 +169,9 @@ async function selectPack(entry: DesignEntry) {
 
 async function selectEnemy(entry: DesignEntry) {
   try {
-    const data = await getEnemy(entry.id)
-    openEditor(`敌人 · ${entry.id}`, JSON.stringify(data, null, 2), false)
+    const data = (await getEnemy(entry.id)) as Record<string, unknown>
+    openEditor(`敌人 ${entry.id}`, JSON.stringify(data, null, 2), false)
+    enemyForm.value = jsonToEnemy(data)
   } catch (err) {
     message.error(errorMessage(err))
   }
@@ -149,7 +186,8 @@ async function selectCharacter(entry: DesignEntry) {
       message.error('角色不存在，列表可能已过期，请重新选择卡牌包')
       return
     }
-    openEditor(`角色 · ${entry.id}`, JSON.stringify(character, null, 2), false)
+    openEditor(`角色 ${entry.id}`, JSON.stringify(character, null, 2), false)
+    characterForm.value = jsonToCharacter(character)
   } catch (err) {
     message.error(errorMessage(err))
   }
@@ -157,20 +195,69 @@ async function selectCharacter(entry: DesignEntry) {
 
 function onNew() {
   if (tab.value === 'packs') {
+    packForm.value = emptyPack()
     openEditor('新建卡牌包', PACK_TEMPLATE, true)
   } else if (tab.value === 'enemies') {
+    enemyForm.value = emptyEnemy()
     openEditor('新建敌人', ENEMY_TEMPLATE, true)
   } else if (charPackId.value) {
+    characterForm.value = emptyCharacter()
     openEditor('新建角色', CHARACTER_TEMPLATE, true)
   } else {
     message.warning('请先选择一个卡牌包')
   }
+  mode.value = 'form'
 }
 
 function onCharPackChange() {
   editor.value = ''
   editorTitle.value = ''
   loadCharacters()
+}
+
+// ---------- form <-> json sync ----------
+
+function formToJsonString(): string | null {
+  try {
+    if (tab.value === 'packs') return JSON.stringify(packToJson(packForm.value), null, 2)
+    if (tab.value === 'enemies') return JSON.stringify(enemyToJson(enemyForm.value), null, 2)
+    return JSON.stringify(characterToJson(characterForm.value), null, 2)
+  } catch {
+    return null
+  }
+}
+
+function loadFormFromJson(): boolean {
+  try {
+    const body = JSON.parse(editor.value) as Record<string, unknown>
+    if (tab.value === 'packs') {
+      packForm.value = jsonToPack(body)
+    } else if (tab.value === 'enemies') {
+      enemyForm.value = jsonToEnemy(body)
+    } else {
+      characterForm.value = jsonToCharacter(body)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+function onModeChange(next: Mode) {
+  if (next === mode.value) return
+  if (next === 'json') {
+    const json = formToJsonString()
+    if (json !== null) {
+      editor.value = json
+      editorError.value = ''
+    }
+  } else {
+    if (!loadFormFromJson()) {
+      message.error('JSON 解析失败，无法切换到表单模式')
+      return
+    }
+  }
+  mode.value = next
 }
 
 // ---------- save / delete ----------
@@ -187,11 +274,16 @@ function parseEditor(): Record<string, unknown> {
 }
 
 async function save() {
+  // keep the JSON view in sync so one save path serves both modes
+  if (mode.value === 'form') {
+    const json = formToJsonString()
+    if (json !== null) editor.value = json
+  }
   let body: Record<string, unknown>
   try {
     body = parseEditor()
   } catch {
-    message.error(editorError.value || 'JSON 格式错误')
+    message.error(editorError.value || '内容格式错误')
     return
   }
   saving.value = true
@@ -219,7 +311,7 @@ async function save() {
         await updateCharacter(charPackId.value, id, JSON.stringify(body))
       }
     }
-    message.success('已保存，战斗数据已热更新')
+    message.success('已保存，战斗数据已生效')
     editorError.value = ''
     await refreshAfterSave()
   } catch (err) {
@@ -230,12 +322,8 @@ async function save() {
 }
 
 async function refreshAfterSave() {
-  if (tab.value === 'packs') {
-    await loadAll()
-  } else if (tab.value === 'enemies') {
-    await loadAll()
-  } else {
-    await loadAll()
+  await loadAll()
+  if (tab.value === 'characters') {
     await loadCharacters()
   }
 }
@@ -278,7 +366,7 @@ function isCurrent(id: string): boolean {
     <main class="container">
       <div class="head">
         <h2>设计管理</h2>
-        <span class="dim">管理员专属 · 保存后立即生效</span>
+        <span class="dim">权限需求：管理员(ADMIN)</span>
       </div>
 
       <n-tabs v-model:value="tab" type="line">
@@ -302,6 +390,10 @@ function isCurrent(id: string): boolean {
                 <div class="editor-head">
                   <span class="editor-title">{{ editorTitle }}</span>
                   <n-space>
+                    <n-radio-group :value="mode" size="small" @update:value="onModeChange">
+                      <n-radio-button value="form">表单</n-radio-button>
+                      <n-radio-button value="json">JSON</n-radio-button>
+                    </n-radio-group>
                     <n-button size="small" @click="onNew">新建</n-button>
                     <n-popconfirm @positive-click="remove">
                       <template #trigger>
@@ -312,13 +404,18 @@ function isCurrent(id: string): boolean {
                     <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
                   </n-space>
                 </div>
-                <textarea
-                  v-model="editor"
-                  class="json-editor"
-                  spellcheck="false"
-                  :class="{ 'has-error': editorError }"
-                ></textarea>
-                <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                <div v-if="mode === 'form'" class="form-scroll">
+                  <PackForm v-model="packForm" />
+                </div>
+                <template v-else>
+                  <textarea
+                    v-model="editor"
+                    class="json-editor"
+                    spellcheck="false"
+                    :class="{ 'has-error': editorError }"
+                  ></textarea>
+                  <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                </template>
               </div>
               <div v-else class="editor-placeholder dim">从左侧选择卡牌包，或点击「新建」</div>
             </div>
@@ -345,6 +442,10 @@ function isCurrent(id: string): boolean {
                 <div class="editor-head">
                   <span class="editor-title">{{ editorTitle }}</span>
                   <n-space>
+                    <n-radio-group :value="mode" size="small" @update:value="onModeChange">
+                      <n-radio-button value="form">表单</n-radio-button>
+                      <n-radio-button value="json">JSON</n-radio-button>
+                    </n-radio-group>
                     <n-button size="small" @click="onNew">新建</n-button>
                     <n-popconfirm @positive-click="remove">
                       <template #trigger>
@@ -355,13 +456,18 @@ function isCurrent(id: string): boolean {
                     <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
                   </n-space>
                 </div>
-                <textarea
-                  v-model="editor"
-                  class="json-editor"
-                  spellcheck="false"
-                  :class="{ 'has-error': editorError }"
-                ></textarea>
-                <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                <div v-if="mode === 'form'" class="form-scroll">
+                  <EnemyForm v-model="enemyForm" />
+                </div>
+                <template v-else>
+                  <textarea
+                    v-model="editor"
+                    class="json-editor"
+                    spellcheck="false"
+                    :class="{ 'has-error': editorError }"
+                  ></textarea>
+                  <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                </template>
               </div>
               <div v-else class="editor-placeholder dim">从左侧选择敌人，或点击「新建」</div>
             </div>
@@ -397,6 +503,10 @@ function isCurrent(id: string): boolean {
                 <div class="editor-head">
                   <span class="editor-title">{{ editorTitle }}</span>
                   <n-space>
+                    <n-radio-group :value="mode" size="small" @update:value="onModeChange">
+                      <n-radio-button value="form">表单</n-radio-button>
+                      <n-radio-button value="json">JSON</n-radio-button>
+                    </n-radio-group>
                     <n-button size="small" @click="onNew">新建</n-button>
                     <n-popconfirm @positive-click="remove">
                       <template #trigger>
@@ -407,13 +517,18 @@ function isCurrent(id: string): boolean {
                     <n-button size="small" type="primary" :loading="saving" @click="save">保存</n-button>
                   </n-space>
                 </div>
-                <textarea
-                  v-model="editor"
-                  class="json-editor"
-                  spellcheck="false"
-                  :class="{ 'has-error': editorError }"
-                ></textarea>
-                <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                <div v-if="mode === 'form'" class="form-scroll">
+                  <CharacterForm v-model="characterForm" />
+                </div>
+                <template v-else>
+                  <textarea
+                    v-model="editor"
+                    class="json-editor"
+                    spellcheck="false"
+                    :class="{ 'has-error': editorError }"
+                  ></textarea>
+                  <div v-if="editorError" class="editor-error">{{ editorError }}</div>
+                </template>
               </div>
               <div v-else class="editor-placeholder dim">选择卡牌包后从左侧选择角色，或点击「新建角色」</div>
             </div>
@@ -529,6 +644,7 @@ function isCurrent(id: string): boolean {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .editor-title {
@@ -538,6 +654,12 @@ function isCurrent(id: string): boolean {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.form-scroll {
+  overflow-y: auto;
+  max-height: 560px;
+  padding-right: 4px;
 }
 
 .json-editor {
