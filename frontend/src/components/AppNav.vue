@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, useMessage } from 'naive-ui'
+import { NAvatar, NDropdown, useMessage, type DropdownOption } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -14,6 +15,47 @@ const navItems = [
   { name: 'builds', label: '构筑管理' },
   { name: 'records', label: '战报' }
 ]
+
+const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase())
+
+const roleLabel = computed(() => (auth.isOp ? 'OP' : auth.isAdmin ? 'ADMIN' : ''))
+
+const menuOptions = computed<DropdownOption[]>(() => {
+  const options: DropdownOption[] = [
+    {
+      key: 'profile',
+      label: '编辑资料',
+      render: () =>
+        h('div', { class: 'menu-item' }, [
+          h('div', { class: 'menu-item-main' }, auth.displayName),
+          h('div', { class: 'menu-item-sub dim' }, `@${auth.username}${roleLabel.value ? ` · ${roleLabel.value}` : ''}`)
+        ])
+    },
+    { type: 'divider', key: 'd1' }
+  ]
+  // design management: ADMIN and OP only
+  if (auth.isAdmin) {
+    options.push({ key: 'design', label: '设计管理' })
+  }
+  // account & permission management: OP only
+  if (auth.isOp) {
+    options.push({ key: 'admin-users', label: '权限管理' })
+  }
+  options.push({ type: 'divider', key: 'd2' }, { key: 'logout', label: '退出登录', class: 'menu-logout' })
+  return options
+})
+
+function onSelect(key: string) {
+  if (key === 'profile') {
+    router.push({ name: 'profile' })
+  } else if (key === 'design') {
+    router.push({ name: 'design' })
+  } else if (key === 'admin-users') {
+    router.push({ name: 'admin-users' })
+  } else if (key === 'logout') {
+    logout()
+  }
+}
 
 function logout() {
   auth.logout()
@@ -35,8 +77,13 @@ function logout() {
       </router-link>
     </nav>
     <div class="nav-user">
-      <span class="dim">{{ auth.username }}</span>
-      <n-button quaternary size="small" @click="logout">退出</n-button>
+      <n-dropdown trigger="click" :options="menuOptions" @select="onSelect">
+        <div class="avatar-trigger" title="账号菜单">
+          <n-avatar round :size="28" class="avatar">{{ initial }}</n-avatar>
+          <span class="nav-username">{{ auth.displayName }}</span>
+          <span v-if="roleLabel" class="role-tag">{{ roleLabel }}</span>
+        </div>
+      </n-dropdown>
     </div>
   </header>
 </template>
@@ -108,8 +155,60 @@ function logout() {
 .nav-user {
   display: flex;
   align-items: center;
-  gap: 8px;
   font-size: 13px;
+}
+
+.avatar-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.avatar-trigger:hover {
+  border-color: var(--border);
+  background: var(--bg-panel-2);
+}
+
+.avatar {
+  background: linear-gradient(135deg, #1e88e5, #0d47a1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.nav-username {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.5;
+}
+
+.menu-item {
+  line-height: 1.4;
+}
+
+.menu-item-main {
+  font-weight: 600;
+}
+
+.menu-item-sub {
+  font-size: 12px;
 }
 
 /* ---------- mobile: compact top bar ---------- */
@@ -141,11 +240,21 @@ function logout() {
     white-space: nowrap;
     flex-shrink: 0;
   }
-  .nav-user span {
+  .nav-username {
     display: none;
   }
-  .nav-user .n-button {
-    padding: 0 8px;
+  .avatar-trigger {
+    padding: 3px 4px;
   }
+  .role-tag {
+    display: none;
+  }
+}
+</style>
+
+<style>
+/* dropdown logout item: danger color (not scoped so it reaches the popup) */
+.menu-logout .n-menu-item-content {
+  color: var(--danger) !important;
 }
 </style>

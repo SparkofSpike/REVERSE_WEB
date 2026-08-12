@@ -3,6 +3,9 @@
 export interface AuthResponse {
   token: string
   username: string
+  /** Effective role: USER, ADMIN or OP (OP is configuration-driven). */
+  role: 'USER' | 'ADMIN' | 'OP'
+  nickname: string | null
 }
 
 export interface ApiError {
@@ -360,4 +363,33 @@ export interface BattleRecordSummary {
 export interface BattleRecordDetail extends BattleRecordSummary {
   logJson: string
   logs: CombatEvent[]
+}
+
+
+// ---------- account & admin ----------
+
+export interface UserProfile {
+  id: number
+  username: string
+  nickname: string | null
+  /** Effective role: USER, ADMIN or OP. */
+  role: 'USER' | 'ADMIN' | 'OP'
+  enabled: boolean
+  createdAt: string
+}
+
+export interface AdminUser {
+  id: number
+  username: string
+  nickname: string | null
+  role: 'USER' | 'ADMIN' | 'OP'
+  enabled: boolean
+  createdAt: string
+}
+
+export interface DesignEntry {
+  id: string
+  name: string
+  /** True when an override file exists on the server (deletable). */
+  custom: boolean
 }
