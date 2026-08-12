@@ -28,17 +28,6 @@ let cropper: Cropper | null = null
 
 const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase())
 
-// native img replaces n-avatar to rule out component-level issues
-const avatarLoadState = ref('idle')
-
-function onAvatarLoad() {
-  avatarLoadState.value = 'loaded'
-}
-
-function onAvatarError(event: Event) {
-  avatarLoadState.value = 'error'
-  console.error('avatar img failed:', (event.target as HTMLImageElement).src)
-}
 
 const roleText = computed(() => {
   if (auth.isOp) return '超级管理员（OP）'
@@ -190,14 +179,7 @@ async function savePassword() {
         <h3 class="panel-title">头像</h3>
         <div class="avatar-row">
           <div class="avatar-frame">
-            <img
-              v-if="auth.avatarUrl"
-              :src="auth.avatarUrl"
-              class="avatar-img"
-              alt="avatar"
-              @load="onAvatarLoad"
-              @error="onAvatarError"
-            />
+            <img v-if="auth.avatarUrl" :src="auth.avatarUrl" class="avatar-img" alt="avatar" />
             <span v-else class="avatar-fallback">{{ initial }}</span>
           </div>
           <div class="avatar-actions">
@@ -210,7 +192,7 @@ async function savePassword() {
             />
             <n-button @click="pickFile">选择图片</n-button>
             <span class="dim hint">支持 png/jpg/webp/gif，不超过 10MB，上传时可裁剪</span>
-            <span class="dim avatar-debug">debug url={{ auth.avatarUrl }} img={{ avatarLoadState }}</span>
+
           </div>
         </div>
       </div>
@@ -350,11 +332,6 @@ async function savePassword() {
   display: none;
 }
 
-.avatar-debug {
-  font-size: 11px;
-  font-family: Consolas, 'Courier New', monospace;
-  word-break: break-all;
-}
 
 .info-row {
   display: flex;

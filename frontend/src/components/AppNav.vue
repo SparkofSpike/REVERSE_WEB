@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { NAvatar, NDropdown, useMessage, type DropdownOption } from 'naive-ui'
+import { NDropdown, useMessage, type DropdownOption } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -85,9 +85,10 @@ function logout() {
     <div class="nav-user">
       <n-dropdown trigger="click" :options="menuOptions" @select="onSelect">
         <div class="avatar-trigger" title="账号菜单">
-          <n-avatar round :size="28" class="avatar" :src="auth.avatarUrl || undefined">
-            {{ initial }}
-          </n-avatar>
+          <span class="nav-avatar">
+            <img v-if="auth.avatarUrl" :src="auth.avatarUrl" class="nav-avatar-img" alt="avatar" />
+            <span v-else class="nav-avatar-fallback">{{ initial }}</span>
+          </span>
           <span class="nav-username">{{ auth.displayName }}</span>
           <span v-if="roleLabel" class="role-tag">{{ roleLabel }}</span>
         </div>
@@ -182,7 +183,28 @@ function logout() {
   background: var(--bg-panel-2);
 }
 
-.avatar {
+.nav-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.nav-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.nav-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #1e88e5, #0d47a1);
   color: #fff;
   font-weight: 700;
