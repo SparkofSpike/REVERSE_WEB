@@ -7,12 +7,15 @@ import com.test.engine.dto.RegisterRequest;
 import com.test.engine.dto.UserProfileRequest;
 import com.test.engine.entity.User;
 import com.test.engine.service.AuthService;
+import com.test.engine.service.AvatarService;
 import jakarta.validation.Valid;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,9 +27,11 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final AvatarService avatarService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, AvatarService avatarService) {
         this.authService = authService;
+        this.avatarService = avatarService;
     }
 
     @PostMapping("/register")
@@ -48,7 +53,19 @@ public class AuthController {
         body.put("nickname", user.getNickname());
         body.put("role", authService.effectiveRole(user));
         body.put("enabled", user.isEnabled());
+        body.put("avatarUrl", authService.avatarUrl(user));
         body.put("createdAt", user.getCreatedAt());
+        return body;
+    }
+
+    @PutMapping("/avatar")
+    public Map<String, Object> uploadAvatar(Authentication authentication,
+                                            @RequestParam("file") MultipartFile file) {
+        User user = authService.findByUsername(authentication.getName());
+        String ext = avatarService.save(user.getId(), file);
+        user.setAvatar(ext);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("avatarUrl", authService.avatarUrl(user));
         return body;
     }
 

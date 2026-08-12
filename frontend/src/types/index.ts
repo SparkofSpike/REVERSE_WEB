@@ -6,6 +6,7 @@ export interface AuthResponse {
   /** Effective role: USER, ADMIN or OP (OP is configuration-driven). */
   role: 'USER' | 'ADMIN' | 'OP'
   nickname: string | null
+  avatarUrl: string | null
 }
 
 export interface ApiError {
@@ -375,6 +376,7 @@ export interface UserProfile {
   /** Effective role: USER, ADMIN or OP. */
   role: 'USER' | 'ADMIN' | 'OP'
   enabled: boolean
+  avatarUrl: string | null
   createdAt: string
 }
 

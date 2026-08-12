@@ -46,6 +46,10 @@ public class User {
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean enabled = true;
 
+    /** Avatar file extension (png/jpg/webp/gif); null when unset. */
+    @Column(length = 8)
+    private String avatar;
+
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 }

@@ -21,17 +21,19 @@ const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase()
 const roleLabel = computed(() => (auth.isOp ? 'OP' : auth.isAdmin ? 'ADMIN' : ''))
 
 const menuOptions = computed<DropdownOption[]>(() => {
+  // account header: single row, equal height with the menu items below
   const options: DropdownOption[] = [
     {
-      key: 'profile',
-      label: '编辑资料',
+      key: 'header',
       render: () =>
-        h('div', { class: 'menu-item' }, [
-          h('div', { class: 'menu-item-main' }, auth.displayName),
-          h('div', { class: 'menu-item-sub dim' }, `@${auth.username}${roleLabel.value ? ` · ${roleLabel.value}` : ''}`)
+        h('div', { class: 'menu-header' }, [
+          h('span', { class: 'menu-header-name' }, auth.displayName),
+          h('span', { class: 'menu-header-sub dim' },
+            `@${auth.username}${roleLabel.value ? ' ' + roleLabel.value : ''}`)
         ])
     },
-    { type: 'divider', key: 'd1' }
+    { type: 'divider', key: 'd1' },
+    { key: 'profile', label: '编辑资料' }
   ]
   // design management: ADMIN and OP only
   if (auth.isAdmin) {
@@ -41,11 +43,15 @@ const menuOptions = computed<DropdownOption[]>(() => {
   if (auth.isOp) {
     options.push({ key: 'admin-users', label: '权限管理' })
   }
-  options.push({ type: 'divider', key: 'd2' }, { key: 'logout', label: '退出登录', class: 'menu-logout' })
+  options.push(
+    { type: 'divider', key: 'd2' },
+    { key: 'logout', label: '退出登录', class: 'menu-logout' }
+  )
   return options
 })
 
 function onSelect(key: string) {
+  if (key === 'header') return
   if (key === 'profile') {
     router.push({ name: 'profile' })
   } else if (key === 'design') {
@@ -79,7 +85,9 @@ function logout() {
     <div class="nav-user">
       <n-dropdown trigger="click" :options="menuOptions" @select="onSelect">
         <div class="avatar-trigger" title="账号菜单">
-          <n-avatar round :size="28" class="avatar">{{ initial }}</n-avatar>
+          <n-avatar round :size="28" class="avatar" :src="auth.avatarUrl || undefined">
+            {{ initial }}
+          </n-avatar>
           <span class="nav-username">{{ auth.displayName }}</span>
           <span v-if="roleLabel" class="role-tag">{{ roleLabel }}</span>
         </div>
@@ -199,15 +207,18 @@ function logout() {
   line-height: 1.5;
 }
 
-.menu-item {
+.menu-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   line-height: 1.4;
 }
 
-.menu-item-main {
+.menu-header-name {
   font-weight: 600;
 }
 
-.menu-item-sub {
+.menu-header-sub {
   font-size: 12px;
 }
 
@@ -253,8 +264,18 @@ function logout() {
 </style>
 
 <style>
-/* dropdown logout item: danger color (not scoped so it reaches the popup) */
-.menu-logout .n-menu-item-content {
+/* avatar dropdown: even item spacing and width (not scoped, reaches the popup) */
+.n-dropdown-menu {
+  min-width: 200px;
+}
+
+.n-dropdown-menu .n-dropdown-option-body {
+  padding: 9px 16px;
+  font-size: 14px;
+}
+
+/* logout item in danger color */
+.menu-logout .n-dropdown-option-body {
   color: var(--danger) !important;
 }
 </style>

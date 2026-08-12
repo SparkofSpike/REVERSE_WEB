@@ -80,6 +80,12 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
     }
 
+    /** Public avatar URL for a user; null when no avatar is uploaded. */
+    public String avatarUrl(User user) {
+        return user.getAvatar() == null
+                ? null : "/api/avatars/" + user.getId() + "." + user.getAvatar();
+    }
+
     /** Role exposed to clients: OP wins over the stored ADMIN/USER value. */
     public String effectiveRole(User user) {
         if (opConfig.isOp(user.getId())) {
@@ -90,6 +96,6 @@ public class AuthService {
 
     private AuthResponse toResponse(User user) {
         return new AuthResponse(jwtService.generateToken(user.getUsername()), user.getUsername(),
-                effectiveRole(user), user.getNickname());
+                effectiveRole(user), user.getNickname(), avatarUrl(user));
     }
 }

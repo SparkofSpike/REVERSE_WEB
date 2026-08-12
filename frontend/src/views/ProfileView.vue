@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NInput, useMessage } from 'naive-ui'
+import { NButton, NInput, NUpload, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
 import AppNav from '@/components/AppNav.vue'
-import { changePassword, me, updateProfile } from '@/api/auth'
+import { changePassword, me, updateProfile, uploadAvatar } from '@/api/auth'
 import { errorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 
@@ -16,6 +16,9 @@ const oldPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 const savingPassword = ref(false)
+const uploading = ref(false)
+
+const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase())
 
 const roleText = computed(() => {
   if (auth.isOp) return '超级管理员（OP）'
@@ -29,9 +32,25 @@ async function load() {
   try {
     const profile = await me()
     nickname.value = profile.nickname ?? ''
-    auth.setUserInfo(profile.id, profile.role, profile.nickname)
+    auth.setUserInfo(profile.id, profile.role, profile.nickname, profile.avatarUrl)
   } catch (e) {
     message.error(errorMessage(e))
+  }
+}
+
+async function onUpload(options: UploadCustomRequestOptions) {
+  const raw = options.file.file as File
+  uploading.value = true
+  try {
+    const res = await uploadAvatar(raw)
+    auth.setUserInfo(auth.userId, auth.role, auth.nickname, res.avatarUrl)
+    message.success('头像已更新')
+    options.onFinish()
+  } catch (e) {
+    message.error(errorMessage(e))
+    options.onError()
+  } finally {
+    uploading.value = false
   }
 }
 
@@ -39,7 +58,7 @@ async function saveNickname() {
   savingNickname.value = true
   try {
     const res = await updateProfile(nickname.value.trim())
-    auth.setUserInfo(auth.userId, auth.role, res.nickname)
+    auth.setUserInfo(auth.userId, auth.role, res.nickname, auth.avatarUrl)
     message.success('昵称已更新')
   } catch (e) {
     message.error(errorMessage(e))
@@ -82,6 +101,26 @@ async function savePassword() {
     <main class="container">
       <div class="head">
         <h2>编辑资料</h2>
+      </div>
+
+      <div class="panel">
+        <h3 class="panel-title">头像</h3>
+        <div class="avatar-row">
+          <n-avatar round :size="72" :src="auth.avatarUrl || undefined" class="big-avatar">
+            {{ initial }}
+          </n-avatar>
+          <div class="avatar-actions">
+            <n-upload
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              :show-file-list="false"
+              :custom-request="onUpload"
+              :disabled="uploading"
+            >
+              <n-button :loading="uploading">上传头像</n-button>
+            </n-upload>
+            <span class="dim hint">支持 png/jpg/webp/gif，不超过 2MB</span>
+          </div>
+        </div>
       </div>
 
       <div class="panel">
@@ -156,6 +195,27 @@ async function savePassword() {
 .hint {
   font-size: 12px;
   margin-bottom: 10px;
+}
+
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.big-avatar {
+  background: linear-gradient(135deg, #1e88e5, #0d47a1);
+  color: #fff;
+  font-weight: 700;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
 }
 
 .info-row {

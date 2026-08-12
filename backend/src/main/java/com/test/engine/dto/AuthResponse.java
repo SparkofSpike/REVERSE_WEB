@@ -13,4 +13,6 @@ public class AuthResponse {
     private String role;
     /** Display name; null when unset. */
     private String nickname;
+    /** Avatar URL; null when unset. */
+    private String avatarUrl;
 }

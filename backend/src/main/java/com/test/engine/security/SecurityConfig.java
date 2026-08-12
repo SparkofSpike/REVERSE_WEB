@@ -53,6 +53,8 @@ public class SecurityConfig {
                         // authenticated combat API
                         .requestMatchers("/api/pvp/events/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/packs/**").permitAll()
+                        // avatar images are public: <img> tags cannot send a Bearer header
+                        .requestMatchers("/api/avatars/**").permitAll()
                         // SPA pages and static assets (everything outside /api) are public;
                         // the frontend router guards private views client-side.
                         .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")).permitAll()

@@ -20,3 +20,9 @@ export function updateProfile(nickname: string): Promise<{ nickname: string | nu
 export function changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean }> {
   return http.put('/auth/password', { oldPassword, newPassword }).then((r) => r.data)
 }
+
+export function uploadAvatar(file: File): Promise<{ avatarUrl: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  return http.put('/auth/avatar', form).then((r) => r.data)
+}

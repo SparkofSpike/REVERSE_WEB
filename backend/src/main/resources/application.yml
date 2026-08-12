@@ -18,6 +18,11 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  servlet:
+    multipart:
+      # avatar uploads need more than the 1MB default
+      max-file-size: 5MB
+      max-request-size: 5MB
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -31,6 +36,8 @@ logging:
       max-history: 7
 
 app:
+  # Avatar uploads are stored here as {userId}.{ext}
+  avatar-dir: ./data/avatars
   # OP (super admin) user ids, comma-separated. OP always implies ADMIN and can
   # manage accounts / admin grants. Set on the server via APP_ADMIN_IDS or an
   # external application.yml next to the jar.
