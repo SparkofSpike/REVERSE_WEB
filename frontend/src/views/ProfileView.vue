@@ -28,6 +28,18 @@ let cropper: Cropper | null = null
 
 const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase())
 
+// native img replaces n-avatar to rule out component-level issues
+const avatarLoadState = ref('idle')
+
+function onAvatarLoad() {
+  avatarLoadState.value = 'loaded'
+}
+
+function onAvatarError(event: Event) {
+  avatarLoadState.value = 'error'
+  console.error('avatar img failed:', (event.target as HTMLImageElement).src)
+}
+
 const roleText = computed(() => {
   if (auth.isOp) return '超级管理员（OP）'
   if (auth.isAdmin) return '管理员'
@@ -177,15 +189,17 @@ async function savePassword() {
       <div class="panel">
         <h3 class="panel-title">头像</h3>
         <div class="avatar-row">
-          <n-avatar
-            round
-            :size="72"
-            :src="auth.avatarUrl || undefined"
-            :key="auth.avatarUrl"
-            class="big-avatar"
-          >
-            {{ initial }}
-          </n-avatar>
+          <div class="avatar-frame">
+            <img
+              v-if="auth.avatarUrl"
+              :src="auth.avatarUrl"
+              class="avatar-img"
+              alt="avatar"
+              @load="onAvatarLoad"
+              @error="onAvatarError"
+            />
+            <span v-else class="avatar-fallback">{{ initial }}</span>
+          </div>
           <div class="avatar-actions">
             <input
               ref="fileInput"
@@ -196,7 +210,7 @@ async function savePassword() {
             />
             <n-button @click="pickFile">选择图片</n-button>
             <span class="dim hint">支持 png/jpg/webp/gif，不超过 10MB，上传时可裁剪</span>
-            <span class="dim avatar-debug">debug avatarUrl={{ auth.avatarUrl }}</span>
+            <span class="dim avatar-debug">debug url={{ auth.avatarUrl }} img={{ avatarLoadState }}</span>
           </div>
         </div>
       </div>
@@ -297,12 +311,32 @@ async function savePassword() {
   gap: 16px;
 }
 
-.big-avatar {
+.avatar-frame {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #1e88e5, #0d47a1);
   color: #fff;
   font-weight: 700;
   font-size: 28px;
-  flex-shrink: 0;
 }
 
 .avatar-actions {
