@@ -177,7 +177,13 @@ async function savePassword() {
       <div class="panel">
         <h3 class="panel-title">头像</h3>
         <div class="avatar-row">
-          <n-avatar round :size="72" :src="auth.avatarUrl || undefined" class="big-avatar">
+          <n-avatar
+            round
+            :size="72"
+            :src="auth.avatarUrl || undefined"
+            :key="auth.avatarUrl"
+            class="big-avatar"
+          >
             {{ initial }}
           </n-avatar>
           <div class="avatar-actions">
@@ -190,6 +196,7 @@ async function savePassword() {
             />
             <n-button @click="pickFile">选择图片</n-button>
             <span class="dim hint">支持 png/jpg/webp/gif，不超过 10MB，上传时可裁剪</span>
+            <span class="dim avatar-debug">debug avatarUrl={{ auth.avatarUrl }}</span>
           </div>
         </div>
       </div>
@@ -307,6 +314,12 @@ async function savePassword() {
 
 .hidden-file {
   display: none;
+}
+
+.avatar-debug {
+  font-size: 11px;
+  font-family: Consolas, 'Courier New', monospace;
+  word-break: break-all;
 }
 
 .info-row {
