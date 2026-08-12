@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NInput, NModal, NUpload, useMessage, type UploadFileInfo } from 'naive-ui'
+import { NButton, NInput, NModal, useMessage } from 'naive-ui'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import AppNav from '@/components/AppNav.vue'
@@ -48,32 +48,47 @@ async function load() {
 
 // ---------- avatar upload with cropping ----------
 
-function onBeforeUpload({ file }: { file: UploadFileInfo }): boolean {
-  const raw = file.file
-  if (!raw) return false
+// native file input: reliable across browsers, no upload-hook surprises
+const fileInput = ref<HTMLInputElement | null>(null)
+
+function pickFile() {
+  fileInput.value?.click()
+}
+
+function onFilePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const raw = input.files?.[0] ?? null
+  input.value = '' // allow re-picking the same file
+  if (!raw) return
   if (raw.size > 10 * 1024 * 1024) {
     message.warning('图片不能超过 10MB')
-    return false
+    return
   }
   if (cropUrl.value) {
     URL.revokeObjectURL(cropUrl.value)
   }
   cropUrl.value = URL.createObjectURL(raw)
   showCropper.value = true
-  return false // stop naive-ui's auto upload; we crop first
 }
 
 function initCropper() {
   if (!cropImg.value) return
-  cropper?.destroy()
-  cropper = new Cropper(cropImg.value, {
-    aspectRatio: 1,
-    viewMode: 1,
-    dragMode: 'move',
-    autoCropArea: 0.85,
-    background: false,
-    guides: true
-  })
+  // wait for the modal transition so the image has a real size
+  setTimeout(() => {
+    try {
+      cropper?.destroy()
+      cropper = new Cropper(cropImg.value!, {
+        aspectRatio: 1,
+        viewMode: 1,
+        dragMode: 'move',
+        autoCropArea: 0.85,
+        background: false,
+        guides: true
+      })
+    } catch {
+      message.error('图片加载失败，请换一张试试')
+    }
+  }, 80)
 }
 
 function onCropperClosed() {
@@ -166,13 +181,14 @@ async function savePassword() {
             {{ initial }}
           </n-avatar>
           <div class="avatar-actions">
-            <n-upload
+            <input
+              ref="fileInput"
+              type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
-              :show-file-list="false"
-              :before-upload="onBeforeUpload"
-            >
-              <n-button>选择图片</n-button>
-            </n-upload>
+              class="hidden-file"
+              @change="onFilePicked"
+            />
+            <n-button @click="pickFile">选择图片</n-button>
             <span class="dim hint">支持 png/jpg/webp/gif，不超过 10MB，上传时可裁剪</span>
           </div>
         </div>
@@ -287,6 +303,10 @@ async function savePassword() {
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
+}
+
+.hidden-file {
+  display: none;
 }
 
 .info-row {
