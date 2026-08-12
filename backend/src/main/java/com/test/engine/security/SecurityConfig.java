@@ -56,6 +56,10 @@ public class SecurityConfig {
                         // SPA pages and static assets (everything outside /api) are public;
                         // the frontend router guards private views client-side.
                         .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")).permitAll()
+                        // OP-only: account & permission management
+                        .requestMatchers("/api/admin/users/**").hasRole("OP")
+                        // ADMIN or OP: content design (card packs, enemies, characters)
+                        .requestMatchers("/api/design/**").hasAnyRole("ADMIN", "OP")
                         .anyRequest().authenticated())
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())

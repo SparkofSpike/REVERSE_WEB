@@ -31,6 +31,10 @@ logging:
       max-history: 7
 
 app:
+  # OP (super admin) user ids, comma-separated. OP always implies ADMIN and can
+  # manage accounts / admin grants. Set on the server via APP_ADMIN_IDS or an
+  # external application.yml next to the jar.
+  admin-ids: ""
   jwt:
     # local dev secret, override via APP_JWT_SECRET in production
     secret: ${APP_JWT_SECRET:TEST-ENGINE-LOCAL-DEV-SECRET-KEY-CHANGE-ME-IN-PROD-0123456789}

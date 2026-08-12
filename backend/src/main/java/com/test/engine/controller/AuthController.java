@@ -1,18 +1,22 @@
 package com.test.engine.controller;
 
 import com.test.engine.dto.AuthResponse;
+import com.test.engine.dto.ChangePasswordRequest;
 import com.test.engine.dto.LoginRequest;
 import com.test.engine.dto.RegisterRequest;
+import com.test.engine.dto.UserProfileRequest;
 import com.test.engine.entity.User;
 import com.test.engine.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -38,7 +42,31 @@ public class AuthController {
     @GetMapping("/me")
     public Map<String, Object> me(Authentication authentication) {
         User user = authService.findByUsername(authentication.getName());
-        return Map.of("id", user.getId(), "username", user.getUsername(),
-                "createdAt", user.getCreatedAt());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", user.getId());
+        body.put("username", user.getUsername());
+        body.put("nickname", user.getNickname());
+        body.put("role", authService.effectiveRole(user));
+        body.put("enabled", user.isEnabled());
+        body.put("createdAt", user.getCreatedAt());
+        return body;
+    }
+
+    @PutMapping("/profile")
+    public Map<String, Object> updateProfile(Authentication authentication,
+                                             @Valid @RequestBody UserProfileRequest request) {
+        User user = authService.findByUsername(authentication.getName());
+        Map<String, Object> body = new LinkedHashMap<>();
+        // LinkedHashMap allows a null nickname (cleared display name)
+        body.put("nickname", authService.updateProfile(user.getUsername(), request.getNickname()));
+        return body;
+    }
+
+    @PutMapping("/password")
+    public Map<String, Object> changePassword(Authentication authentication,
+                                              @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(authentication.getName(),
+                request.getOldPassword(), request.getNewPassword());
+        return Map.of("ok", true);
     }
 }
