@@ -24,7 +24,7 @@ class CombatEngineTest {
     @BeforeEach
     void setUp() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        CardPackLoader loader = new CardPackLoader(mapper);
+        CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
                 new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
@@ -500,7 +500,7 @@ class CombatEngineTest {
 
     private EffectExecutor newExecutor() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        CardPackLoader loader = new CardPackLoader(mapper);
+        CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         return new EffectExecutor(new DiceRoller(1L), new DamageResolver(new DiceRoller(1L)), loader);
     }
 

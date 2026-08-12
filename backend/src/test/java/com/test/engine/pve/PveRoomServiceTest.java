@@ -30,7 +30,7 @@ class PveRoomServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        CardPackLoader loader = new CardPackLoader(mapper);
+        CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
         CombatEngine engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
                 new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),

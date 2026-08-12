@@ -25,7 +25,7 @@ class HodMechanicsTest {
     @BeforeEach
     void setUp() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        CardPackLoader loader = new CardPackLoader(mapper);
+        CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
         damageResolver = new DamageResolver(dice);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
