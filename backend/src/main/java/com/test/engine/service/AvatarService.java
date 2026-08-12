@@ -19,7 +19,7 @@ import java.util.Set;
 @Service
 public class AvatarService {
 
-    private static final long MAX_BYTES = 2 * 1024 * 1024;
+    private static final long MAX_BYTES = 10 * 1024 * 1024;
     private static final Set<String> ALLOWED_EXT = Set.of("png", "jpg", "jpeg", "webp", "gif");
 
     private final Path avatarDir;
@@ -34,7 +34,7 @@ public class AvatarService {
             throw new BusinessException("请选择图片文件");
         }
         if (file.getSize() > MAX_BYTES) {
-            throw new BusinessException("头像大小不能超过 2MB");
+            throw new BusinessException("头像大小不能超过 10MB");
         }
         String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         String ext = original.contains(".")

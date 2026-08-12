@@ -80,6 +80,13 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
     }
 
+    /** Persists the avatar extension for a user (managed entity, flushed). */
+    @Transactional
+    public void setAvatar(String username, String ext) {
+        User user = findByUsername(username);
+        user.setAvatar(ext);
+    }
+
     /** Public avatar URL for a user; null when no avatar is uploaded. */
     public String avatarUrl(User user) {
         return user.getAvatar() == null

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { NButton, NInput, NUpload, useMessage, type UploadCustomRequestOptions } from 'naive-ui'
+import { NButton, NInput, NModal, NUpload, useMessage, type UploadFileInfo } from 'naive-ui'
+import Cropper from 'cropperjs'
+import 'cropperjs/dist/cropper.css'
 import AppNav from '@/components/AppNav.vue'
 import { changePassword, me, updateProfile, uploadAvatar } from '@/api/auth'
 import { errorMessage } from '@/api/http'
@@ -17,6 +19,12 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const savingPassword = ref(false)
 const uploading = ref(false)
+
+// avatar cropping state
+const showCropper = ref(false)
+const cropUrl = ref('')
+const cropImg = ref<HTMLImageElement | null>(null)
+let cropper: Cropper | null = null
 
 const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase())
 
@@ -38,20 +46,68 @@ async function load() {
   }
 }
 
-async function onUpload(options: UploadCustomRequestOptions) {
-  const raw = options.file.file as File
-  uploading.value = true
-  try {
-    const res = await uploadAvatar(raw)
-    auth.setUserInfo(auth.userId, auth.role, auth.nickname, res.avatarUrl)
-    message.success('头像已更新')
-    options.onFinish()
-  } catch (e) {
-    message.error(errorMessage(e))
-    options.onError()
-  } finally {
-    uploading.value = false
+// ---------- avatar upload with cropping ----------
+
+function onBeforeUpload({ file }: { file: UploadFileInfo }): boolean {
+  const raw = file.file
+  if (!raw) return false
+  if (raw.size > 10 * 1024 * 1024) {
+    message.warning('图片不能超过 10MB')
+    return false
   }
+  if (cropUrl.value) {
+    URL.revokeObjectURL(cropUrl.value)
+  }
+  cropUrl.value = URL.createObjectURL(raw)
+  showCropper.value = true
+  return false // stop naive-ui's auto upload; we crop first
+}
+
+function initCropper() {
+  if (!cropImg.value) return
+  cropper?.destroy()
+  cropper = new Cropper(cropImg.value, {
+    aspectRatio: 1,
+    viewMode: 1,
+    dragMode: 'move',
+    autoCropArea: 0.85,
+    background: false,
+    guides: true
+  })
+}
+
+function onCropperClosed() {
+  cropper?.destroy()
+  cropper = null
+  if (cropUrl.value) {
+    URL.revokeObjectURL(cropUrl.value)
+    cropUrl.value = ''
+  }
+}
+
+function confirmCrop() {
+  if (!cropper) return
+  const canvas = cropper.getCroppedCanvas({ width: 256, height: 256, imageSmoothingQuality: 'high' })
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      message.error('裁剪失败，请重试')
+      return
+    }
+    uploading.value = true
+    try {
+      const file = new File([blob], 'avatar.png', { type: 'image/png' })
+      const res = await uploadAvatar(file)
+      // bust the browser cache: the avatar URL itself never changes
+      const url = res.avatarUrl ? res.avatarUrl + '?v=' + Date.now() : null
+      auth.setUserInfo(auth.userId, auth.role, auth.nickname, url)
+      message.success('头像已更新')
+      showCropper.value = false
+    } catch (e) {
+      message.error(errorMessage(e))
+    } finally {
+      uploading.value = false
+    }
+  }, 'image/png')
 }
 
 async function saveNickname() {
@@ -113,12 +169,11 @@ async function savePassword() {
             <n-upload
               accept="image/png,image/jpeg,image/webp,image/gif"
               :show-file-list="false"
-              :custom-request="onUpload"
-              :disabled="uploading"
+              :before-upload="onBeforeUpload"
             >
-              <n-button :loading="uploading">上传头像</n-button>
+              <n-button>选择图片</n-button>
             </n-upload>
-            <span class="dim hint">支持 png/jpg/webp/gif，不超过 2MB</span>
+            <span class="dim hint">支持 png/jpg/webp/gif，不超过 10MB，上传时可裁剪</span>
           </div>
         </div>
       </div>
@@ -165,6 +220,22 @@ async function savePassword() {
         </div>
       </div>
     </main>
+
+    <n-modal
+      v-model:show="showCropper"
+      preset="card"
+      title="裁剪头像"
+      style="width: min(480px, 94vw)"
+      :mask-closable="false"
+      @after-leave="onCropperClosed"
+    >
+      <div class="crop-wrap">
+        <img v-if="cropUrl" ref="cropImg" :src="cropUrl" alt="avatar crop" @load="initCropper" />
+      </div>
+      <div class="crop-actions">
+        <n-button :loading="uploading" type="primary" @click="confirmCrop">确认上传</n-button>
+      </div>
+    </n-modal>
   </div>
 </template>
 
@@ -258,5 +329,31 @@ async function savePassword() {
   font-size: 13px;
   color: var(--text-dim);
   margin-top: 4px;
+}
+
+.crop-wrap {
+  max-height: 360px;
+  overflow: hidden;
+  background: #000;
+  border-radius: 6px;
+}
+
+.crop-wrap img {
+  display: block;
+  max-width: 100%;
+}
+
+.crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+</style>
+
+<style>
+/* round crop area so the preview matches the round avatar */
+.cropper-view-box,
+.cropper-face {
+  border-radius: 50%;
 }
 </style>

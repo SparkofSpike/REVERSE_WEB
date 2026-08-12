@@ -61,11 +61,13 @@ public class AuthController {
     @PutMapping("/avatar")
     public Map<String, Object> uploadAvatar(Authentication authentication,
                                             @RequestParam("file") MultipartFile file) {
-        User user = authService.findByUsername(authentication.getName());
-        String ext = avatarService.save(user.getId(), file);
-        user.setAvatar(ext);
+        Long userId = (Long) authentication.getDetails();
+        String ext = avatarService.save(userId, file);
+        // persist via a managed entity: the controller's own lookups are
+        // detached and would silently drop the update
+        authService.setAvatar(authentication.getName(), ext);
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("avatarUrl", authService.avatarUrl(user));
+        body.put("avatarUrl", "/api/avatars/" + userId + "." + ext);
         return body;
     }
 

@@ -20,9 +20,9 @@ spring:
       path: /h2-console
   servlet:
     multipart:
-      # avatar uploads need more than the 1MB default
-      max-file-size: 5MB
-      max-request-size: 5MB
+      # avatar uploads need headroom above the 10MB app-level cap
+      max-file-size: 20MB
+      max-request-size: 20MB
   jackson:
     serialization:
       write-dates-as-timestamps: false
