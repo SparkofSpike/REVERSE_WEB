@@ -292,8 +292,11 @@ function logout() {
 }
 
 .n-dropdown-menu .n-dropdown-option-body {
-  padding: 9px 16px;
+  height: 36px;
+  line-height: 36px;
+  padding: 0 16px;
   font-size: 14px;
+  align-items: center;
 }
 
 /* logout item in danger color */
