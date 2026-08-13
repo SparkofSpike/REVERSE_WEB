@@ -32,7 +32,6 @@ const menuOptions = computed<DropdownOption[]>(() => {
             `@${auth.username}${roleLabel.value ? ' ' + roleLabel.value : ''}`)
         ])
     },
-    { type: 'divider', key: 'd1' },
     { key: 'profile', label: '编辑资料' }
   ]
   // design management: ADMIN and OP only
