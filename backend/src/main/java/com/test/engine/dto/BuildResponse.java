@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -20,8 +21,11 @@ public class BuildResponse {
     private Instant updatedAt;
 
     public static BuildResponse from(Build build) {
+        // Copy the lazy @ElementCollection inside the transaction: keeping the
+        // PersistentBag reference alive would fail JSON serialization after the
+        // session closes (LazyInitializationException -> 500 on list/get).
         return new BuildResponse(build.getId(), build.getName(), build.getPackId(),
-                build.getCharacterIds(), build.getInitialPerkId(),
+                new ArrayList<>(build.getCharacterIds()), build.getInitialPerkId(),
                 build.getCreatedAt(), build.getUpdatedAt());
     }
 }
