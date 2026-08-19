@@ -3437,6 +3437,20 @@ function statusText(c: CombatantView): string {
     font-size: 13px;
   }
 
+  .skill-panel {
+    top: 8px !important;
+    right: 8px !important;
+    left: 8px !important;
+    box-sizing: border-box;
+  }
+  .skill-cards {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .skill-cards .card-face {
+    width: calc((100% - 16px) / 3);
+  }
+
   .decision-actions {
     justify-content: stretch;
     flex-wrap: wrap;
