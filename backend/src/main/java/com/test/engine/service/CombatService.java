@@ -336,8 +336,9 @@ public class CombatService {
         record.setOpponentUsername(opponentUsername);
         record.setRounds(state.getRound());
         record.setPlayerCharacterIds(state.side(mySide).stream()
+                .filter(c -> !state.isPve() || username.equals(c.getOwnerUsername()))
                 .map(Combatant::getTemplateId).toList());
-        computeStats(state, record, mySide);
+        computeStats(state, record, mySide, username);
         try {
             record.setLogJson(objectMapper.writeValueAsString(state.getLogs()));
         } catch (JsonProcessingException e) {
@@ -347,26 +348,35 @@ public class CombatService {
     }
 
     /**
-     * Stats over the user's team damage to the enemy side (solo: the dummy).
+     * Stats over the user's own damage to the opposing side. PVE damage logs
+     * carry the attacking combatant id, so a co-op record must filter by the
+     * record owner's characters instead of attributing the whole team total
+     * to every player.
      */
-    private void computeStats(CombatState state, BattleRecord record, CombatSide mySide) {
+    private void computeStats(CombatState state, BattleRecord record, CombatSide mySide, String username) {
         Set<String> enemyIds = state.side(CombatState.opposite(mySide)).stream()
+                .map(Combatant::getId)
+                .collect(Collectors.toSet());
+        Set<String> actorIds = state.side(mySide).stream()
+                .filter(c -> !state.isPve() || username.equals(c.getOwnerUsername()))
                 .map(Combatant::getId)
                 .collect(Collectors.toSet());
         int total = 0;
         int maxHit = 0;
         for (CombatEvent event : state.getLogs()) {
-            if ("damage".equals(event.getType())) {
-                Object target = event.getData().get("target");
-                Object hpDamage = event.getData().get("hpDamage");
-                boolean onEnemy = state.isPvp() || state.isPve()
-                        ? target instanceof String s && enemyIds.contains(s)
-                        : "dummy".equals(target);
-                if (onEnemy && hpDamage instanceof Number n) {
-                    int dmg = n.intValue();
-                    total += dmg;
-                    maxHit = Math.max(maxHit, dmg);
-                }
+            if (!"damage".equals(event.getType())) {
+                continue;
+            }
+            Object target = event.getData().get("target");
+            Object hpDamage = event.getData().get("hpDamage");
+            Object actor = event.getData().get("actorId");
+            boolean onEnemy = target instanceof String s && enemyIds.contains(s);
+            boolean byOwner = !state.isPve() && !state.isPvp()
+                    || actor instanceof String s && actorIds.contains(s);
+            if (onEnemy && byOwner && hpDamage instanceof Number n) {
+                int dmg = n.intValue();
+                total += dmg;
+                maxHit = Math.max(maxHit, dmg);
             }
         }
         record.setTotalDamageDealt(total);
@@ -374,4 +384,5 @@ public class CombatService {
         record.setAvgDamagePerRound(record.getRounds() > 0
                 ? Math.round(total * 10.0 / record.getRounds()) / 10.0 : 0.0);
     }
+
 }

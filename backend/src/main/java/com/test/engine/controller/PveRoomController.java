@@ -6,6 +6,7 @@ import com.test.engine.model.PuppetTemplate;
 import com.test.engine.model.PuppetTemplateProvider;
 import com.test.engine.service.PveRoomService;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -113,6 +114,7 @@ public class PveRoomController {
 
     public record ReadyRoomRequest(
             @NotEmpty(message = "至少部署一个角色")
+            @Size(max = 4, message = "角色数量需在 1-4 之间")
             List<String> characterIds) {
     }
 }

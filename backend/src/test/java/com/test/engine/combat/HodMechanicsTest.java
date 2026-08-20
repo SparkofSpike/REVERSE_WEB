@@ -1,9 +1,9 @@
 package com.test.engine.combat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.test.engine.enums.DamageType;
 import com.test.engine.model.CardPackLoader;
 import com.test.engine.utils.DiceRoller;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

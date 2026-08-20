@@ -96,4 +96,10 @@ class AuthIntegrationTest {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void h2ConsoleIsPrivateByDefault() throws Exception {
+        mockMvc.perform(get("/h2-console"))
+                .andExpect(status().isUnauthorized());
+    }
 }

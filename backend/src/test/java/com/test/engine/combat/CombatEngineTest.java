@@ -1,10 +1,10 @@
 package com.test.engine.combat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.test.engine.model.CardPackLoader;
 import com.test.engine.model.EffectSpec;
 import com.test.engine.model.GenericSkillTemplate;
 import com.test.engine.utils.DiceRoller;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,8 +26,9 @@ class CombatEngineTest {
         ObjectMapper mapper = new ObjectMapper();
         CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
+        DamageResolver damageResolver = new DamageResolver(dice);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
-                new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
+                damageResolver, new EffectExecutor(dice, damageResolver, loader),
                 new PuppetAi(dice), null);
     }
 
@@ -105,6 +106,22 @@ class CombatEngineTest {
         engine.playGenericSkill(state.getId(), cardId, null);
 
         assertThat(state.getPlayerHand().stream().noneMatch(c -> c.getId().equals(cardId))).isTrue();
+    }
+
+    @Test
+    void skippedSpecialPerksCountTowardTheOfferLimit() {
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+
+        for (int round : List.of(4, 8, 12)) {
+            state.setRound(round);
+            state.setFirstStrikeSide(0);
+            state.setPhase(CombatPhase.SPECIAL_PERK);
+            engine.skipSpecialPerk(state.getId());
+        }
+
+        assertThat(state.getSpecialPerkRoundsTaken()).isEqualTo(3);
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
     }
 
     @Test
@@ -285,7 +302,9 @@ class CombatEngineTest {
                 ActionDecision.base(warrior.getId(), "ATTACK", "dummy")));
         assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
         assertThat(state.getRound()).isEqualTo(5);
-        assertThat(state.getSpecialPerkRoundsTaken()).isEqualTo(roundsTakenAfterAccelerated);
+        // Skipping still consumes the offer, so the next normal round is not
+        // offered again and the opportunity count advances exactly once.
+        assertThat(state.getSpecialPerkRoundsTaken()).isEqualTo(roundsTakenAfterAccelerated + 1);
     }
 
     @Test

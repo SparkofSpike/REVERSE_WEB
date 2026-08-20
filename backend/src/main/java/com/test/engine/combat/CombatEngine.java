@@ -46,6 +46,7 @@ public class CombatEngine {
     private static final int SPECIAL_PERK_INTERVAL = 4;
     private static final int SPECIAL_PERK_MAX_ROUNDS = 3;
     private static final int INITIAL_HAND_SIZE = 2;
+    private static final int MAX_CHARACTERS_PER_PLAYER = 4;
     /** Finished battles are reaped after this long (in-memory map hygiene). */
     private static final long BATTLE_TTL_MS = 60 * 60 * 1000L;
     /** PVP decision window per round (auto-submits when it expires). */
@@ -106,12 +107,11 @@ public class CombatEngine {
 
     public CombatState createDummyBattle(String packId, List<String> characterIds, String ownerUsername) {
         CardPack pack = cardPackLoader.get(packId);
-        if (characterIds == null || characterIds.isEmpty() || characterIds.size() > 4) {
+        if (characterIds == null || characterIds.isEmpty() || characterIds.size() > MAX_CHARACTERS_PER_PLAYER) {
             throw new IllegalArgumentException("a player must deploy 1-4 characters");
         }
         CombatState state = new CombatState();
-        // 16 hex chars (64 bits): 8 chars (32 bits) collided after roughly
-        // 77k battles and silently overwrote an existing battle
+        // Battle ids remain compact but collision-resistant (64 bits).
         state.setId(UUID.randomUUID().toString().substring(0, 16));
         state.setOwnerUsername(ownerUsername);
         state.setPackId(packId);
@@ -159,8 +159,9 @@ public class CombatEngine {
      */
     public CombatState createPvpBattle(String packId, List<String> hostCharacterIds,
                                        List<String> guestCharacterIds, String hostUsername, String guestUsername) {
-        if (hostCharacterIds == null || hostCharacterIds.isEmpty() || hostCharacterIds.size() > 4
-                || guestCharacterIds == null || guestCharacterIds.isEmpty() || guestCharacterIds.size() > 4) {
+        if (hostCharacterIds == null || hostCharacterIds.isEmpty() || hostCharacterIds.size() > MAX_CHARACTERS_PER_PLAYER
+                || guestCharacterIds == null || guestCharacterIds.isEmpty()
+                || guestCharacterIds.size() > MAX_CHARACTERS_PER_PLAYER) {
             throw new IllegalArgumentException("each side must deploy 1-4 characters");
         }
         CardPack pack = cardPackLoader.get(packId);
@@ -221,8 +222,9 @@ public class CombatEngine {
         }
         CardPack pack = cardPackLoader.get(packId);
         for (Map.Entry<String, List<String>> entry : charactersByUser.entrySet()) {
-            if (entry.getValue() == null || entry.getValue().isEmpty()) {
-                throw new IllegalArgumentException("player " + entry.getKey() + " must deploy at least one character");
+            if (entry.getValue() == null || entry.getValue().isEmpty()
+                    || entry.getValue().size() > MAX_CHARACTERS_PER_PLAYER) {
+                throw new IllegalArgumentException("player " + entry.getKey() + " must deploy 1-4 characters");
             }
             for (String characterId : entry.getValue()) {
                 findCharacter(pack, characterId);
@@ -396,9 +398,7 @@ public class CombatEngine {
                         }
                     }
                     if (state.allSpecialPerksPicked()) {
-                        state.setSpecialPerkOptions(List.of());
-                        state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-                        endRound(state);
+                        finishSpecialPerkRound(state);
                     }
                 } else {
                     for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
@@ -407,9 +407,7 @@ public class CombatEngine {
                         }
                     }
                     if (state.bothSpecialPerksPicked()) {
-                        state.setSpecialPerkOptions(List.of());
-                        state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-                        endRound(state);
+                        finishSpecialPerkRound(state);
                     }
                 }
                 progressed = true;
@@ -1846,16 +1844,12 @@ public class CombatEngine {
             return state;
         }
         if (!state.isPvp()) {
-            state.setSpecialPerkOptions(List.of());
-            state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-            endRound(state);
+            finishSpecialPerkRound(state);
             return state;
         }
         state.getSpecialPerkSubmitted().put(side, true);
         if (state.bothSpecialPerksPicked()) {
-            state.setSpecialPerkOptions(List.of());
-            state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-            endRound(state);
+            finishSpecialPerkRound(state);
         }
         notifyPvp(battleId);
         return state;
@@ -1876,14 +1870,12 @@ public class CombatEngine {
         }
         state.log(CombatEvent.of(state.getRound(), "perk", sideLabel(state, side) + " 跳过本轮特殊词条选择。"));
         if (!state.isPvp()) {
-            state.setSpecialPerkOptions(List.of());
-            endRound(state);
+            finishSpecialPerkRound(state);
             return state;
         }
         state.getSpecialPerkSubmitted().put(side, true);
         if (state.bothSpecialPerksPicked()) {
-            state.setSpecialPerkOptions(List.of());
-            endRound(state);
+            finishSpecialPerkRound(state);
         }
         notifyPvp(battleId);
         return state;
@@ -1920,9 +1912,7 @@ public class CombatEngine {
         }
         state.getSpecialPerkSubmittedByUser().put(username, true);
         if (state.allSpecialPerksPicked()) {
-            state.setSpecialPerkOptions(List.of());
-            state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
-            endRound(state);
+            finishSpecialPerkRound(state);
         }
         notifyPvp(battleId);
         return state;
@@ -1943,11 +1933,16 @@ public class CombatEngine {
         state.log(CombatEvent.of(state.getRound(), "perk", username + " 跳过本轮特殊词条选择。"));
         state.getSpecialPerkSubmittedByUser().put(username, true);
         if (state.allSpecialPerksPicked()) {
-            state.setSpecialPerkOptions(List.of());
-            endRound(state);
+            finishSpecialPerkRound(state);
         }
         notifyPvp(battleId);
         return state;
+    }
+
+    private void finishSpecialPerkRound(CombatState state) {
+        state.setSpecialPerkOptions(List.of());
+        state.setSpecialPerkRoundsTaken(state.getSpecialPerkRoundsTaken() + 1);
+        endRound(state);
     }
 
     // ===================== round transitions =====================

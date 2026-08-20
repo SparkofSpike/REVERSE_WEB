@@ -33,12 +33,14 @@ function isPvpRoom(room: PvpRoom | PveRoom): room is PvpRoom {
   return 'guestUsername' in room
 }
 
-// lobby rows: PVP + PVE rooms merged, newest first
+const roomEntries = computed<RoomEntry[]>(() => [
+  ...pvpRooms.value.map((room): RoomEntry => ({ kind: 'pvp', room })),
+  ...pveRooms.value.map((room): RoomEntry => ({ kind: 'pve', room }))
+])
+
+// Merge PVP and PVE rooms, newest first.
 const roomRows = computed(() =>
-  [
-    ...pvpRooms.value.map((room): RoomEntry => ({ kind: 'pvp', room })),
-    ...pveRooms.value.map((room): RoomEntry => ({ kind: 'pve', room }))
-  ]
+  roomEntries.value
     .sort((a, b) => new Date(b.room.createdAt).getTime() - new Date(a.room.createdAt).getTime())
     .map((entry) => {
       const base = {
@@ -54,6 +56,7 @@ const roomRows = computed(() =>
         const pvp = entry.room
         return {
           ...base,
+          entry,
           countText: pvp.guestUsername ? '2/2' : '1/2',
           detailText: `${packName(pvp.packId)} · ${pvp.hostCharacterIds.map((id) => charName(pvp.packId, id)).join(' / ')}`,
           joinDisabled: !!pvp.guestUsername || pvp.status !== 'WAITING',
@@ -63,6 +66,7 @@ const roomRows = computed(() =>
       const pve = entry.room
       return {
         ...base,
+        entry,
         countText: `${pve.seats.length} 人`,
         detailText: `${packName(pve.packId)} · ${pve.enemyIds.map(enemyLabel).join(' / ')}`,
         joinDisabled: pve.status !== 'WAITING',
@@ -121,7 +125,7 @@ onMounted(async () => {
   try {
     enemies.value = await listEnemies()
   } catch {
-    // enemy list unavailable: PVE rows still render with raw ids
+    // Fall back to raw enemy IDs.
   }
   await refreshRooms()
   listTimer = window.setInterval(refreshRooms, 5000)
@@ -138,7 +142,7 @@ async function refreshRooms() {
     pvpRooms.value = a
     pveRooms.value = b
   } catch {
-    // lobby polling keeps retrying; no need to nag the user
+    // Polling retries on the next interval.
   }
 }
 
@@ -167,7 +171,7 @@ async function confirmCreate() {
     }
     creating.value = true
     try {
-      // computed key: keeps the literal room-pass field out of this source
+      // Use the computed request field name.
       myRoom.value = await createPveRoom({
         packId: createPackId.value,
         ['pass' + 'word']: createPass.value || undefined,
@@ -211,23 +215,13 @@ function openJoin(entry: RoomEntry) {
   showJoin.value = true
 }
 
-function openJoinByRow(row: (typeof roomRows.value)[number]) {
-  const entry = [
-    ...pvpRooms.value.map((room): RoomEntry => ({ kind: 'pvp', room })),
-    ...pveRooms.value.map((room): RoomEntry => ({ kind: 'pve', room }))
-  ].find((e) => e.kind + e.room.id === row.key)
-  if (entry) {
-    openJoin(entry)
-  }
-}
-
 async function confirmJoin() {
   const target = joinTarget.value
   if (!target) {
     return
   }
   if (target.kind === 'pve') {
-    // PVE rooms do not pick characters here: choose inside the room
+    // PVE characters are selected in the room.
     joining.value = true
     try {
       myRoom.value = await joinPveRoom(target.room.id, joinPass.value || undefined)
@@ -280,7 +274,7 @@ function watchMyRoom() {
         myRoom.value = null
       }
     } catch {
-      // room expired: fall back to the lobby
+      // Return to the lobby when the room expires.
       myRoom.value = null
     }
   }, 2000)
@@ -316,7 +310,7 @@ async function leaveRoom() {
         await deletePveRoom(room.id)
       }
     } else if (isPvpRoom(room)) {
-      // the guest frees its seat so another challenger can join
+      // The guest releases its seat.
       await leaveRoomApi(room.id)
     } else {
       await leavePveRoomApi(room.id)
@@ -343,8 +337,7 @@ const myPveSeat = computed(() => {
 
 const pveReady = computed(() => myPveSeat.value?.ready ?? false)
 
-// sync the local character pick from my seat: on first sight and whenever the
-// seat is ready (authoritative state); while unready the pick stays editable
+// Sync the initial and ready seat selections.
 let pveSeatSeen = false
 watch(myPveSeat, (seat) => {
   if (!seat) {
@@ -558,7 +551,7 @@ function timeAgo(iso: string): string {
                   type="primary"
                   size="small"
                   :disabled="row.joinDisabled"
-                  @click="openJoinByRow(row)"
+                  @click="openJoin(row.entry)"
                 >
                   {{ row.joinLabel }}
                 </n-button>

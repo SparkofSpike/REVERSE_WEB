@@ -11,11 +11,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * Avatar upload/storage. Files live under app.avatar-dir (default
- * ./data/avatars) named {userId}.{ext}; only whitelisted image extensions are
- * accepted and the size is capped at 2MB.
- */
+/** Stores validated avatar uploads under app.avatar-dir. */
 @Service
 public class AvatarService {
 

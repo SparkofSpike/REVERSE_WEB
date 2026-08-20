@@ -14,17 +14,14 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 import jakarta.servlet.http.HttpServletResponse;
 
-/**
- * Stateless JWT security for the REST API. Auth endpoints are public; all
- * other /api/** routes require a valid token.
- */
+/** Stateless JWT security for API routes. */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
-    /** Dev-only switch: the H2 console stays protected (401) by default. */
+    /** Enables public H2 console access for local development. */
     @Value("${app.h2-console-enabled:false}")
     private boolean h2ConsoleEnabled;
 
@@ -44,30 +41,21 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                        // H2 console is NOT public by default: only a dev
-                        // build with app.h2-console-enabled=true may open it
+                        // Keep the H2 console private unless explicitly enabled.
                         .requestMatchers(r -> h2ConsoleEnabled && r.getRequestURI().startsWith("/h2-console")).permitAll()
-                        // PVP SSE refresh channel: signal-only (no battle data),
-                        // so the browser's EventSource can subscribe without a
-                        // Bearer header; real state always comes from the
-                        // authenticated combat API
+                        // EventSource cannot send bearer headers; this channel only signals refreshes.
                         .requestMatchers("/api/pvp/events/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/packs/**").permitAll()
-                        // avatar images are public: <img> tags cannot send a Bearer header
+                        // Avatar images are public because <img> cannot send bearer headers.
                         .requestMatchers("/api/avatars/**").permitAll()
-                        // SPA pages and static assets (everything outside /api) are public;
-                        // the frontend router guards private views client-side.
-                        .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")).permitAll()
-                        // OP-only: account & permission management
+                        .requestMatchers(r -> !r.getRequestURI().startsWith("/api/")
+                                && !r.getRequestURI().startsWith("/h2-console")).permitAll()
                         .requestMatchers("/api/admin/users/**").hasRole("OP")
-                        // ADMIN or OP: content design (card packs, enemies, characters)
                         .requestMatchers("/api/design/**").hasAnyRole("ADMIN", "OP")
                         .anyRequest().authenticated())
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())
-                        // let the browser cache static art; the default
-                        // no-cache header made curtain/dash images
-                        // re-download on every round transition
+                        // Allow caching of static assets.
                         .cacheControl(cache -> cache.disable()))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) ->
                         response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "未认证")))

@@ -1,6 +1,4 @@
-// Shared form-state types and option lists for the design editor forms.
-// All values come from the backend model (see backend combat/ enums and
-// EffectExecutor); keep them in sync when the backend gains new kinds.
+// Shared state and option lists for design forms.
 
 export const ACTION_TYPES = ['ATTACK', 'DEFEND', 'DODGE', 'GUARD', 'COUNTER', 'CHASE', 'PRAY'] as const
 
@@ -57,7 +55,7 @@ export const PASSIVE_TYPES = [
 
 export const TRIGGER_TYPES = ['hp_below', 'energy_below', 'heal_total', 'guard_success', 'ally_death'] as const
 
-// which fields an effect shows depends on its type
+// Effect fields vary by type.
 export const EFFECT_FIELDS: Record<string, string[]> = {
   damage: ['dice', 'damageType', 'count'],
   heal: ['dice', 'amount', 'count'],
@@ -95,7 +93,7 @@ export const EFFECT_FIELDS: Record<string, string[]> = {
   heal_end_of_round: ['dice']
 }
 
-// fields whose form value is a string but the JSON value must be a number
+// Fields serialized from numeric strings.
 export const NUMERIC_FIELDS = new Set([
   'maxHp',
   'maxEnergy',

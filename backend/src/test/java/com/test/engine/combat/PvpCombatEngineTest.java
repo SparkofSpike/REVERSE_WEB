@@ -27,8 +27,9 @@ class PvpCombatEngineTest {
         ObjectMapper mapper = new ObjectMapper();
         CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
+        DamageResolver damageResolver = new DamageResolver(dice);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
-                new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
+                damageResolver, new EffectExecutor(dice, damageResolver, loader),
                 new PuppetAi(dice), null);
         // enemy side leads with a warrior so the extra-action tests can grant
         // it Relentless Charge (warrior-s3) on both sides

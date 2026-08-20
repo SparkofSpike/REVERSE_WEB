@@ -1,10 +1,13 @@
 package com.test.engine.controller;
 
+import com.test.engine.combat.CombatEngine;
 import com.test.engine.dto.PvpRoomView;
+import com.test.engine.exception.BusinessException;
 import com.test.engine.service.PvpEventService;
 import com.test.engine.service.PvpRoomService;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,10 +30,13 @@ public class PvpRoomController {
 
     private final PvpRoomService roomService;
     private final PvpEventService eventService;
+    private final CombatEngine combatEngine;
 
-    public PvpRoomController(PvpRoomService roomService, PvpEventService eventService) {
+    public PvpRoomController(PvpRoomService roomService, PvpEventService eventService,
+                             CombatEngine combatEngine) {
         this.roomService = roomService;
         this.eventService = eventService;
+        this.combatEngine = combatEngine;
     }
 
     @GetMapping("/rooms")
@@ -75,8 +81,13 @@ public class PvpRoomController {
      * unauthenticated (see SecurityConfig) - the channel carries no data.
      */
     @GetMapping("/events/{battleId}")
-    public SseEmitter subscribe(@PathVariable String battleId) {
-        return eventService.subscribe(battleId);
+    public SseEmitter subscribe(@PathVariable String battleId, HttpServletRequest request) {
+        // Reject random ids before allocating an emitter; the channel is
+        // public only because EventSource cannot send a bearer header.
+        if (!combatEngine.getBattle(battleId).isPvp()) {
+            throw new BusinessException("不是 PVP 战斗");
+        }
+        return eventService.subscribe(battleId, request.getRemoteAddr());
     }
 
     public record CreateRoomRequest(

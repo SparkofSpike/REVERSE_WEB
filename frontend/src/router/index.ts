@@ -85,7 +85,7 @@ router.beforeEach((to) => {
   if (to.meta.public && auth.isLoggedIn) {
     return { name: 'home' }
   }
-  // role-guarded routes: the nav menu hides them, the guard is the backstop
+  // Enforce role-based route access.
   if (to.meta.requiresOp && !auth.isOp) {
     return { name: 'home' }
   }

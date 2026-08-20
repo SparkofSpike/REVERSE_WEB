@@ -9,13 +9,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * index.html must never be cached: after a deploy the browser has to re-fetch
- * it so the new hashed asset URLs are picked up, instead of a stale page that
- * still references old chunks (user had to hard-refresh after each release).
- * Only "/" and "/index.html" are affected - hashed assets under /assets/ keep
- * their 7-day browser cache (StaticCacheConfig).
- */
+/** Prevents stale SPA shells after deployment. */
 @Component
 public class IndexHtmlNoCacheFilter extends OncePerRequestFilter {
 

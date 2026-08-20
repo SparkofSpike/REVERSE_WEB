@@ -15,8 +15,7 @@ const message = useMessage()
 const record = ref<BattleRecordDetail | null>(null)
 const packs = ref<CardPack[]>([])
 
-// log type -> extra class. The raw type string is NEVER used as a class:
-// it collides with page classes (e.g. "card", "round") and pollutes the row.
+// Map log types to isolated CSS classes.
 const LOG_TYPE_CLASS: Record<string, string> = {
   damage: 'log-damage',
   heal: 'log-heal',

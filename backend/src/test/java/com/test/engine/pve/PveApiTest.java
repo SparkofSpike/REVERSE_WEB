@@ -135,23 +135,23 @@ class PveApiTest {
         JsonNode round1 = getJson("/api/combat/" + battleId, hostToken);
         assertThat(round1.get("phase").asText()).isEqualTo("DECISION");
 
-        // decisions resolve only after BOTH players submitted. Combatant ids
-        // are read from the combatants array directly (findValues recurses
-        // into skills/perks/cards and would also collect their ids)
-        String[] targetId = new String[1];
-        List<Map<String, String>> hostDecisions = new ArrayList<>();
+        // Read combatant ids directly because findValues also returns nested ids.
+        String targetId = null;
         for (JsonNode unit : hostView.get("combatants")) {
             String id = unit.get("id").asText();
             if (id.startsWith("enemy-")) {
-                targetId[0] = id;
-            } else if (id.startsWith("warrior-") || id.startsWith("mage-")) {
-                hostDecisions.add(Map.of("combatantId", id, "actionType", "ATTACK", "targetId", ""));
+                targetId = id;
+                break;
             }
         }
-        hostDecisions = hostDecisions.stream()
-                .map(m -> Map.of("combatantId", m.get("combatantId"), "actionType", "ATTACK",
-                        "targetId", targetId[0]))
-                .toList();
+        assertThat(targetId).isNotNull();
+        List<Map<String, String>> hostDecisions = new ArrayList<>();
+        for (JsonNode unit : hostView.get("combatants")) {
+            String id = unit.get("id").asText();
+            if (id.startsWith("warrior-") || id.startsWith("mage-")) {
+                hostDecisions.add(Map.of("combatantId", id, "actionType", "ATTACK", "targetId", targetId));
+            }
+        }
         postJson("/api/combat/" + battleId + "/decide", hostToken, hostDecisions);
         JsonNode afterHostDecide = getJson("/api/combat/" + battleId, guestToken);
         assertThat(afterHostDecide.get("submittedUsers").size()).isEqualTo(1);
@@ -164,7 +164,7 @@ class PveApiTest {
             }
         }
         postJson("/api/combat/" + battleId + "/decide", guestToken,
-                List.of(Map.of("combatantId", guestUnit, "actionType", "ATTACK", "targetId", targetId[0])));
+                List.of(Map.of("combatantId", guestUnit, "actionType", "ATTACK", "targetId", targetId)));
         JsonNode afterBoth = getJson("/api/combat/" + battleId, hostToken);
         assertThat(afterBoth.get("round").asInt()).isGreaterThanOrEqualTo(2);
 

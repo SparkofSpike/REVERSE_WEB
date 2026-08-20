@@ -43,7 +43,7 @@ public class PvpRoomService {
     public PvpRoomView create(String username, String packId, String password, List<String> hostCharacterIds) {
         validatePackAndCharacters(packId, hostCharacterIds);
         PvpRoom room = new PvpRoom();
-        room.setId(UUID.randomUUID().toString().substring(0, 8));
+        room.setId(UUID.randomUUID().toString());
         room.setHostUsername(username);
         room.setPackId(packId);
         room.setHostCharacterIds(List.copyOf(hostCharacterIds));
@@ -99,7 +99,7 @@ public class PvpRoomService {
     }
 
     /** Host starts the battle once both sides deployed their characters. */
-    public String start(String username, String roomId) {
+    public synchronized String start(String username, String roomId) {
         reap();
         PvpRoom room = find(roomId);
         if (!room.getHostUsername().equals(username)) {
@@ -125,7 +125,7 @@ public class PvpRoomService {
      */
     public synchronized PvpRoomView leave(String username, String roomId) {
         PvpRoom room = find(roomId);
-        if (!room.getGuestUsername().equals(username)) {
+        if (room.getGuestUsername() == null || !room.getGuestUsername().equals(username)) {
             throw new BusinessException("只有挑战者可以退出房间");
         }
         if (!PvpRoom.STATUS_WAITING.equals(room.getStatus())) {
@@ -137,7 +137,7 @@ public class PvpRoomService {
     }
 
     /** Host may cancel a waiting room; the battle itself is untouched once started. */
-    public void delete(String username, String roomId) {
+    public synchronized void delete(String username, String roomId) {
         PvpRoom room = find(roomId);
         if (!room.getHostUsername().equals(username)) {
             throw new BusinessException("只有房主可以删除房间");

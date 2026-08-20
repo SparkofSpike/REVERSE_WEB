@@ -27,50 +27,42 @@ const battle = ref<CombatView | null>(null)
 const loading = ref(true)
 const submitting = ref(false)
 
-// per-combatant pending decision. Targets are locked by dragging the
-// chosen action/skill card onto a unit (multi-target skills accept several).
+// Per-combatant pending decisions.
 interface PendingDecision {
   actionType: string
   skillId: string | null
   targetIds: string[]
 }
 const pending = ref<Record<string, PendingDecision>>({})
-// selected-combatant panel tabs: default to the skills page
+// Selected panel tab.
 const panelTab = ref<'actions' | 'skills'>('skills')
-// aim-to-lock state: which chosen item is being aimed at a unit
+// Current target-selection state.
 const aimMode = ref<{ combatantId: string; kind: 'action' | 'skill'; id: string } | null>(null)
 const aimLine = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
-// portrait images: /assets/{templateId}.png, falling back to a placeholder
+// Failed portrait URLs.
 const portraitFailed = ref<Record<string, boolean>>({})
 
-// ---------------- transition overlays ----------------
-// Curtains play inside the stage (natural, non-blocking, latest-wins).
-// The last-dash moment uses a separate full-screen channel so it is never
-// starved by per-round curtain events.
+// Transition overlays.
 const curtain = ref<{ kind: 'rise' | 'fall'; seq: number } | null>(null)
 let curtainSeq = 0
 let curtainTimer = 0
 let fallTimer = 0
 const dashOverlay = ref<{ seq: number } | null>(null)
 
-// Log consumption: the first load is only a baseline (never replays old
-// transitions after a refresh); later responses consume only the tail.
+// First load establishes the event baseline.
 let baselineSet = false
 let consumedLogs = 0
 
-// ---------------- performance animation state ----------------
+// Performance animation state.
 const performing = ref<Record<string, boolean>>({})
 const approaching = ref<Record<string, boolean>>({})
-// clash: both fighters charge further in and meet mid-field
+// Clash animation state.
 const clashing = ref<Record<string, boolean>>({})
 const shaking = ref<Record<string, boolean>>({})
-// precise lunge/clash offsets (px): computed per unit from the live layout
-// so a fighter always lands in front of its locked target (attack) or on the
-// front-line engagement point (clash), no matter how many units are deployed
+// Per-unit animation offsets.
 const animDx = ref<Record<string, number>>({})
-// speed-roll dice: pops out on each combatant's head, holds, then morphs
-// into the resolved number (dice emoji placeholder until the artist asset)
+// Speed-roll animation state.
 interface DiceAnim {
   seq: number
   roll: number
@@ -78,14 +70,14 @@ interface DiceAnim {
   result?: 'win' | 'lose'
 }
 const diceAnims = ref<Record<string, DiceAnim>>({})
-// last-dash performance: participant ids + whether the dash show is playing
+// Last-dash animation state.
 const dashIds = ref<string[]>([])
 const dashActive = ref(false)
 let diceFastTimer = 0
 let diceSlowTimer = 0
-// top action bar: text of the action currently playing
+// Active action label.
 const actionBarText = ref('')
-// selected combatant: click a unit to inspect its skill cards on the right
+// Selected combatant.
 const selectedId = ref<string | null>(null)
 const selectedCombatant = computed(
   () => battle.value?.combatants.find((c) => c.id === selectedId.value) ?? null
@@ -96,11 +88,10 @@ function toggleSelect(id: string) {
     selectedId.value = null
   } else {
     selectedId.value = id
-    // the tab panel always opens on the skills page by default
     panelTab.value = 'skills'
   }
 }
-// skill panel position: anchored inside the stage scene, next to the unit
+// Skill panel position within the stage.
 const skillPanelPos = ref<{ left?: string; right?: string; top: string } | null>(null)
 watch(selectedId, () => {
   if (!selectedId.value) {
@@ -116,20 +107,18 @@ watch(selectedId, () => {
     const w = el.offsetWidth
     const panelW = 138 * 3 + 16 + 20
     if (left + w + 12 + panelW <= scene.clientWidth) {
-      // plenty of room on the right: panel opens to the right of the unit
       skillPanelPos.value = { left: `${left + w + 12}px`, top: `${Math.max(8, top)}px` }
     } else {
-      // unit near the right edge: panel opens to its left
       skillPanelPos.value = { right: `${scene.clientWidth - left + 12}px`, top: `${Math.max(8, top)}px` }
     }
   })
 })
-// bottom speed track: current-round speed order (fastest first)
+// Current speed order.
 const speedOrder = ref<{ id: string; name: string; roll: number }[]>([])
-// per-unit speed bar value for the current round
+// Current speed values.
 const currentSpeed = ref<Record<string, number>>({})
 
-// min/max possible values of a combatant's speed dice, e.g. "2d6+2" -> [4, 14]
+// Parse speed-dice bounds.
 function speedRange(c: CombatantView | undefined): [number, number] {
   const m = /^(\d+)d(\d+)([+-]\d+)?$/.exec(c?.speedDice ?? '')
   if (!m) return [1, 20]
@@ -144,8 +133,7 @@ function randSpeed(c: CombatantView | undefined): number {
   return min + Math.floor(Math.random() * (max - min + 1))
 }
 
-// hearthstone-style hand: each card fans toward the middle and sits
-// half-hidden until the hand is hovered
+// Fan hand cards toward the center.
 function handCardStyle(i: number, n: number): Record<string, string> {
   const mid = (n - 1) / 2
   const angle = Math.max(-14, Math.min(14, (i - mid) * 5))
@@ -161,8 +149,7 @@ function speedFill(c: CombatantView): string {
   const [, max] = speedRange(c)
   return `${Math.min(100, Math.round((v / max) * 100))}%`
 }
-// the HP bar keeps its old value until the matching damage/heal cue lands,
-// so HP does not drop for every unit at once when the response arrives
+// Displayed HP updates with its animation cue.
 const displayHp = ref<Record<string, number>>({})
 interface FloatNum {
   id: number
@@ -175,10 +162,7 @@ const floats = ref<FloatNum[]>([])
 let floatSeq = 0
 const anyPerforming = computed(() => Object.values(performing.value).some(Boolean))
 
-// camera focus: the whole scene (background + units) zooms in, anchored on
-// the acting unit's side so it reads as a real dolly-in, not a sprite grow.
-// During a clash both sides perform at once, so the camera stays centered
-// on the mid-field collision point.
+// Camera focus follows the acting side.
 const zoomOrigin = computed(() => {
   if (!battle.value) return '50% 62%'
   const acting = Object.keys(performing.value).filter((id) => performing.value[id])
@@ -193,8 +177,7 @@ const zoomOrigin = computed(() => {
   return '50% 62%'
 })
 
-// PVP perspective: 'players'/'enemies' mirror the requesting user's side
-// (guest controls the ENEMY team); solo battles always view from PLAYER
+// Perspective mirrors the requesting user's side.
 const mySide = computed<'PLAYER' | 'ENEMY'>(() => battle.value?.mySide ?? 'PLAYER')
 const players = computed(() =>
   (battle.value?.combatants ?? []).filter((c) => c.side === mySide.value)
@@ -208,21 +191,19 @@ const inDecision = computed(() => battle.value?.phase === 'DECISION')
 const inInitialPerk = computed(() => battle.value?.phase === 'INITIAL_PERK')
 const inSpecialPerk = computed(() => battle.value?.phase === 'SPECIAL_PERK')
 const inExtraRound = computed(() => battle.value?.extraActionRound ?? false)
-// PVE: every player only commands their own characters (ownerUsername);
-// solo/PVP still command the whole side
+// PVE players command only their own characters.
 const myActors = computed(() =>
   isPve.value
     ? alivePlayers.value.filter((c) => c.ownerUsername === myUsername.value)
     : alivePlayers.value
 )
 const extraActors = computed(() => myActors.value.filter((c) => c.extraActionsThisTurn > 0))
-// main rounds decide for every alive player; extra rounds only for those
-// who still hold extra base actions
+// Extra rounds include only actors with remaining actions.
 const decisionActors = computed(() => (inExtraRound.value ? extraActors.value : myActors.value))
 
-// PVP helpers: opponent name, submission gates and the 30s decision window
+// Multiplayer decision state.
 const isPvp = computed(() => !!battle.value?.guestUsername)
-/** PVE: multiplayer co-op battle against AI enemies. */
+/** Whether this is a co-op PVE battle. */
 const isPve = computed(() => battle.value?.pve ?? false)
 const myUsername = ref('')
 const opponentName = computed(() =>
@@ -232,27 +213,27 @@ const opponentName = computed(() =>
 )
 const mySubmitted = computed(() => battle.value?.mySubmitted ?? false)
 const opponentSubmitted = computed(() => battle.value?.opponentSubmitted ?? false)
-/** PVE: "alice ✓、bob ✓" for usernames that already acted this window. */
+/** Users who acted in the current window. */
 const submittedUsersText = computed(() =>
   (battle.value?.submittedUsers ?? []).map((u) => `${u} ✓`).join('、')
 )
-/** Extra window held by the opponent (PVP): my team waits. */
+/** Whether the opponent owns the extra-action window. */
 const opponentsExtraRound = computed(() =>
   isPvp.value && inExtraRound.value && battle.value?.extraRoundSide
     ? battle.value.extraRoundSide !== mySide.value
     : false
 )
-/** Decision window locked because I already acted and await the opponent. */
+/** Whether PVP awaits the opponent. */
 const awaitingOpponent = computed(() =>
   isPvp.value && inDecision.value && !isFinished.value
     ? (inExtraRound.value ? opponentsExtraRound.value : mySubmitted.value)
     : false
 )
-/** PVE: decision window locked because I already acted and await teammates. */
+/** Whether PVE awaits teammates. */
 const pveWaiting = computed(() =>
   isPve.value && inDecision.value && !isFinished.value && mySubmitted.value
 )
-/** Countdown seconds for the current PVP decision window (0 when idle). */
+/** Remaining PVP decision time. */
 const countdown = ref(0)
 let countdownTimer = 0
 function startCountdown() {
@@ -267,8 +248,7 @@ function startCountdown() {
       countdown.value = remaining
     }
     if (remaining === 0 && !battle.value?.mySubmitted && inDecision.value && !inExtraRound.value) {
-      // hearthstone-style: the turn ends with whatever is already configured
-      // (unconfigured units skip); the backend sweeper is the fallback
+      // Submit configured decisions on timeout.
       window.clearInterval(countdownTimer)
       void submitDecisions(true)
     }
@@ -277,9 +257,7 @@ function startCountdown() {
   countdownTimer = window.setInterval(tick, 1000)
 }
 
-// PVP SSE refresh channel: the server pings on every state change, then we
-// pull the real (authenticated) state. EventSource cannot carry headers, so
-// the endpoint only carries the ping - no data, no auth needed.
+// Multiplayer refresh channel.
 let eventSource: EventSource | null = null
 
 function connectSse(battleId: string) {
@@ -287,27 +265,20 @@ function connectSse(battleId: string) {
     return
   }
   if (eventSource) {
-    // already subscribed: load() re-runs on every refresh ping, so recreating
-    // the source would receive the initial ping again and loop forever
     return
   }
   const source = new EventSource(battleEventsUrl(battleId))
   source.addEventListener('refresh', () => {
     void load()
   })
-  source.onerror = () => {
-    // browser retries automatically; nothing to do
-  }
   eventSource = source
 }
 
 onMounted(() => {
   window.addEventListener('mousemove', onAimMove)
   window.addEventListener('keydown', onKeydown)
-  // fire-and-forget warm-up: never blocks the battle screen
   preloadAssets()
   load()
-  // own username: PVE ownership labels highlight my characters
   import('@/stores/auth')
     .then((m) => {
       myUsername.value = m.useAuthStore().username
@@ -334,7 +305,7 @@ function loadImage(url: string): Promise<void> {
   })
 }
 
-// warm the browser cache in the background; never blocks the battle screen
+// Cache battle assets.
 const imageCache = new Map<string, Promise<void>>()
 
 function ensureImageLoaded(url: string): Promise<void> {
@@ -352,7 +323,7 @@ function preloadAssets() {
     '/assets/last_dash.webp',
     '/assets/warrior.webp',
     '/assets/mage.webp',
-    // hod pose sheet (idle/attack/defend/skills/clash/hit)
+    // Hod pose sheets.
     '/assets/hod_idle.webp',
     '/assets/hod_attack.webp',
     '/assets/hod_defend.webp',
@@ -367,25 +338,20 @@ function preloadAssets() {
   }
 }
 
-// keep per-combatant pending decisions in sync with alive players.
-// summons (e.g. puppet minions) can appear mid-battle; rendering accesses
-// pending[c.id].actionType and would crash on a missing entry.
+// Initialize decisions for newly active combatants.
 watch(
   () => alivePlayers.value.map((p) => p.id).join(','),
   (ids) => {
     for (const id of ids.split(',')) {
       if (id && !pending.value[id]) {
-        pending.value[id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
+        pending.value[id] = newPending()
       }
     }
   },
   { immediate: true }
 )
 
-// consume new battle log entries: curtains, last-dash and performance cues.
-// Explicit log consumption: every API call site invokes processLogs with
-// the fresh response, so event handling is deterministic and never depends
-// on Vue watch timing (watch-based consumption could stall or pile up).
+// Consume newly received battle events.
 function processLogs(logs: CombatEvent[]) {
   if (!logs) return
   if (!baselineSet) {
@@ -403,8 +369,7 @@ function processLogs(logs: CombatEvent[]) {
     } else if (ev.type === 'round_end') {
       handleRoundEnd()
     } else if (ev.type === 'last_dash') {
-      // wait for the rise curtain (and the queue gate) to finish before
-      // showing the overlay, otherwise the dash flash overlaps the curtain
+      // Start after the current curtain.
       const delay = Math.max(0, curtainGateUntil - Date.now())
       window.setTimeout(() => triggerDash(), delay)
     }
@@ -413,9 +378,7 @@ function processLogs(logs: CombatEvent[]) {
   }
 }
 
-// Curtain cooldown flow: one curtain at a time (~1.9s). Round order is
-// performance cues -> (pause) -> curtain fall -> curtain rise, so actions
-// are never hidden behind a falling curtain and the rise never cuts the fall.
+// Play one curtain transition at a time.
 function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
   window.clearTimeout(curtainTimer)
   curtain.value = { kind, seq: ++curtainSeq }
@@ -425,10 +388,7 @@ function playCurtainNow(kind: 'rise' | 'fall', onDone?: () => void) {
   }, 1900)
 }
 
-// The curtain window (fall delay + fall + rise) is locked as ONE unit.
-// round_end and round_start arrive adjacent in the same response, so a
-// shared flag prevents double-counting the lock and the new chain is the
-// single unlock point - otherwise the panel would stay locked forever.
+// Lock the curtain transition as one animation.
 let curtainWindowLocked = false
 
 function lockCurtainWindow() {
@@ -444,22 +404,16 @@ function unlockCurtainWindow() {
 }
 
 function handleRoundEnd() {
-  // round_end merely marks the end of the settlement; the curtains are
-  // driven by the decision-round boundaries (rise on submit, fall when a
-  // new decision round begins). The rise curtain must NEVER be cancelled
-  // here: its completion callback releases the animation lock, and losing
-  // it would let the panel unlock early and submissions overlap the
-  // still-playing animations (queue residue -> duplicate cues).
+  // Preserve the active curtain transition.
   window.clearTimeout(fallTimer)
 }
 
 function handleRoundStart() {
-  // a new decision round begins: drop the curtain so the player can issue
-  // orders again
+  // Reveal the next decision round.
   lockCurtainWindow()
   window.clearTimeout(fallTimer)
   playCurtainNow('fall', () => {
-    // decision-round sync: any HP change without a cue settles now
+    // Settle HP changes without a cue.
     for (const c of battle.value?.combatants ?? []) {
       displayHp.value[c.id] = c.hp
     }
@@ -471,7 +425,7 @@ let dashCooldownUntil = 0
 
 function triggerDash() {
   const now = Date.now()
-  // cooldown: consecutive last-dash moments never stack on each other
+  // Prevent overlapping dash overlays.
   if (now < dashCooldownUntil) return
   dashCooldownUntil = now + 2600
   dashOverlay.value = { seq: (dashOverlay.value?.seq ?? 0) + 1 }
@@ -482,7 +436,7 @@ function triggerDash() {
   }, 2100)
 }
 
-// ---------- performance cues from structured event data ----------
+// Performance cues.
 const ACTION_LABELS: Record<string, string> = {
   ATTACK: 'Attack!',
   DEFEND: 'Defend!',
@@ -496,8 +450,7 @@ const ACTION_LABELS: Record<string, string> = {
   HEAL: 'Heal!'
 }
 
-// log type -> extra class. The raw type string is NEVER used as a class:
-// it collides with page classes (e.g. "card", "round") and pollutes the row.
+// Map log types to isolated CSS classes.
 const LOG_TYPE_CLASS: Record<string, string> = {
   damage: 'log-damage',
   heal: 'log-heal',
@@ -513,7 +466,7 @@ function pushFloat(
   ttl: number
 ) {
   const id = ++floatSeq
-  // later floats push earlier ones upward, like stacked labels in other games
+  // Stack concurrent floating labels.
   for (const f of floats.value) {
     if (f.targetId === unitId) {
       f.offsetY = (f.offsetY ?? 0) - stackStep
@@ -531,41 +484,29 @@ function floatTop(f: FloatNum): string {
 }
 
 function addActionLabel(unitId: string, text: string) {
-  // short flash over the lunge-out phase; it must be gone before the unit
-  // runs back, otherwise the label reads as a duplicate cue
+  // Show a brief action label.
   pushFloat(unitId, text, 'action', 34, 580)
 }
 
 function consumePerformanceEvent(ev: CombatEvent) {
-  // no buffering: every event goes straight into the serial queue, which
-  // is gated by the curtain window (curtainGateUntil) - buffering here was
-  // the source of rounds playing without animation when a curtain callback
-  // was overridden, and of multi-round event pile-ups
   applyPerformance(ev)
 }
 
-// Global serial action queue: every action (attack, chase, clash, counter,
-// skill, card, heal) plays to completion - label, lunge, hit, damage
-// settlement - before the next one starts, regardless of actor. Damage
-// events settle right after the action they belong to; a damage with no
-// action cue ahead of it for the same actor gets an implicit lunge of its
-// own so the attacker visibly moves before the hit lands.
+// Serialized performance steps.
 interface QueuedStep {
   kind: 'action' | 'clash' | 'settle' | 'heal' | 'speed' | 'dash'
   ev: CombatEvent
 }
 
-const ACTION_STEP = 1050 // label + lunge + pulse complete
-const SETTLE_STEP = 620 // shake + damage number + hp sync complete
-const HEAL_STEP = 680 // label + heal number + hp sync complete
-// clash: both fighters charge toward each other, collide at the midpoint
-// (impact flash + stagger), then run back to their own spot
-const CLASH_IMPACT = 620 // charge-in duration; the collision moment
-const CLASH_HOLD = 900 // stay engaged before running back
-const CLASH_STEP = 1400 // whole clash cue (charge + impact + return)
+const ACTION_STEP = 1050
+const SETTLE_STEP = 620
+const HEAL_STEP = 680
+const CLASH_IMPACT = 620
+const CLASH_HOLD = 900
+const CLASH_STEP = 1400
 const animQueue: QueuedStep[] = []
 let pumpRunning = false
-// while the fall curtain plays (right after submitting), queued steps wait
+// Queue gate for curtain transitions.
 let curtainGateUntil = 0
 
 function sleep(ms: number): Promise<void> {
@@ -600,11 +541,8 @@ async function pumpQueue() {
 
 async function playStep(step: QueuedStep) {
   const d = (step.ev.data ?? {}) as Record<string, unknown>
-  // action bar mirrors the human-readable message of the running cue
   actionBarText.value = step.ev.message ?? ''
   if (step.kind === 'clash') {
-    // mutual attack: BOTH fighters charge into each other, collide at the
-    // midpoint (impact burst + stagger), then run back to their own spot
     const actorId = d.actorId as string | undefined
     const targetId = d.targetId as string | undefined
     if (!actorId || !targetId) return
@@ -614,33 +552,22 @@ async function playStep(step: QueuedStep) {
       const c = battle.value?.combatants.find((x) => x.id === id)
       if (c && hasPoses(c)) setPose(id, 'clash', CLASH_STEP + 250)
     }
-    // "Clash!" label on both fighters' heads, styled like the Attack!/Defend!
-    // action labels (longer ttl so it is still visible at the impact moment)
     pushFloat(actorId, 'Clash!', 'action', 34, 900)
     pushFloat(targetId, 'Clash!', 'action', 34, 900)
-    // engagement point between the player's front line and the locked enemy
     const clashX = clashPointX(actorId, targetId)
     clashApproach(actorId, clashX)
     clashApproach(targetId, clashX)
     await sleep(CLASH_IMPACT)
-    // impact shake: the clash keyframes keep the fighters ON the collision
-    // spot (via --clash-x), so the shake reads as a real hit, not a jump
-    // back home
     shakeTarget(actorId)
     shakeTarget(targetId)
     await sleep(CLASH_STEP - CLASH_IMPACT)
     return
   }
   if (step.kind === 'dash') {
-    // last-dash performance: after the overlay fades, every combatant's
-    // speed number scrambles fast on its head, then the tied pair slows
-    // down; the following speed step locks the final values (winner green,
-    // loser red). The plain speed-dice animation is untouched.
+    // Animate the last-dash speed roll.
     const ids = (d.ids as string[] | undefined) ?? []
     dashIds.value = ids
     dashActive.value = true
-    // the overlay starts when the queue gate opens (same moment as this
-    // step) and runs 2.1s - wait it out before the scramble
     await sleep(2100)
     const all = battle.value?.combatants.filter((c) => !c.dead) ?? []
     for (const c of all) {
@@ -660,7 +587,6 @@ async function playStep(step: QueuedStep) {
       diceAnims.value = next
     }, 60)
     await sleep(1000)
-    // the tied pair slows down
     window.clearInterval(diceFastTimer)
     window.clearInterval(diceSlowTimer)
     diceSlowTimer = window.setInterval(() => {
@@ -680,7 +606,6 @@ async function playStep(step: QueuedStep) {
     const speeds = d.speeds as Record<string, number> | undefined
     if (speeds) {
       currentSpeed.value = { ...speeds }
-      // speed track: fastest first
       speedOrder.value = Object.entries(speeds)
         .map(([id, roll]) => ({
           id,
@@ -689,8 +614,7 @@ async function playStep(step: QueuedStep) {
         }))
         .sort((a, b) => b.roll - a.roll)
       if (dashIds.value.length > 0) {
-        // dash round: lock the scrambled numbers onto the final rolls;
-        // the tied pair shows winner green / loser red
+        // Settle last-dash rolls.
         const dash = dashIds.value
         const winRoll = Math.max(...dash.map((id) => speeds[id] ?? 0))
         window.clearInterval(diceSlowTimer)
@@ -713,7 +637,6 @@ async function playStep(step: QueuedStep) {
         await sleep(1500)
         return
       }
-      // normal round: plain dice pop animation (unchanged)
       for (const [id, roll] of Object.entries(speeds)) {
         const prev = diceAnims.value[id]
         diceAnims.value[id] = { seq: (prev?.seq ?? 0) + 1, roll, live: roll }
@@ -732,7 +655,6 @@ async function playStep(step: QueuedStep) {
     if (!actorId) return
     if (action) addActionLabel(actorId, ACTION_LABELS[action] ?? action)
     pulseActor(actorId)
-    // pose by action: skills split into skill1/skill2 art by skill index
     const actor = battle.value?.combatants.find((x) => x.id === actorId)
     if (actor && hasPoses(actor)) {
       if (action === 'SKILL' || action === 'CARD') {
@@ -745,9 +667,7 @@ async function playStep(step: QueuedStep) {
         setPose(actorId, 'defend', ACTION_STEP + 250)
       }
     }
-    // melee fighters lunge at their target on every offensive action
-    // (plain attacks, chase, skills, clash, counter); magic casters
-    // strike from their spot
+    // Physical attackers lunge toward their target.
     const melee =
       battle.value?.combatants.find((c) => c.id === actorId)?.baseDamageType === 'PHYSICAL'
     if (melee && targetId && targetId !== actorId) {
@@ -761,14 +681,12 @@ async function playStep(step: QueuedStep) {
     const amount = (d.hpDamage ?? d.raw ?? 0) as number
     if (t) shakeTarget(t)
     if (t && amount > 0) addFloat(t, `-${amount}`, 'damage')
-    // pose: big single hits (>= 15% max HP) use the max-damage art
     if (t) {
       const target = battle.value?.combatants.find((x) => x.id === t)
       if (target && hasPoses(target) && amount > 0) {
         setPose(t, amount >= target.maxHp * 0.15 ? 'hit_max' : 'hit', SETTLE_STEP + 250)
       }
     }
-    // HP bar settles together with the damage cue, not all at once
     if (t) {
       const real = battle.value?.combatants.find((c) => c.id === t)?.hp
       if (real !== undefined) displayHp.value[t] = real
@@ -776,7 +694,6 @@ async function playStep(step: QueuedStep) {
     await sleep(SETTLE_STEP)
     return
   }
-  // heal
   const targetId = d.targetId as string | undefined
   if (targetId) {
     const healAction = d.action as string | undefined
@@ -789,9 +706,7 @@ async function playStep(step: QueuedStep) {
   await sleep(HEAL_STEP - 340)
 }
 
-// While any animation is running (action cues, curtains, last dash) the
-// decision panel stays locked, so a new submission can never interleave
-// with a still-playing animation and scramble the order.
+// Lock decisions while animations play.
 const animating = ref(false)
 let animCount = 0
 
@@ -816,8 +731,6 @@ function applyPerformance(ev: CombatEvent) {
     return
   }
   if (ev.type === 'last_dash') {
-    // the overlay (triggerDash) is the one-shot cue; this step plays the
-    // duel process animation
     enqueueStep({ kind: 'dash', ev })
     return
   }
@@ -833,7 +746,6 @@ function applyPerformance(ev: CombatEvent) {
     enqueueStep({ kind: 'heal', ev })
     return
   }
-  // action / skill / clash / chase / counter / card: serialized globally
   if (actorId) {
     enqueueStep({ kind: 'action', ev })
   }
@@ -847,9 +759,7 @@ function pulseActor(id: string) {
 }
 
 function approachTarget(id: string, targetId?: string) {
-  // lunge exactly to the locked target's front (plus a small gap), so the
-  // attacker visibly reaches the unit it is hitting - no matter how many
-  // units are deployed on either side
+  // Position the attacker just before the target.
   const dx = targetId ? dxToFront(id, targetId) : null
   if (dx !== null) animDx.value[id] = dx
   approaching.value[id] = true
@@ -859,8 +769,7 @@ function approachTarget(id: string, targetId?: string) {
 }
 
 function clashApproach(id: string, clashX: number | null) {
-  // deeper charge: both fighters meet at the engagement point (between the
-  // player's frontmost unit and the locked enemy) and collide face to face
+  // Move both combatants to the clash point.
   if (clashX !== null) {
     const dx = dxToClash(id, clashX)
     if (dx !== null) animDx.value[id] = dx
@@ -871,27 +780,19 @@ function clashApproach(id: string, clashX: number | null) {
   }, CLASH_HOLD)
 }
 
-// ---- layout math ---------------------------------------------------------
-// The unit's offsetParent is the .stage-scene (position: absolute), so
-// offsetLeft/offsetWidth stay in un-zoomed layout coordinates - the scene's
-// camera dolly (transform: scale) never skews the computed travel distance.
+// Layout helpers.
 
 function unitEl(id: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.unit[data-unit-id="${id}"]`)
 }
 
-// engagement point for a clash: the midpoint between the player's frontmost
-// living unit (closest to the enemy line) and the locked enemy. With a wide
-// player formation the fight happens at the front line, not deep inside the
-// player's own ranks (the stage center would land in the player's formation).
+// Return the midpoint between the front line and target.
 function clashPointX(actorId: string, targetId: string): number | null {
   const all = battle.value?.combatants ?? []
-  // the enemy participant in this clash (the locked enemy)
   const enemyId =
     all.find((c) => c.id === targetId)?.side !== mySide.value ? targetId : actorId
   const enemyEl = unitEl(enemyId)
   if (!enemyEl) return null
-  // the player's frontmost living unit: the one closest to the enemy line
   let frontEl: HTMLElement | null = null
   for (const c of all) {
     if (c.side !== mySide.value || c.dead) continue
@@ -905,25 +806,19 @@ function clashPointX(actorId: string, targetId: string): number | null {
   return (fx + ex) / 2
 }
 
-// horizontal offset (px) that stops the fighter just short of the engagement
-// point: the left-side fighter ends with its right edge at clashX - GAP/2,
-// the right-side one with its left edge at clashX + GAP/2 - so the two
-// collide face to face with a small gap instead of overlapping
+// Return the offset to reach the clash point.
 function dxToClash(id: string, clashX: number): number | null {
   const el = unitEl(id)
   if (!el) return null
   const GAP = 12
   const center = el.offsetLeft + el.offsetWidth / 2
   if (center < clashX) {
-    // coming from the left: right edge lands just left of the point
     return clashX - GAP / 2 - el.offsetWidth - el.offsetLeft
   }
-  // coming from the right: left edge lands just right of the point
   return clashX + GAP / 2 - el.offsetLeft
 }
 
-// horizontal offset (px) that places the unit right in front of the target,
-// leaving a small gap; direction is picked from the actual layout
+// Return the offset to approach a target.
 function dxToFront(id: string, targetId: string): number | null {
   const el = unitEl(id)
   const targetEl = unitEl(targetId)
@@ -932,11 +827,9 @@ function dxToFront(id: string, targetId: string): number | null {
   const elRight = el.offsetLeft + el.offsetWidth
   const targetRight = targetEl.offsetLeft + targetEl.offsetWidth
   if (targetEl.offsetLeft >= elRight) {
-    // target is to the right: stop just left of it
     return targetEl.offsetLeft - elRight - GAP
   }
   if (el.offsetLeft >= targetRight) {
-    // target is to the left: stop just right of it
     return targetRight - el.offsetLeft + GAP
   }
   return null
@@ -955,7 +848,6 @@ function shakeTarget(id: string) {
 }
 
 function addFloat(targetId: string, text: string, kind: 'damage' | 'heal') {
-  // numbers appear a beat later (after the action label) and stack upward
   window.setTimeout(() => {
     pushFloat(targetId, text, kind, 26, 1300)
   }, 340)
@@ -965,10 +857,7 @@ function floatsFor(unitId: string): FloatNum[] {
   return floats.value.filter((f) => f.targetId === unitId)
 }
 
-// ---------- pose sheet: characters with per-event art ----------
-// Characters in POSE_TEMPLATES switch their portrait by battle event:
-// idle (default), attack, defend, skill1/skill2 (by skill index), clash,
-// hit (light damage) and hit_max (single hit >= 15% of max HP).
+// Templates with event-specific pose sheets.
 const POSE_TEMPLATES = new Set(['hod'])
 const poses = ref<Record<string, string>>({})
 const poseTimers = new Map<string, number>()
@@ -989,8 +878,7 @@ function setPose(id: string, pose: string, ttl: number) {
   poseTimers.set(id, timer)
 }
 
-// portrait url with pose art; a missing pose file falls back to the base
-// portrait, and a missing base portrait falls back to the placeholder
+// Use the pose sheet when available.
 function portraitUrl(c: CombatantView): string {
   if (hasPoses(c)) {
     const pose = poses.value[c.id] ?? 'idle'
@@ -1004,8 +892,7 @@ function onPortraitError(ev: Event) {
   const el = ev.target as HTMLImageElement
   const path = new URL(el.src).pathname
   portraitFailed.value[path] = true
-  // pose art failed: snap units back to their idle pose so the base
-  // portrait shows instead of a broken image
+  // Fall back to the base portrait.
   const m = /^\/assets\/([^_]+)_([a-z0-9]+)\.webp$/.exec(path)
   if (m) {
     for (const [id, pose] of Object.entries(poses.value)) {
@@ -1016,8 +903,7 @@ function onPortraitError(ev: Event) {
   }
 }
 
-// request sequence: a stale load() response (older than the latest request)
-// must never overwrite fresher state (e.g. a submit response that landed after)
+// Ignore stale battle responses.
 let loadSeq = 0
 
 async function load() {
@@ -1027,13 +913,13 @@ async function load() {
     const battleId = route.params.battleId as string
     const view = await getBattle(battleId)
     if (seq !== loadSeq) {
-      return // a newer load/submit already applied fresher state
+      return
     }
     battle.value = view
     processLogs(view.logs)
     for (const c of alivePlayers.value) {
       if (!pending.value[c.id]) {
-        pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
+        pending.value[c.id] = newPending()
       }
     }
     connectSse(view.id)
@@ -1072,7 +958,7 @@ function actionNeedsAllyTarget(action: string): boolean {
   return action === 'GUARD'
 }
 
-// max targets a skill can lock: the largest count among its effects (1 default)
+// Return the maximum number of skill targets.
 function skillTargetCap(s: SkillView): number {
   let cap = 1
   for (const e of s.effects ?? []) {
@@ -1088,8 +974,6 @@ function skillNeedsTarget(s: SkillView | null): boolean {
 
 function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): boolean {
   if (s.targetType === 'self') return t.id === c.id
-  // note: exact selectors only - "enemies" does NOT contain the substring
-  // "enemy" (it is e-n-e-m-i-e-s), so includes() would silently fail
   if (s.targetType === 'enemy' || s.targetType === 'enemies') {
     return t.side !== mySide.value && !t.dead
   }
@@ -1099,9 +983,7 @@ function isSkillTargetValid(s: SkillView, c: CombatantView, t: CombatantView): b
   return false
 }
 
-// click an action in the selected-combatant panel. Target-requiring
-// actions (attack/guard) enter aim mode; re-clicking the picked action
-// cancels the choice.
+// Select an action or enter target selection.
 function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
   if (!canControl(c) || animating.value) return
   const cur = pending.value[c.id]
@@ -1117,8 +999,6 @@ function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
   pending.value[c.id] = { ...p }
   if (actionNeedsTarget(action) || actionNeedsAllyTarget(action)) {
     aimMode.value = { combatantId: c.id, kind: 'action', id: action }
-    // close the tab panel so the stage is fully visible, and draw the
-    // arrow right away (the pointer may not move after the click)
     selectedId.value = null
     updateAimLine(ev.clientX, ev.clientY)
   } else {
@@ -1127,9 +1007,7 @@ function pickAction(c: CombatantView, action: string, ev: MouseEvent) {
   }
 }
 
-// click a skill card: self-targeted skills lock immediately; target
-// skills enter aim mode (click a unit to lock). Re-clicking the picked
-// card cancels the choice.
+// Select a skill or enter target selection.
 function pickSkill(c: CombatantView, s: SkillView, ev: MouseEvent) {
   if (!canControl(c) || animating.value) return
   if ((c.cooldowns[s.id] ?? 0) > 0) {
@@ -1147,8 +1025,6 @@ function pickSkill(c: CombatantView, s: SkillView, ev: MouseEvent) {
     skillId: s.id,
     targetIds: s.targetType === 'self' ? [c.id] : []
   }
-  // close the tab panel so the stage is fully visible; target skills draw
-  // the arrow immediately from the click position
   selectedId.value = null
   if (skillNeedsTarget(s)) {
     aimMode.value = { combatantId: c.id, kind: 'skill', id: s.id }
@@ -1163,7 +1039,7 @@ function skillActive(c: CombatantView, s: SkillView): boolean {
   return !!p && p.actionType === 'SKILL' && p.skillId === s.id
 }
 
-// ---- decision status helpers (used by the panel and the decision bar) ----
+// Decision status helpers.
 function hasDecision(c: CombatantView): boolean {
   const p = pending.value[c.id]
   if (!p) return false
@@ -1189,8 +1065,7 @@ function combatantName(id: string): string {
   return battle.value?.combatants.find((x) => x.id === id)?.name ?? id
 }
 
-// compact per-unit decision tag shown on the battlefield (the tab panel
-// closes after picking, so the unit must carry the locked-target feedback)
+// Return a compact decision label.
 function decisionTagText(c: CombatantView): string {
   const p = pending.value[c.id]
   if (!p) return '未下令'
@@ -1225,11 +1100,7 @@ function clearDecision(c: CombatantView) {
   pending.value[c.id] = newPending()
 }
 
-// ---- aim-to-lock: click a target-requiring card, then click a unit ----
-// A dashed line follows the pointer from the character; clicking a valid
-// unit locks it (multi-target skills accept one click per target until the
-// cap is reached). ESC, clicking an invalid unit, or clicking the picked
-// card again cancels aiming without dropping the choice.
+// Target-selection helpers.
 function onAimMove(ev: MouseEvent) {
   if (!aimMode.value) {
     aimLine.value = null
@@ -1238,8 +1109,7 @@ function onAimMove(ev: MouseEvent) {
   updateAimLine(ev.clientX, ev.clientY)
 }
 
-// draws the guide line from the character's unit toward the given pointer
-// position (stage-local coordinates)
+// Draw the target guide line.
 function updateAimLine(clientX: number, clientY: number) {
   if (!aimMode.value) return
   const scene = document.querySelector('.stage-scene') as HTMLElement | null
@@ -1259,8 +1129,7 @@ function onKeydown(ev: KeyboardEvent) {
   if (ev.key === 'Escape') cancelAim()
 }
 
-// empty-scene clicks cancel aiming; clicks on units/panels are handled by
-// their own handlers (and stop propagation), so aim mode survives picking
+// Empty-stage clicks cancel targeting.
 function onStageClick(ev: MouseEvent) {
   if (ev.target === ev.currentTarget) cancelAim()
 }
@@ -1304,7 +1173,6 @@ function lockTarget(t: CombatantView) {
       return
     }
     dec.targetIds.push(t.id)
-    // multi-target skills keep aiming until the cap is reached
     if (dec.targetIds.length >= cap) cancelAim()
   } else {
     dec.targetIds = [t.id]
@@ -1319,7 +1187,6 @@ function onUnitClick(c: CombatantView) {
       lockTarget(c)
       return
     }
-    // clicking an invalid unit cancels aiming but keeps the choice
     cancelAim()
     return
   }
@@ -1333,24 +1200,21 @@ function removeLockedTarget(c: CombatantView, idx: number) {
   pending.value[c.id] = { ...p }
 }
 
-// entering the extra-action round resets every extra actor's selection:
-// a stale skill choice (e.g. the just-used Relentless Charge, now on cooldown) must
-// never be re-submitted and burn a charge doing nothing
+// Reset extra-action selections.
 watch(inExtraRound, (on) => {
   if (!on) return
   for (const c of extraActors.value) {
-    pending.value[c.id] = { actionType: 'ATTACK', skillId: null, targetIds: [] }
+    pending.value[c.id] = newPending()
   }
 })
 
-// ---- decision ownership: PVE players only command their own characters ----
+// PVE players command only their own characters.
 function canControl(c: CombatantView): boolean {
   if (!isPve.value) return c.side === mySide.value
   return c.ownerUsername === myUsername.value
 }
 
-// ---- PVE draft reporting: the server auto-submits the latest draft on
-// timeout, so keep it in sync with the local selection (no AI stand-in).
+// Keep PVE decision drafts synchronized.
 let draftTimer = 0
 
 function scheduleDraft() {
@@ -1376,7 +1240,7 @@ async function pushDraft() {
   try {
     const view = await saveDraft(b.id, decisions)
     if (seq !== loadSeq) {
-      return // a newer submit/load already landed; the draft is stale
+      return
     }
     battle.value = view
     processLogs(view.logs)
@@ -1385,12 +1249,12 @@ async function pushDraft() {
   }
 }
 
-// only the user's own selection changes trigger a draft report
+// Report local decision changes as drafts.
 watch(pending, () => scheduleDraft(), { deep: true })
 
 
 
-/** True when a pending decision is fully configured (target locked when needed). */
+/** Whether a decision is ready to submit. */
 function isConfigured(c: CombatantView, p: PendingDecision): boolean {
   if (p.actionType === 'SKILL') {
     if (!p.skillId) return false
@@ -1403,14 +1267,12 @@ function isConfigured(c: CombatantView, p: PendingDecision): boolean {
   return true
 }
 
-/** Build the current decision list for my actors. partial=true skips units
- *  that are not fully configured (draft / timeout auto-submit semantics). */
+/** Build the current decisions; partial mode skips incomplete ones. */
 function buildDecisionList(partial = false): ActionDecision[] | null {
   const decisions: ActionDecision[] = []
   for (const c of decisionActors.value) {
     const p = pending.value[c.id]
     if (!p) continue
-    // hearthstone-style end-of-turn: unconfigured units skip their action
     if (partial && !isConfigured(c, p)) continue
     if (p.actionType === 'SKILL') {
       if (!p.skillId) {
@@ -1466,15 +1328,10 @@ async function submitDecisions(partial = false) {
     message.warning(inExtraRound.value ? '请为拥有额外行动的角色下达指令' : '请为所有存活角色下达指令')
     return
   }
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
-    // decision round over: raise the curtain and gate the settlement
-    // animations behind it. Arm the gate BEFORE the request so the
-    // response events are already gated when the watch consumes them, and
-    // await nextTick() so the round_start fall-curtain handler (if any)
-    // runs first and the rise wins (the submit is the decision-round
-    // boundary, not round_start)
+    // Gate settlement animations during submission.
     lockCurtainWindow()
     curtainGateUntil = Date.now() + 1900
     if (inExtraRound.value) {
@@ -1490,7 +1347,6 @@ async function submitDecisions(partial = false) {
     })
   } catch (e) {
     message.error(errorMessage(e))
-    // release the gate/lock armed before the request on failure
     curtainGateUntil = 0
     unlockCurtainWindow()
   } finally {
@@ -1498,7 +1354,7 @@ async function submitDecisions(partial = false) {
   }
 }
 
-/** Surrender a PVP battle (explicit exit = loss) and return to the home page. */
+/** Surrender and return home. */
 async function surrenderAndLeave() {
   if (!battle.value || isFinished.value) {
     router.push({ name: 'home' })
@@ -1522,7 +1378,7 @@ async function surrenderAndLeave() {
 }
 
 async function skipExtra() {
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
     battle.value = await skipExtraActions(battle.value!.id)
@@ -1535,7 +1391,7 @@ async function skipExtra() {
 }
 
 async function chooseInitialPerk(perkId: string) {
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
     battle.value = await selectInitialPerk(battle.value!.id, perkId)
@@ -1548,7 +1404,7 @@ async function chooseInitialPerk(perkId: string) {
 }
 
 async function chooseSpecialPerk(perkId: string) {
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
     battle.value = await selectSpecialPerk(battle.value!.id, perkId)
@@ -1561,7 +1417,7 @@ async function chooseSpecialPerk(perkId: string) {
 }
 
 async function skipPerk() {
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
     battle.value = await skipSpecialPerk(battle.value!.id)
@@ -1574,7 +1430,7 @@ async function skipPerk() {
 }
 
 async function playCardFromHand(skillId: string, targetId?: string) {
-  loadSeq++ // invalidate in-flight draft responses
+  loadSeq++
   submitting.value = true
   try {
     battle.value = await playCard(battle.value!.id, skillId, targetId)
@@ -1615,7 +1471,6 @@ function statusText(c: CombatantView): string {
   <div class="page">
     <AppNav />
     <main v-if="battle" class="container">
-      <!-- battle header -->
       <div class="head">
         <n-button quaternary :loading="submitting" @click="surrenderAndLeave">投降退出</n-button>
         <div class="head-info">
@@ -1630,7 +1485,6 @@ function statusText(c: CombatantView): string {
         <n-button size="small" @click="load">刷新</n-button>
       </div>
 
-      <!-- top speed track: current-round speed order -->
       <div class="speed-track" v-if="speedOrder.length">
         <template v-for="(sp, i) in speedOrder" :key="sp.id">
           <span v-if="i > 0" class="speed-arrow">›</span>
@@ -1641,7 +1495,6 @@ function statusText(c: CombatantView): string {
         </template>
       </div>
 
-      <!-- victory banner (PVP: relative to the viewer's side) -->
       <div
         v-if="isFinished"
         class="panel result-banner"
@@ -1651,7 +1504,6 @@ function statusText(c: CombatantView): string {
         <n-button type="primary" @click="router.push({ name: 'records' })">查看战报</n-button>
       </div>
 
-      <!-- initial perk (PVP: each side picks its own, then waits) -->
       <section v-if="inInitialPerk" class="panel perk-panel">
         <h3 v-if="isPvp && battle.mySubmitted">等待对方选择初始词条…</h3>
         <h3 v-else-if="isPve && battle.mySubmitted">等待其他玩家选择：{{ battle.submittedUsers.length }}/{{ battle.players.length }}</h3>
@@ -1678,10 +1530,8 @@ function statusText(c: CombatantView): string {
         </p>
       </section>
 
-      <!-- top action bar: text of the action currently playing -->
       <div class="action-bar" :class="{ active: !!actionBarText }">{{ actionBarText }}</div>
 
-      <!-- battle stage: face-to-face showdown in the middle of the field -->
       <div class="stage">
         <div
           class="stage-scene"
@@ -1729,7 +1579,6 @@ function statusText(c: CombatantView): string {
                   {{ f.text }}
                 </div>
             </div>
-            <!-- speed-roll dice: pops out, holds, morphs into the number -->
             <div
               v-if="diceAnims[c.id]"
               :key="diceAnims[c.id].seq"
@@ -1821,7 +1670,6 @@ function statusText(c: CombatantView): string {
                   {{ f.text }}
                 </div>
             </div>
-            <!-- speed-roll dice: pops out, holds, morphs into the number -->
             <div
               v-if="diceAnims[c.id]"
               :key="diceAnims[c.id].seq"
@@ -1866,7 +1714,6 @@ function statusText(c: CombatantView): string {
           </div>
         </div>
 
-        <!-- aim line: dashed guide from the character to the pointer -->
         <svg v-if="aimLine" class="aim-line">
           <defs>
             <marker id="aim-arrow-head" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
@@ -1882,17 +1729,14 @@ function statusText(c: CombatantView): string {
           />
         </svg>
 
-        <!-- natural curtain overlay inside the stage -->
         <div v-if="curtain" :key="curtain.seq" class="curtain" :class="curtain.kind">
           <img :src="curtain.kind === 'rise' ? '/assets/curtain_rise.webp' : '/assets/curtain_fall.webp'" alt="" />
         </div>
 
-        <!-- last-dash moment: natural reveal inside the stage -->
         <div v-if="dashOverlay" :key="dashOverlay.seq" class="dash-moment">
           <img src="/assets/last_dash.webp" alt="决速时刻" />
         </div>
 
-        <!-- generic skill hand: overlaid at the bottom of the battlefield -->
         <div v-if="inDecision" class="hand-overlay">
           <div
             v-for="(card, i) in battle.playerHand"
@@ -1910,8 +1754,6 @@ function statusText(c: CombatantView): string {
           <span v-if="battle.playerHand.length === 0" class="dim hand-empty">无手牌</span>
         </div>
 
-        <!-- special perk offers: centered on the battlefield (middle card out).
-             PVP: each side picks its own offer, then waits for the opponent. -->
         <div v-if="inSpecialPerk" class="perk-overlay">
           <template v-if="isPvp && battle.mySubmitted">
             <p class="perk-wait">等待对方选择特殊词条…</p>
@@ -1937,10 +1779,6 @@ function statusText(c: CombatantView): string {
           </template>
         </div>
 
-        <!-- selected-combatant tab panel: actions + skills, anchored next
-             to the unit. Default tab is skills; clicking a card issues the
-             decision, target-requiring ones are locked by dragging the card
-             onto a unit (multi-target skills accept one drag per target). -->
         <div
           v-if="selectedCombatant && skillPanelPos"
           class="skill-panel"
@@ -1951,8 +1789,6 @@ function statusText(c: CombatantView): string {
             <span class="skill-panel-name">{{ selectedCombatant.name }}</span>
             <span class="skill-panel-close" @click="selectedId = null">✕</span>
           </div>
-          <!-- order tabs only exist for player combatants; the enemy panel
-               is read-only (skill info only, no order controls) -->
           <div v-if="canControl(selectedCombatant)" class="panel-tabs">
             <button
               class="panel-tab"
@@ -1970,7 +1806,6 @@ function statusText(c: CombatantView): string {
             </button>
           </div>
 
-          <!-- actions tab: base actions; attack/guard drag onto a unit -->
           <div v-if="panelTab === 'actions'" class="action-list">
             <button
               v-for="a in selectedCombatant.baseActions"
@@ -1984,7 +1819,6 @@ function statusText(c: CombatantView): string {
             </button>
           </div>
 
-          <!-- skills tab (default): click to use, drag onto units to lock -->
           <div v-else class="skill-cards" :class="{ readonly: !canControl(selectedCombatant) }">
             <div
               v-for="sk in selectedCombatant.skills"
@@ -2028,7 +1862,6 @@ function statusText(c: CombatantView): string {
             </div>
           </div>
 
-          <!-- current decision summary (player only) -->
           <div
             v-if="canControl(selectedCombatant)"
             class="decision-summary"
@@ -2047,10 +1880,6 @@ function statusText(c: CombatantView): string {
         </div>
       </div>
 
-      <!-- decision panel: per-character status + submit. Orders are issued
-           from the tab panel (click a unit), so this bar only shows the
-           pending state and the submit button. PVP locks the panel while
-           awaiting the opponent and shows the 30s countdown on the button. -->
       <div
         v-if="inDecision"
         class="panel decision-panel"
@@ -2089,10 +1918,6 @@ function statusText(c: CombatantView): string {
           </n-button>
         </div>
       </div>
-
-
-
-      <!-- battle log -->
       <section class="panel log-panel">
         <h4>战斗日志</h4>
         <div class="log-list">
@@ -2206,13 +2031,10 @@ function statusText(c: CombatantView): string {
   color: var(--text-dim);
 }
 
-/* ---------- battle stage: face-to-face showdown ---------- */
+/* Battle stage */
 
 .stage {
   position: relative;
-  /* background art mostly fits: the stage is shorter than the image and
-     the background aligns to the BOTTOM, so the top of the art is cropped
-     a bit while the bottom (where units and the hand sit) stays intact */
   aspect-ratio: 1776 / 1100;
   border-radius: 10px;
   overflow: hidden;
@@ -2220,7 +2042,7 @@ function statusText(c: CombatantView): string {
   transition: filter 0.4s ease;
 }
 
-/* the scene is the camera subject: background + units zoom together */
+/* Camera scene */
 .stage-scene {
   position: absolute;
   inset: 0;
@@ -2228,7 +2050,6 @@ function statusText(c: CombatantView): string {
   align-items: flex-end;
   justify-content: center;
   gap: 6%;
-  /* tall bottom padding reserves the hand-card zone inside the field */
   padding: 18px 30px 170px;
   background:
     linear-gradient(180deg, rgba(11, 14, 20, 0.2), rgba(11, 14, 20, 0.5)),
@@ -2242,8 +2063,6 @@ function statusText(c: CombatantView): string {
 }
 
 .stage-scene.dimmed .unit:not(.performing):not(.dead) {
-  /* focus is expressed by darkening only - every unit stays at its size so
-     the camera dolly reads as a real zoom on the whole scene */
   opacity: 0.45;
 }
 
@@ -2262,8 +2081,6 @@ function statusText(c: CombatantView): string {
   gap: 6px;
   width: 118px;
   padding: 8px;
-  /* no card box around the character: transparent, the battlefield shows
-     through (per design: units stand directly on the field) */
   background: transparent;
   border: none;
   transition: transform 0.55s ease, opacity 0.35s ease;
@@ -2279,15 +2096,11 @@ function statusText(c: CombatantView): string {
 }
 
 .unit.performing {
-  /* no solo scale here: the whole scene zooms in (camera dolly), so all
-     units grow together - scaling only one unit reads as sprite growth */
   box-shadow: 0 0 28px rgba(76, 194, 255, 0.45);
   z-index: 3;
 }
 
-/* lunge: the exact travel distance is computed per unit from the live
-   layout (unitDxStyle -> --anim-dx), so the fighter always lands in front
-   of its locked target; the fixed values are only a fallback */
+/* Target approach */
 .side-player .unit.approaching {
   transform: translateX(var(--anim-dx, 100px));
 }
@@ -2296,9 +2109,7 @@ function statusText(c: CombatantView): string {
   transform: translateX(var(--anim-dx, -100px));
 }
 
-/* clash: both fighters charge to the dead center of the stage and overlap
-   at the collision point; the distance is computed per unit (--anim-dx),
-   so they never fall short or cross through each other */
+/* Clash approach */
 .side-player .unit.clashing {
   --clash-x: var(--anim-dx, calc((min(1200px, 100vw) - 242px) / 2));
   transform: translateX(var(--clash-x));
@@ -2311,8 +2122,7 @@ function statusText(c: CombatantView): string {
   z-index: 6;
 }
 
-/* clash impact shake: keeps each fighter on its collision spot instead of
-   resetting the transform (unit-shake would snap them back home) */
+/* Clash impact */
 .unit.shaking.clashing {
   animation: unit-shake-clash 0.45s ease;
 }
@@ -2343,7 +2153,6 @@ function statusText(c: CombatantView): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* no backdrop: the character art stands directly on the battlefield */
   background: transparent;
   transition: transform 0.45s ease;
 }
@@ -2354,19 +2163,18 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
-/* enemies face the players */
+/* Enemy-facing portraits */
 .side-enemy .portrait,
 .side-enemy .portrait-placeholder {
   transform: scaleX(-1);
 }
 
-/* the hod art sheet faces left: flip it so she looks at the enemy */
+/* Player-side Hod portrait */
 .side-player .portrait[src*="hod_"] {
   transform: scaleX(-1);
 }
 
-/* the hod sheet faces left: on the enemy side the generic flip turns her
-   away from the players, so keep her original facing instead */
+/* Enemy-side Hod portrait */
 .side-enemy .portrait[src*="hod_"] {
   transform: scaleX(1);
 }
@@ -2441,7 +2249,7 @@ function statusText(c: CombatantView): string {
   animation: action-pop 1.1s ease-out forwards;
 }
 
-/* ---------- speed-roll dice: pops out, holds, morphs into the number ---------- */
+/* Speed-roll dice */
 .dice-pop {
   position: absolute;
   top: -62px;
@@ -2488,7 +2296,7 @@ function statusText(c: CombatantView): string {
   text-shadow: 0 0 12px rgba(255, 93, 108, 0.95);
 }
 
-/* dash performance: number visible from the start, dice face hidden */
+/* Dash speed roll */
 .dice-pop.racing .dice-face {
   display: none;
 }
@@ -2590,7 +2398,7 @@ function statusText(c: CombatantView): string {
   text-align: center;
 }
 
-/* ---------- curtains (natural, inside the stage) ---------- */
+/* Curtains */
 
 .curtain {
   position: absolute;
@@ -2617,7 +2425,7 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
-/* rise: sweep up from the bottom like a curtain opening */
+/* Curtain rise */
 @keyframes curtain-rise {
   0% {
     transform: translateY(100%);
@@ -2637,7 +2445,7 @@ function statusText(c: CombatantView): string {
   }
 }
 
-/* fall: drop down from the top like a curtain closing */
+/* Curtain fall */
 @keyframes curtain-fall {
   0% {
     transform: translateY(-100%);
@@ -2657,7 +2465,7 @@ function statusText(c: CombatantView): string {
   }
 }
 
-/* ---------- last dash overlay (full screen, high priority) ---------- */
+/* Last-dash overlay */
 
 .dash-moment {
   position: absolute;
@@ -2677,7 +2485,7 @@ function statusText(c: CombatantView): string {
   object-fit: contain;
 }
 
-/* burst: expand outward from the center while fading out fast */
+/* Dash burst */
 @keyframes dash-burst {
   0% {
     opacity: 0;
@@ -2727,7 +2535,7 @@ function statusText(c: CombatantView): string {
   }
 }
 
-/* ---------- decision panel ---------- */
+/* Decision panel */
 
 .decision-panel {
   display: flex;
@@ -2747,7 +2555,7 @@ function statusText(c: CombatantView): string {
   font-weight: 600;
 }
 
-/* ---------- PVP: opponent tag, waiting states, countdown ---------- */
+/* PVP status */
 .pvp-tag {
   font-size: 13px;
   padding: 2px 10px;
@@ -2766,7 +2574,7 @@ function statusText(c: CombatantView): string {
   border-color: var(--warn, #f0a020);
 }
 
-/* PVE: per-owner labels on unit cards */
+/* PVE owner labels */
 .owner-tag {
   font-size: 11px;
   padding: 0 6px;
@@ -2816,7 +2624,7 @@ function statusText(c: CombatantView): string {
   justify-content: flex-end;
 }
 
-/* ---------- card faces: artist art + bottom text overlay ---------- */
+/* Card faces */
 .card-face {
   position: relative;
   width: 112px;
@@ -2843,16 +2651,19 @@ function statusText(c: CombatantView): string {
 }
 .face-text {
   position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: 6px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 42%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 7px;
-  border-radius: 6px;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 24px 8px 9px;
   color: #fff;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85) 30%);
+  text-align: center;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.9) 34%);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 .face-text.dark {
@@ -2870,7 +2681,7 @@ function statusText(c: CombatantView): string {
   line-height: 1.35;
   opacity: 0.92;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -2905,7 +2716,7 @@ function statusText(c: CombatantView): string {
   vertical-align: 1px;
 }
 
-/* hand: hearthstone-style overlap */
+/* Hand cards */
 .hand-cards {
   display: flex;
   align-items: flex-end;
@@ -2917,7 +2728,7 @@ function statusText(c: CombatantView): string {
   margin-left: 0;
 }
 
-/* special perk offers: middle card stands out */
+/* Perk offers */
 .perk-offers .card-face {
   width: 128px;
 }
@@ -2926,12 +2737,12 @@ function statusText(c: CombatantView): string {
   z-index: 2;
 }
 
-/* initial perk cards */
+/* Initial perk cards */
 .perk-wide {
   width: 150px;
 }
 
-/* selected-combatant skill panel */
+/* Skill panel */
 .skill-panel {
   position: absolute;
   z-index: 30;
@@ -3022,7 +2833,7 @@ function statusText(c: CombatantView): string {
   background: rgba(255, 200, 87, 0.12);
 }
 
-/* locked targets chips inside the selected skill card */
+/* Locked targets */
 .locked-targets {
   display: flex;
   flex-wrap: wrap;
@@ -3048,13 +2859,13 @@ function statusText(c: CombatantView): string {
   line-height: 1;
 }
 
-/* enemy panel cards are read-only info: no hover lift, no clicks */
+/* Read-only skill cards */
 .skill-cards.readonly .card-face {
   cursor: default;
   pointer-events: none;
 }
 
-/* selected card highlight + cooldown look */
+/* Skill card state */
 .card-face.skill.active {
   outline: 2px solid rgba(255, 200, 87, 0.9);
   outline-offset: 1px;
@@ -3066,7 +2877,7 @@ function statusText(c: CombatantView): string {
   cursor: not-allowed;
 }
 
-/* current decision summary row at the bottom of the panel */
+/* Decision summary */
 .decision-summary {
   display: flex;
   align-items: center;
@@ -3094,7 +2905,7 @@ function statusText(c: CombatantView): string {
   color: var(--danger);
 }
 
-/* unit aim highlight: valid target while locking */
+/* Valid target */
 .unit.aim-target {
   outline: 2px solid rgba(255, 200, 87, 0.9);
   outline-offset: 2px;
@@ -3102,7 +2913,7 @@ function statusText(c: CombatantView): string {
   cursor: crosshair;
 }
 
-/* aim guide line: dashed, follows the pointer */
+/* Target guide */
 .aim-line {
   position: absolute;
   inset: 0;
@@ -3152,7 +2963,7 @@ function statusText(c: CombatantView): string {
   width: 138px;
 }
 
-/* hand overlay: inside the battlefield, bottom center */
+/* Hand overlay */
 .hand-overlay {
   position: absolute;
   left: 50%;
@@ -3170,12 +2981,10 @@ function statusText(c: CombatantView): string {
 .hand-overlay .card-face:first-child {
   margin-left: 0;
 }
-/* hearthstone fan: cards rotate toward the middle, half hidden by default,
-   the whole hand rises when hovered (bottom overflow is cropped by the
-   stage's overflow:hidden, which reads as the cards sliding out of view) */
+/* Fanned hand cards: keep the text band on the visible card area. */
 .hand-overlay .hand-card {
   transform-origin: bottom center;
-  transform: translateY(50%) rotate(var(--hand-rot, 0deg));
+  transform: translateY(18%) rotate(var(--hand-rot, 0deg));
   transition: transform 0.22s ease;
 }
 .hand-overlay:hover .hand-card {
@@ -3191,9 +3000,7 @@ function statusText(c: CombatantView): string {
   border-radius: 6px;
 }
 
-/* special perk offers: centered on the battlefield, middle card stands out.
-   No backdrop panel - the cards float directly on the field with room to
-   breathe between them. */
+/* Special perk overlay */
 .perk-overlay {
   position: absolute;
   left: 50%;
@@ -3212,14 +3019,14 @@ function statusText(c: CombatantView): string {
   z-index: 2;
 }
 
-/* selected unit highlight */
+/* Selected unit */
 .unit.selected {
   outline: 2px solid rgba(255, 200, 87, 0.85);
   outline-offset: 2px;
   border-radius: 10px;
 }
 
-/* ---------- top action bar: text of the running cue ---------- */
+/* Action bar */
 .action-bar {
   min-height: 28px;
   display: flex;
@@ -3240,7 +3047,7 @@ function statusText(c: CombatantView): string {
   opacity: 1;
 }
 
-/* ---------- top speed track: current-round speed order ---------- */
+/* Speed track */
 .speed-track {
   display: flex;
   align-items: center;
@@ -3275,7 +3082,7 @@ function statusText(c: CombatantView): string {
   color: var(--text-dim);
 }
 
-/* ---------- hand / log ---------- */
+/* Hand and log */
 
 .footer-panel {
   display: flex;
@@ -3370,7 +3177,7 @@ function statusText(c: CombatantView): string {
   flex: 1;
 }
 
-/* ---------- mobile: compact battle stage and stacked decision panel ---------- */
+/* Mobile */
 @media (max-width: 768px) {
   .container {
     padding: 12px;

@@ -34,6 +34,7 @@ public class PveRoomService {
 
     private static final long WAITING_TTL_MS = 10 * 60 * 1000L;
     private static final long SETTLED_TTL_MS = 60 * 60 * 1000L;
+    private static final int MAX_CHARACTERS = 4;
 
     private final Map<String, PveRoom> rooms = new ConcurrentHashMap<>();
     private final CardPackLoader cardPackLoader;
@@ -48,9 +49,10 @@ public class PveRoomService {
     }
 
     public PveRoomView create(String username, String packId, String password, List<String> enemyIds) {
+        requirePack(packId);
         validateEnemies(enemyIds);
         PveRoom room = new PveRoom();
-        room.setId(UUID.randomUUID().toString().substring(0, 8));
+        room.setId(UUID.randomUUID().toString());
         room.setHostUsername(username);
         room.setPackId(packId);
         room.setEnemyIds(List.copyOf(enemyIds));
@@ -94,7 +96,7 @@ public class PveRoomService {
         }
         if (room.getPasswordHash() != null
                 && !MessageDigest.isEqual(room.getPasswordHash().getBytes(StandardCharsets.UTF_8),
-                sha256(password).getBytes(StandardCharsets.UTF_8))) {
+                sha256(password == null ? "" : password).getBytes(StandardCharsets.UTF_8))) {
             throw new BusinessException("房间密码错误");
         }
         PveRoom.Seat seat = new PveRoom.Seat();
@@ -202,11 +204,22 @@ public class PveRoomService {
         }
     }
 
+    private CardPack requirePack(String packId) {
+        try {
+            return cardPackLoader.get(packId);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("未知卡包: " + packId);
+        }
+    }
+
     private void validateCharacters(String packId, List<String> characterIds) {
         if (characterIds == null || characterIds.isEmpty()) {
             throw new BusinessException("至少部署一个角色");
         }
-        CardPack pack = cardPackLoader.get(packId);
+        if (characterIds.size() > MAX_CHARACTERS) {
+            throw new BusinessException("需要部署 1-" + MAX_CHARACTERS + " 名角色");
+        }
+        CardPack pack = requirePack(packId);
         for (String characterId : characterIds) {
             boolean known = pack.getCharacters().stream()
                     .map(CharacterTemplate::getId)

@@ -1,8 +1,7 @@
 import http from './http'
 import type { DesignEntry } from '@/types'
 
-// Definitions are edited as raw JSON text; the server validates the
-// structure before persisting to the data dir.
+// The server validates raw JSON definitions before saving them.
 
 export function listPacks(): Promise<DesignEntry[]> {
   return http.get('/design/packs').then((r) => r.data)

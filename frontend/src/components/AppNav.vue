@@ -21,7 +21,7 @@ const initial = computed(() => (auth.displayName || '?').charAt(0).toUpperCase()
 const roleLabel = computed(() => (auth.isOp ? 'OP' : auth.isAdmin ? 'ADMIN' : ''))
 
 const menuOptions = computed<DropdownOption[]>(() => {
-  // account header: single row, equal height with the menu items below
+  // Account menu header.
   const options: DropdownOption[] = [
     {
       key: 'header',
@@ -34,11 +34,11 @@ const menuOptions = computed<DropdownOption[]>(() => {
     },
     { key: 'profile', label: '编辑资料' }
   ]
-  // design management: ADMIN and OP only
+  // ADMIN and OP only.
   if (auth.isAdmin) {
     options.push({ key: 'design', label: '设计管理' })
   }
-  // account & permission management: OP only
+  // OP only.
   if (auth.isOp) {
     options.push({ key: 'admin-users', label: '权限管理' })
   }
@@ -250,7 +250,7 @@ function logout() {
     padding: 0 10px;
     height: 48px;
   }
-  /* only the brand mark stays; tag + subtitle would crush the links */
+  /* Preserve link space on small screens. */
   .brand-sub {
     display: none;
   }
@@ -285,7 +285,7 @@ function logout() {
 </style>
 
 <style>
-/* avatar dropdown: even item spacing and width (not scoped, reaches the popup) */
+/* Global styles for the dropdown popup. */
 .n-dropdown-menu {
   min-width: 200px;
 }

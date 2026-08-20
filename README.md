@@ -5,15 +5,13 @@ rolling and number crunching in text-based tabletop RPGs.
 
 Core capabilities: two-sided turn-based combat adjudication (speed
 resolution, damage calculation, performance triggers), account system, deck
-management, training dummy battles and battle report statistics.
+management, solo training and PVP/PVE battles, and battle report statistics.
 
 - Rules blueprint: `TEST.游戏玩法.pdf` (design doc kept locally; not tracked
   in this repository — see `.gitignore`)
-- Current stage: playable battle loop vs a training dummy - speed
-  adjudication (incl. last-dash ties), damage/clash rules and the
-  stage-style battle presentation (portraits, HP/EP bars, curtain
-  transitions, action cues) are implemented and deployed. PVP is planned
-  for a later stage.
+- Current stage: playable solo training, PVP and PVE battle loops with speed
+  adjudication (including last-dash ties), damage/clash rules and a stage-style
+  presentation (portraits, HP/EP bars, curtain transitions and action cues).
 
 ## Credits
 
@@ -85,7 +83,7 @@ npm run dev
 ## Testing
 
 ```bash
-# Backend: 8 test classes / 52 tests (combat, dice, auth, build, card pack)
+# Backend: 20 test classes / 175 tests (combat, dice, auth, PVP/PVE, build, card pack)
 cd backend
 mvn test
 

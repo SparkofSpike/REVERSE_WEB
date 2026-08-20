@@ -37,14 +37,12 @@ export function skipSpecialPerk(battleId: string): Promise<CombatView> {
   return http.post(`/combat/${battleId}/skip-perk`, {}).then((r) => r.data)
 }
 
-/** Surrender a battle: PVP ends the match with a loss; PVE pulls the
- *  caller's characters out of the fight while teammates continue. */
+/** Surrender the current battle. */
 export function surrender(battleId: string): Promise<CombatView> {
   return http.post(`/combat/${battleId}/surrender`, {}).then((r) => r.data)
 }
 
-/** Report a selected-but-not-submitted decision draft: on timeout the
- *  backend auto-submits the draft (no AI stand-in). */
+/** Save the current decision draft. */
 export function saveDraft(battleId: string, decisions: ActionDecision[]): Promise<CombatView> {
   return http.post(`/combat/${battleId}/draft`, decisions).then((r) => r.data)
 }

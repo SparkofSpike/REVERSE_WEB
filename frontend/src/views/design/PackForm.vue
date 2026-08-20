@@ -4,9 +4,7 @@ import PerksEditor from './PerksEditor.vue'
 import GenericSkillsEditor from './GenericSkillsEditor.vue'
 import type { PackFormState } from './converters'
 
-// Card pack form: identity fields, core reference, perk lists and generic
-// skills. Characters are managed on the "可用角色" tab, so this form only
-// shows their names read-only and keeps the raw array untouched on save.
+// Characters are managed separately and remain read-only here.
 
 const props = defineProps<{
   modelValue: PackFormState

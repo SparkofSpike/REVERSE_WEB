@@ -29,8 +29,9 @@ class PveCombatEngineTest {
         ObjectMapper mapper = new ObjectMapper();
         CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
+        DamageResolver damageResolver = new DamageResolver(dice);
         engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
-                new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
+                damageResolver, new EffectExecutor(dice, damageResolver, loader),
                 new PuppetAi(dice), null);
         LinkedHashMap<String, List<String>> players = new LinkedHashMap<>();
         players.put("host", List.of("warrior", "mage"));
@@ -236,8 +237,7 @@ class PveCombatEngineTest {
     @Test
     void battleFinishesWhenEnemiesAreDefeated() {
         pickAllInitialPerks();
-        // 1d9999 damage one-shot every enemy through decisions (dice are not
-        // mocked, so use many rounds of heavy attacks via a custom loop)
+        // Repeated attacks drive the battle to completion.
         for (int guard = 0; guard < 200 && !state.isOver(); guard++) {
             if (state.getPhase() == CombatPhase.SPECIAL_PERK) {
                 engine.skipSpecialPerkForUser(state.getId(), "host");
@@ -262,7 +262,7 @@ class PveCombatEngineTest {
     @Test
     void playersGetIndependentDrawEnergy() {
         pickAllInitialPerks();
-        // every player gains the same energy per round end (team-wide first strike)
+        // Draw energy is tracked independently for each player.
         state.addDrawEnergy("host", 3);
         assertThat(state.drawEnergyOf("host")).isEqualTo(3);
         assertThat(state.drawEnergyOf("guest")).isZero();

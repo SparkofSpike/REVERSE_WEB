@@ -32,8 +32,9 @@ class PveRoomServiceTest {
         ObjectMapper mapper = new ObjectMapper();
         CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
+        DamageResolver damageResolver = new DamageResolver(dice);
         CombatEngine engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
-                new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
+                damageResolver, new EffectExecutor(dice, damageResolver, loader),
                 new PuppetAi(dice), null);
         rooms = new PveRoomService(loader, loader, engine);
     }
@@ -57,10 +58,20 @@ class PveRoomServiceTest {
     }
 
     @Test
+    void createRejectsUnknownPackImmediately() {
+        assertThatThrownBy(() -> rooms.create("host", "missing-pack", null, List.of("training-dummy")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("未知卡包");
+    }
+
+    @Test
     void lockedRoomRejectsWrongPassword() {
         PveRoomView room = rooms.create("host", "test-1", "s3cret", List.of("training-dummy"));
         assertThat(room.isLocked()).isTrue();
 
+        assertThatThrownBy(() -> rooms.join("guest", room.getId(), null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("密码");
         assertThatThrownBy(() -> rooms.join("guest", room.getId(), "nope"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("密码");
@@ -78,6 +89,10 @@ class PveRoomServiceTest {
         assertThatThrownBy(() -> rooms.ready("host", room.getId(), List.of()))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("至少部署");
+        assertThatThrownBy(() -> rooms.ready("host", room.getId(),
+                List.of("warrior", "warrior", "warrior", "warrior", "warrior")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("1-4");
     }
 
     @Test

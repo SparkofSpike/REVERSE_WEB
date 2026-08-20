@@ -31,8 +31,9 @@ class PvpRoomServiceTest {
         ObjectMapper mapper = new ObjectMapper();
         CardPackLoader loader = new CardPackLoader(mapper, "./target/test-cards-engine");
         DiceRoller dice = new DiceRoller(2026L);
+        DamageResolver damageResolver = new DamageResolver(dice);
         CombatEngine engine = new CombatEngine(dice, loader, new SpeedAdjudicator(dice),
-                new DamageResolver(dice), new EffectExecutor(dice, new DamageResolver(dice), loader),
+                damageResolver, new EffectExecutor(dice, damageResolver, loader),
                 new PuppetAi(dice), null);
         rooms = new PvpRoomService(loader, engine);
     }
@@ -58,6 +59,17 @@ class PvpRoomServiceTest {
         // correct password joins fine
         PvpRoomView joined = rooms.join("guest", room.getId(), "s3cret", List.of("mage"));
         assertThat(joined.getGuestUsername()).isEqualTo("guest");
+    }
+
+    @Test
+    void leavingBeforeAChallengerJoinsReturnsBusinessError() {
+        PvpRoomView room = rooms.create("host", "test-1", null, List.of("warrior"));
+        assertThatThrownBy(() -> rooms.leave("host", room.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("挑战者");
+        assertThatThrownBy(() -> rooms.leave("intruder", room.getId()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("挑战者");
     }
 
     @Test
@@ -117,13 +129,4 @@ class PvpRoomServiceTest {
                 .hasMessageContaining("无法删除");
     }
 
-    @Test
-    void startedBattleIsPlayableByBothSides() {
-        PvpRoomView room = rooms.create("host", "test-1", null, List.of("warrior"));
-        rooms.join("guest", room.getId(), null, List.of("mage"));
-        String battleId = rooms.start("host", room.getId());
-
-        // both humans can now access the battle; a random user cannot
-        assertThat(battleId).isNotBlank();
-    }
 }

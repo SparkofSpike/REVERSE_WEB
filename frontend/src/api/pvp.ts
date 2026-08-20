@@ -25,12 +25,12 @@ export function deleteRoom(roomId: string): Promise<void> {
   return http.delete(`/pvp/rooms/${roomId}`).then(() => undefined)
 }
 
-/** The guest leaves a waiting room; the seat frees up for another challenger. */
+/** Leave a waiting room as its guest. */
 export function leaveRoom(roomId: string): Promise<PvpRoom> {
   return http.post(`/pvp/rooms/${roomId}/leave`, {}).then((r) => r.data)
 }
 
-/** SSE refresh signal URL (signal-only; state is pulled via the combat API). */
+/** Return the battle refresh event URL. */
 export function battleEventsUrl(battleId: string): string {
   return `/api/pvp/events/${battleId}`
 }

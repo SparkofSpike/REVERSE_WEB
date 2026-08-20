@@ -7,8 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const theme = computed(() => (auth.theme === 'dark' ? darkTheme : null))
 
-// Match Naive UI's primary color to the site accent (blue) so primary
-// buttons blend with the rest of the UI instead of the default green.
+// Align Naive UI primary controls with the site accent.
 const themeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: '#4cc2ff',

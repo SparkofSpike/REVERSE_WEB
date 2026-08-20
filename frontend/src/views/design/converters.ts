@@ -1,8 +1,6 @@
 import { jsonToFormValue, type EffectFormState } from './form'
 
-// All form-state types and JSON <-> form converters live here (plain .ts, so
-// the SFC components below can stay free of ES module exports, which
-// <script setup> forbids).
+// Shared form-state types and JSON converters.
 
 // ---------- effects ----------
 

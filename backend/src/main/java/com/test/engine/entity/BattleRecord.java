@@ -59,11 +59,11 @@ public class BattleRecord {
     @Column(name = "character_id", length = 32)
     private List<String> playerCharacterIds = new ArrayList<>();
 
-    /** Total damage dealt by the player team to the dummy. */
+    /** Total damage dealt by the record owner's controlled team. */
     @Column(nullable = false)
     private int totalDamageDealt;
 
-    /** Largest single hit dealt by the player team. */
+    /** Largest single hit dealt by the record owner's controlled team. */
     @Column(nullable = false)
     private int maxSingleHit;
 
