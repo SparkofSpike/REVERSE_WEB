@@ -24,8 +24,6 @@ Core capabilities: two-sided turn-based combat adjudication (speed
 resolution, damage calculation, performance triggers), account system, deck
 management, solo training and PVP/PVE battles, and battle report statistics.
 
-- Rules blueprint: `TEST.游戏玩法.pdf` (design doc kept locally; not tracked
-  in this repository — see `.gitignore`)
 - Current stage: playable solo training, PVP and PVE battle loops with speed
   adjudication (including last-dash ties), damage/clash rules and a stage-style
   presentation (portraits, HP/EP bars, curtain transitions and action cues).
@@ -38,7 +36,7 @@ rule set is **Ranzhong Dui** (岚中对): first to 50 points wins, or drain ever
 other player of pieces. Rule summary, adjudication design, open questions for
 the client and a milestone split live in
 [`docs/king-chess-design.md`](./docs/king-chess-design.md) (design-side only;
-the original manual is held by the client).
+the rules are distilled from the client's design manual).
 
 **Status**: design phase; the homepage entry is a stub with no functionality.
 

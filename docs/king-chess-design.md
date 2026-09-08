@@ -3,8 +3,7 @@
 - **Status**: in design (development not started)
 - **Nature**: the second playable module of the Reverse Project (the homepage
   entry is a stub, coming soon)
-- **Rule source**: client manual 《国王棋游玩手册.pdf》 (kept locally; ignored by
-  `.gitignore` `*.pdf`, not tracked)
+- **Rule source**: the client's design manual (kept locally; not tracked)
 - **Parent doc**: the site is the Reverse Project official website — see the
   root `README.md`
 
