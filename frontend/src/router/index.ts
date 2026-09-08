@@ -8,64 +8,75 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-      meta: { public: true, title: '登录' }
+      meta: { public: true, guestOnly: true, title: '登录' }
     },
     {
       path: '/register',
       name: 'register',
       component: () => import('@/views/RegisterView.vue'),
-      meta: { public: true, title: '注册' }
+      meta: { public: true, guestOnly: true, title: '注册' }
     },
+    // Public portal: the website root. TEST battle system is one module of it;
+    // click-through lands on /test (name 'home'). Keep meta.title empty so the
+    // document title stays the bare site name.
     {
       path: '/',
+      name: 'portal',
+      component: () => import('@/views/PortalView.vue'),
+      meta: { public: true }
+    },
+    // TEST battle system (requires login). Route names stay stable so every
+    // router.push({ name }) across the app keeps working under the /test prefix.
+    {
+      path: '/test',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
       meta: { title: '作战室' }
     },
     {
-      path: '/battle/:battleId?',
+      path: '/test/battle/:battleId?',
       name: 'battle',
       component: () => import('@/views/BattleView.vue'),
       meta: { title: '战斗' }
     },
     {
-      path: '/pvp',
+      path: '/test/pvp',
       name: 'pvp',
       component: () => import('@/views/PvpLobbyView.vue'),
       meta: { title: '房间大厅' }
     },
     {
-      path: '/builds',
+      path: '/test/builds',
       name: 'builds',
       component: () => import('@/views/BuildsView.vue'),
       meta: { title: '构筑管理' }
     },
     {
-      path: '/records',
+      path: '/test/records',
       name: 'records',
       component: () => import('@/views/RecordsView.vue'),
       meta: { title: '战报' }
     },
     {
-      path: '/records/:id',
+      path: '/test/records/:id',
       name: 'record-detail',
       component: () => import('@/views/RecordDetailView.vue'),
       meta: { title: '战报详情' }
     },
     {
-      path: '/profile',
+      path: '/test/profile',
       name: 'profile',
       component: () => import('@/views/ProfileView.vue'),
       meta: { title: '编辑资料' }
     },
     {
-      path: '/design',
+      path: '/test/design',
       name: 'design',
       component: () => import('@/views/DesignView.vue'),
       meta: { title: '设计管理', requiresAdmin: true }
     },
     {
-      path: '/admin/users',
+      path: '/test/admin/users',
       name: 'admin-users',
       component: () => import('@/views/AdminUsersView.vue'),
       meta: { title: '权限管理', requiresOp: true }
@@ -79,11 +90,14 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  // Guest-only pages (login/register) bounce signed-in users to the battle system.
+  if (to.meta.guestOnly && auth.isLoggedIn) {
+    return { name: 'home' }
+  }
+  // Everything under /test/* (and other protected routes) requires a session;
+  // the public portal at '/' stays reachable either way.
   if (!to.meta.public && !auth.isLoggedIn) {
     return { name: 'login' }
-  }
-  if (to.meta.public && auth.isLoggedIn) {
-    return { name: 'home' }
   }
   // Enforce role-based route access.
   if (to.meta.requiresOp && !auth.isOp) {
