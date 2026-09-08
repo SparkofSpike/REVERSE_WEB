@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
-const message = useMessage()
 const auth = useAuthStore()
 
 // TEST battle system entry: signed-in users go straight to the battle system,
@@ -13,9 +11,10 @@ function enterTest() {
   router.push({ name: auth.isLoggedIn ? 'home' : 'login' })
 }
 
-// Placeholder module (King's Chess) — not implemented yet, nothing to route to.
+// King's Chess entry: signed-in users land on the module skeleton page,
+// guests are routed through login first.
 function enterKing() {
-  message.info('国王棋 · 开发中，敬请期待')
+  router.push({ name: auth.isLoggedIn ? 'chess' : 'login' })
 }
 </script>
 
@@ -32,10 +31,10 @@ function enterKing() {
           <span class="entry-desc">赛博桌游战斗裁决终端</span>
           <span class="entry-cta">进入 →</span>
         </button>
-        <button class="entry-card coming" type="button" @click="enterKing">
+        <button class="entry-card" type="button" @click="enterKing">
           <span class="entry-name">国王棋</span>
-          <span class="entry-desc">敬请期待</span>
-          <span class="entry-cta">即将上线</span>
+          <span class="entry-desc">岚中对 · 棋盘骨架预览</span>
+          <span class="entry-cta">进入 →</span>
         </button>
       </div>
     </div>
@@ -155,21 +154,6 @@ function enterKing() {
 }
 
 /* placeholder module: dimmed, no interactive affordance */
-.entry-card.coming {
-  background: rgba(139, 150, 171, 0.04);
-  border-color: var(--border);
-  box-shadow: none;
-}
-
-.entry-card.coming:hover {
-  background: rgba(139, 150, 171, 0.08);
-  box-shadow: none;
-  transform: none;
-}
-
-.entry-card.coming .entry-name {
-  color: var(--text-dim);
-}
 
 @keyframes fade-up {
   from {

@@ -81,6 +81,14 @@ const router = createRouter({
       component: () => import('@/views/AdminUsersView.vue'),
       meta: { title: '权限管理', requiresOp: true }
     },
+    // King's Chess — module under design. Skeleton board only for now; the
+    // route is login-gated like the TEST module.
+    {
+      path: '/chess',
+      name: 'chess',
+      component: () => import('@/views/ChessView.vue'),
+      meta: { title: '国王棋' }
+    },
     {
       path: '/:pathMatch(.*)*',
       redirect: '/'
