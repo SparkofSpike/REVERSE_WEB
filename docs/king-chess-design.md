@@ -1,139 +1,115 @@
-# King's Chess — Design Document
+# 国王棋（King's Chess）设计文档
 
-- **Status**: in design (development not started)
-- **Nature**: the second playable module of the Reverse Project (the homepage
-  entry is a stub, coming soon)
-- **Rule source**: the client's design manual (kept locally; not tracked)
-- **Parent doc**: the site is the Reverse Project official website — see the
-  root `README.md`
+- **状态**：设计中（开发未启动）
+- **性质**：Reverse 企划旗下第二个可玩模块（官网主页已放占位入口「即将上线」）
+- **规则来源**：甲方设计手册（本地保留，未入库；本仓库 `.gitignore` 忽略 `*.pdf`）
+- **上级说明**：本站点是 Reverse 企划官方网站，项目总览见根目录 `README.md`（对外为英文）
 
-> This file is the **implementation-side** design distilled from the client
-> manual. Anything the manual leaves unspecified is flagged **TODO(client)**;
-> develop against a sensible default and note it in code comments.
+> 本文件是把甲方手册消化后的**实现侧设计**，供我们内部开发使用，故以中文书写。
+> 凡手册未明确之处一律标记 **待甲方确认**，先用合理默认值开发并在代码注释注明。
 
 ---
 
-## 1. Overview
+## 1. 游戏概述
 
-King's Chess is a **2–4 player, secret-action, d20 speed-check, later-drop-eats-earlier
-drop** eat-and-score board game.
+国王棋是一款 **2–4 人对战、秘密行动、d20 比速、后落吞先落** 的吃子争分局棋。
 
-- The board is **rotational**: each of the four players occupies a cardinal
-  side, surrounding a central public area.
-- Three parts:
-  - **The Court** (棋局, central): holds all public resources (public pieces,
-    private pieces, props). A different Court = a different rule set/gameplay.
-  - **The Field** (棋场): a 4-cell lane on each side; one piece per cell,
-    arrows indicating direction.
-  - **The Rack** (格栏): the player's personal zone; typically unused in
-    classic play.
-- Pieces are **private** (each player's own set) and **public** (shared pool).
+- 棋盘为**轮转式**：四名玩家各占一方位（上 / 下 / 左 / 右），环绕中央公共区。
+- 三块构成物：
+  - **棋局**（中央）：存放全部公共资源（公棋、私棋、道具）。不同棋局 = 不同玩法（类比麻将地区玩法）。
+  - **棋场**：四面各一条 **4 格长条**棋盘，一格一子，箭头指示方向。
+  - **格栏**：个人区域，经典对局一般不用。
+- 棋子分 **私棋**（玩家自带 4 种）与 **公棋**（公共，4–8 种）。
 
-### Ranzhong Dui (岚中对) — the first and most standard rule set
+### 岚中对（第一个、也是最主流的棋局）
 
-- Provides a **Royal Core** as the scoring goal: earn points via eats, holds,
-  etc.; first to the target score wins.
-- **2–4 players**. At game start, roll a **d20** to decide turn order (Fields
-  are assigned clockwise); one round = every player takes one action.
+- 提供一座「王室核心」作为**得分目标**：通过吃棋、保棋等行为得分，先到指定分数者胜。
+- 每场 **2–4 人**。开局骰一副 **20 面骰**按大小定行动顺序（棋场按顺时针分配），每人各行动完为一轮。
 
-**Round flow**
+**单轮流程**
 
-1. **Refresh & decide (secret)**: at each player's turn, the four Fields
-   refresh public pieces; the player secretly decides how many pieces to drop
-   and where (may use private pieces or previously eaten public pieces).
-2. **Resolve (open)**: once all decisions are in, each player rolls a **d20**;
-   higher rolls drop first.
-3. **Same-cell conflict**: the **later drop eats the earlier drop**.
-4. **Round end**: score, recycle public pieces, remove eaten private pieces
-   (see below); advance to the next round.
+1. **刷新与决策（秘密）**：每人回合开始，四个棋场**随机刷新公棋**；玩家秘密决定本回合落几颗棋、落在哪个格（可放私棋，也可放此前吃到的公棋）。
+2. **同步结算（公开）**：全员决策完毕后，每人再骰一副 **20 面骰**，按大小定落棋顺序，点数最大者先落。
+3. **同格冲突**：遵循「**后落的棋子吃掉先落的棋子**」。
+4. **回合结束**：计分、公棋回收、私棋下场（见下），进入下一轮。
 
-**Win conditions**: reach **50 points**, or leave every other player with no
-pieces on board.
+**胜利条件**：积满 **50 分**，或让场上其他玩家**无棋可用**。
 
-**Recycle / remove**: eaten **public** pieces return to the Court (unless
-marked otherwise); eaten **private** pieces leave the table (King excepted).
+**回收 / 下场**：被吃的**公棋**回收到棋局（除非特别标记）；被吃的**私棋**直接下场（国王除外）。
 
 ---
 
-## 2. Piece Table (Ranzhong Dui)
+## 2. 棋子一览（岚中对）
 
-### Public pieces (24 per game: 8 Provisions / 6 Soldiers / 4 Horses / 4 Chariots / 2 Knights)
+### 公棋（每场共 24：8 粮草 / 6 兵 / 4 马 / 4 车 / 2 骑士）
 
-| Piece | Spawn rarity | Effect | Score |
+| 棋子 | 刷新难度 | 效果 | 得分 |
 | --- | --- | --- | --- |
-| Provisions (粮草) | most common | — | +4 on eat |
-| Soldier (兵) | fairly common | can be placed directly | +2 on eat |
-| Horse (马) | uncommon | after eating, may advance one cell along the arrow during your action | — |
-| Chariot (车) | rare | after eating, may move any distance within its Field (not out of it) | — |
-| Knight (骑士) | rare | after eating, may recall during your action (cannot recall if your speed is below the eater's) | — |
+| 粮草 | 最多 | — | 吃 +4 |
+| 兵 | 较易 | 可直接放置 | 吃 +2 |
+| 马 | 不易 | 吃后可在行动轮沿箭头方向**前进一步** | — |
+| 车 | 难 | 吃后可在本棋场内**无视格数移动**（不出棋场） | — |
+| 骑士 | 难 | 吃后可在行动轮**收回**（速度低于吃棋者则无法收回） | — |
 
-### Private pieces (eaten → leave table, King excepted)
+### 私棋（被吃直接下场，国王除外）
 
-| Piece | Effect |
+| 棋子 | 效果 |
 | --- | --- |
-| King (国王) | returns to hand when eaten; 5 lives; eating any piece scores +3 |
-| Queen (王后) | +8 points when eaten (manual reads "partly rd12", likely a typo) |
-| Martyr (死士) | while placed, your pieces are protected: any piece eaten is eaten by the Martyr instead, and its cell is taken by the later drop |
-| Strategist (谋士) | while placed, you may recall one piece from the table |
+| 国王 | 被吃后**回收至手**；共 5 条命；吃任意棋 +3 分 |
+| 王后 | 被吃后你 +8 分（手册原句「部分规则为 rd12 分」，疑为笔误） |
+| 死士 | 落地后己方所有棋子受保护——任何棋子被吃时由死士替吃，其位置被后落棋子替换 |
+| 谋士 | 落地后你可收回一个场上棋子 |
 
 ---
 
-## 3. Implementation Design
+## 3. 实现侧设计
 
-Follows the project's iron rule: **adjudication lives only in the backend**
-(win checks, eats, scores, random dice are all backend-produced); the frontend
-only displays and forwards.
+遵循项目铁律：**裁决只在后端**（胜负判定、吃子、得分、随机骰全部由后端产生），前端只显示与转发。
 
-### Reuse
+### 复用现有机制
 
-- **Randomness**: go through `DiceRoller` exclusively (never scatter `Random`).
-- **Adjudication**: a new `kingchess` domain package (mirrors the existing
-  `combat/`), pure logic, unit-testable.
-- **API**: REST + DTO contract; any DTO change must be synced on both sides.
-- **Accounts**: reuse the existing JWT / login / Pinia auth store.
+- **随机**：统一走后端 `DiceRoller`（禁止散落 `Random`）。
+- **裁决**：新增 `kingchess` 领域包（对应现有 `combat/`），纯逻辑、可单测。
+- **接口**：REST + DTO 契约；改契约必须前后端同步改。
+- **账户**：复用现有 JWT / 登录 / Pinia auth store。
 
-### Backend domain model (draft)
+### 后端领域模型（草案）
 
 ```text
-KingGame            — one game's state machine (gameId, phase, players, board, score, turn)
-  phase             — WAITING / PLACING(secret) / RESOLVING(open) / ROUND_END / FINISHED
-  players[4]        — per-player private hand, acquired public pieces, score, living pieces
-  board             — the four Fields (4 cells each) + the Court (public pool)
-  pieces            — piece instances (kind, owner, position, state)
-  pendingActions    — each player's secret drop decisions (hidden until resolve)
+KingGame            — 一局状态机（gameId, phase, players, board, score, turn）
+  phase             — WAITING / PLACING(秘密落子) / RESOLVING(公开结算) / ROUND_END / FINISHED
+  players[4]        — 每玩家：私棋手牌、已获公棋、当前得分、存活棋子
+  board             — 四方棋场（每方 4 格）+ 棋局（公棋池）
+  pieces            — 棋子实例（kind, owner, position, state）
+  pendingActions    — 各玩家本回合秘密落子决策（结算前不公开）
 ```
 
-### Resolve algorithm order (critical)
+### 结算算法（关键顺序）
 
-1. Collect all `pendingActions` (not broadcast during the decision phase).
-2. Each player rolls d20 → order the drops by value.
-3. Drop in order; same-cell conflicts resolve as "later drop eats earlier drop".
-4. Movement / special effects: **priority TBD** — the order between eating and
-   Horse advance / Chariot move / Knight recall needs client confirmation.
-5. Score: eats, King lives, recycle / removal.
-6. Win check: >= 50 points OR opponents have no pieces → FINISHED.
-
----
-
-## 4. TODO(client) — rule gaps
-
-1. **Spawn probabilities** per public piece ("random" only in the manual).
-2. **Resolve order** between eating and Horse/Chariot/Knight special effects.
-3. **Arrow direction mapping** inside a 4-cell Field (per-cell? uniform?),
-   which drives the Horse's advance.
-4. **Martyr chain**: does a Martyr's substitute re-trigger a new cell conflict?
-5. **Placement limits** for private pieces (only the King's 5 lives are given).
-6. **Queen score**: confirm 8 vs "rd12"; and the exact victory target (50 is
-   the working assumption).
+```text
+1. 收集全员 pendingActions（决策阶段不广播）。
+2. 每人掷 d20 → 由大到小排序确定落子先后。
+3. 按序落子；同格冲突按「后落吃先落」判定。
+4. 特殊效果结算：马前进 / 车移动 / 骑士收回 与吃子的先后 —— 待甲方确认（见 §4）。
+5. 计分：吃子得分、国王命数、公棋回收 / 私棋下场处理。
+6. 胜负判定：>=50 分 或 他人无棋可用 → FINISHED。
+```
 
 ---
 
-## 5. Milestone suggestion
+## 4. 待甲方确认（规则空白）
 
-- **M1 — Ranzhong Dui, playable locally**: hot-seat (2–4 on one screen) or
-  vs a simple AI; covers the full round loop, d20, eats, scoring and win/lose.
-  Keeps scope small and establishes the core loop first.
-- **M2 — online multiplayer**: real-time room sync (mirrors the existing PVP
-  room + SSE push pattern).
-- **M3 — expansion**: additional Courts, unofficial private/public pieces,
-  Rack mechanics.
+1. **公棋刷新概率**：各棋种具体刷新率（手册只说「随机刷新」）。
+2. **结算顺序**：吃子与「马前进 / 车移动 / 骑士收回」在 d20 落子后的先后关系。
+3. **箭头方向映射**：四格棋场内箭头如何指示方向（每格方向？整场统一？），决定马的前进逻辑。
+4. **死士连锁**：死士替吃后是否再次触发新格位冲突。
+5. **私棋放置次数**：除国王 5 命外，其余私棋是否有放置次数 / 上限。
+6. **王后分值**：8 分 vs「rd12 分」笔误确认；以及胜利目标分（当前按 50 分理解）。
+
+---
+
+## 5. 里程碑建议
+
+- **M1 — 岚中对 · 本地可玩**：单机热座（2–4 人共屏轮流）或对简单 AI；覆盖完整回合流、d20、吃子计分、胜负。先立住核心循环，范围可控。
+- **M2 — 在线多人**：实时房间同步（参照现有 PVP 房间 + SSE 推送模式）。
+- **M3 — 扩展**：多棋局、非官方私棋 / 公棋、格栏玩法。

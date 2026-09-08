@@ -2,41 +2,104 @@
 
 The official website of the **Reverse Project** — a web property that hosts a
 set of playable modules from the Reverse universe. The public root (`/`) is a
-portal presenting the project and its module entries; each module is entered
+portal introducing the project and its module entries; each module is entered
 from there and requires a signed-in session.
 
-Modules:
+Currently published modules:
 
 - **TEST Combat System** (subpath `/test`): a cyberpunk tabletop battle
   adjudication terminal — live and playable.
-- **King's Chess** (entry stubbed as coming soon): under design; rules
-  and implementation notes live in
-  [`docs/king-chess-design.md`](./docs/king-chess-design.md).
+- **King's Chess** (entry stubbed as coming soon): under design; rules and
+  implementation notes live in [`docs/king-chess-design.md`](./docs/king-chess-design.md).
 
 ---
 
 ## TEST Combat System
 
-A cyberpunk tabletop battle assistant (Web edition) that replaces manual dice
-rolling and number crunching in text-based tabletop RPGs.
+A cyberpunk tabletop battle assistant (Web edition) replacing manual dice
+rolling and number crunching in text-based tabletop RPGs. The frontend only
+displays state and forwards commands; all victory checks, damage values and
+random dice are produced by the backend.
 
-Core capabilities: two-sided turn-based combat adjudication (speed
-resolution, damage calculation, performance triggers), account system, deck
-management, solo training and PVP/PVE battles, and battle report statistics.
+### Features
 
-- Current stage: playable solo training, PVP and PVE battle loops with speed
-  adjudication (including last-dash ties), damage/clash rules and a stage-style
-  presentation (portraits, HP/EP bars, curtain transitions and action cues).
+**Battle adjudication** (backend-owned)
+
+- Two-sided turn-based combat resolution: speed checks, damage and clash
+  calculation, and performance (skill) triggers.
+- Last-dash speed ties, curtain-driven round transitions, and a stage-style
+  presentation driven by structured backend event data.
+- A decision panel that is locked while animations play, so a new submission
+  can never interleave with a still-running animation.
+
+**Account & access**
+
+- JWT login and registration, profile editing, password change and avatar
+  upload.
+- Role-gated routes: ADMIN sees the design workspace, OP manages user
+  permissions.
+
+**Combat modes**
+
+- Solo training, plus PVP and PVE rooms with live Server-Sent Event updates.
+- Initial perk selection, extra/special perk decisions, card play, surrender
+  and draft saving.
+
+**Builds & card packs**
+
+- Persisted builds referencing a card pack and a set of character IDs.
+- Pack card pool with characters, enemies, skills, perks and effects.
+
+**Battle reports**
+
+- Per-user report history and a detailed record view per battle.
+
+**Design workspace** (ADMIN)
+
+- Create and edit card packs, characters, enemies, generic skills, perks and
+  effects via structured editors.
+
+**Admin** (OP)
+
+- User list with role and enabled-state management.
+
+### Architecture
+
+```text
++--------------------+      /api      +----------------------------------+
+| Vue 3 SPA          | ------------> | Spring Boot (Java 21)             |
+|  portal `/`        |               |  - controllers (thin HTTP)        |
+|  `/test/*`         |  <--- SSE --- |  - services (business)            |
+|  Pinia + Vue Router|   (PVP/PVE)   |  - combat/ adjudication (pure)    |
+|  Naive UI + Axios  |               |  - repositories (JPA)             |
++--------------------+               |  - H2 file DB (AUTO_SERVER=TRUE)  |
+                                     +----------------------------------+
+```
+
+Adjudication, dice and victory checks never leave the backend; the backend is
+agnostic to frontend rendering details.
+
+### API surface
+
+All endpoints live under `/api` (the SPA fallback forwards non-API client
+routes to `index.html`). Major groups: `auth` (register/login/profile),
+`builds` (CRUD), `combat` (battle loop), `packs` + `pve` (enemies/rooms),
+`pvp` (rooms, SSE events URL), `records`, `design` (packs/characters/enemies),
+`admin` (users), `avatar`.
+
+---
 
 ## King's Chess
 
 A 2–4 player eat-and-score board game driven by **secret placement, d20 speed
-checks and "later drop eats earlier drop"** resolves. The first, most standard
-rule set is **Ranzhong Dui** (岚中对): first to 50 points wins, or drain every
-other player of pieces. Rule summary, adjudication design, open questions for
-the client and a milestone split live in
-[`docs/king-chess-design.md`](./docs/king-chess-design.md) (design-side only;
-the rules are distilled from the client's design manual).
+checks and "later drop eats earlier drop"** resolves. The first and most
+standard rule set is **Ranzhong Dui**: first to 50 points wins, or drain every
+other player of pieces. The public pieces land on four Fields around the
+central Court; each player works the Field facing them.
+
+Rule summary, adjudication design, open questions for the client and a
+milestone split live in [`docs/king-chess-design.md`](./docs/king-chess-design.md)
+(design-side only; the rules are distilled from the client's design manual).
 
 **Status**: design phase; the homepage entry is a stub with no functionality.
 
@@ -62,12 +125,30 @@ Released under the [MIT License](LICENSE). Copyright (c) 2026 [@SparkofSpike](ht
 
 ## Repository Layout
 
-```
-backend/    # Spring Boot backend (battle state machine, adjudication, accounts and decks)
-frontend/   # Vue 3 frontend (display and command forwarding only, no battle logic)
-assets/     # client-supplied art: stage background, portraits, curtain/last-dash transitions
-docs/       # module design docs (e.g. king-chess-design.md)
-ship.py     # local one-click deploy script (build, upload, verify, restart)
+```text
+Reverse_Web/
+├── backend/     # Spring Boot backend (state machines, adjudication, accounts, decks)
+│   └── src/main/java/com/test/engine/
+│       ├── controller/   # thin HTTP layer + SPA fallback
+│       ├── service/      # business logic (combat, auth, build, pvp/pve, design, admin)
+│       ├── combat/       # battle state machine & adjudication (pure, unit-testable)
+│       ├── dto/          # request/response DTOs (incl. dto/combat views)
+│       ├── entity/       # JPA entities
+│       ├── repository/   # Spring Data repositories
+│       ├── security/     # JWT
+│       ├── exception/    # unified error handling
+│       └── utils/        # DiceRoller (single source of randomness)
+├── frontend/    # Vue 3 SPA (display + command forwarding only)
+│   └── src/
+│       ├── api/          # typed API clients per domain
+│       ├── components/   # AppNav
+│       ├── router/       # vue-router config (/ portal, /test/* module)
+│       ├── stores/       # Pinia (auth)
+│       ├── types/        # shared TS types
+│       └── views/        # pages: portal, auth, battle, pvp, builds, records, design, admin
+├── assets/      # client-supplied art (stage background, portraits, transitions)
+├── docs/        # module design docs (e.g. king-chess-design.md)
+└── ship.py      # local one-click deploy (build, upload, verify, restart)
 ```
 
 ## Site Structure (frontend)
@@ -97,8 +178,8 @@ The battle screen is a stage presentation, not a card grid:
   (`/assets/{templateId}.webp`, falling back to an initial-letter
   placeholder), name, a blood-red HP bar and a green EP bar below.
 - Round transitions play natural curtain sweeps (rise on round start, fall
-  on round end); the last-dash (生死时速) moment bursts outward from the
-  center. All art is preloaded and served with a 7-day Cache-Control.
+  on round end); the last-dash moment bursts outward from the center. All art
+  is preloaded and served with a 7-day Cache-Control.
 - Performance cues are driven by structured event data from the backend:
   action labels (Attack!/Defend!/Skill!/Heal!/...), a camera zoom anchored
   on the acting unit, step-toward movement, target shake and floating
