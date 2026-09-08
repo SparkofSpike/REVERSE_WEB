@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Reserve_Web (TEST) - local one-click deploy script
+Reverse_Web (TEST) - local one-click deploy script (Alibaba Cloud Linux)
 
 Usage:
-    python ship.py                # Full deploy (build frontend+backend -> upload -> verify -> restart)
+    python ship.py                # Full deploy (build frontend+backend -> upload -> restart -> verify)
     python ship.py --upload-only  # Upload already-built jar only (skip builds)
     python ship.py --help         # Show help
 
 Requirements:
     - Python 3.8+
-    - Node.js 20+  (frontend build)
-    - JDK 21       (backend build)
-    - Maven        (backend build)
-    - OpenSSH      (scp/ssh, key C:\\Users\\asus\\.ssh\\test_deploy)
+    - Node.js 20+ (frontend build)
+    - JDK 21 + Maven (backend build)
+    - OpenSSH (scp/ssh, key C:\\Users\\asus\\.ssh\\alibaba_deploy)
 
-Notes:
-    Local machine to Tencent Cloud is domestic direct link, a single 50MB jar
-    scp is reliable (chunking is only needed cross-border). After upload the
-    script verifies SHA256 + jar integrity before starting the service.
+Target server (Linux, Alibaba Cloud Linux 3, 8.133.234.22):
+    - App dir /opt/test-engine (owned by admin so scp can write directly)
+    - systemd unit test-engine.service, restart via sudo systemctl
+    - JDK 21 at /opt/java/current (symlink)
+    - Heap capped at -Xmx1024m in the unit file (1.8GiB RAM instance)
 """
 
 import argparse
@@ -31,15 +31,14 @@ import urllib.request
 from pathlib import Path
 
 # ======================== Config ========================
-SERVER_HOST = "111.229.241.95"
+SERVER_HOST = "8.133.234.22"
 SERVER_PORT = 22
-SERVER_USER = "Administrator"
-SSH_KEY = str(Path.home() / ".ssh" / "test_deploy")
-SERVER_PATH = "C:/Reverse_Web"
+SERVER_USER = "admin"
+SSH_KEY = str(Path.home() / ".ssh" / "alibaba_deploy")
+SERVER_PATH = "/opt/test-engine"
 JAR_NAME = "test-engine-0.1.0-SNAPSHOT.jar"
-TASK_NAME = "TestEngine"
-JAR_EXE = r"C:\tools\jdk-21.0.12+8\bin\jar.exe"
-SITE_URL = "http://111.229.241.95/"
+SERVICE_NAME = "test-engine"  # systemd unit name
+SITE_URL = "http://8.133.234.22/"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -78,9 +77,10 @@ def run(cmd: list, cwd: Path | None = None, capture: bool = False) -> subprocess
 
 
 def ssh(cmd: str) -> subprocess.CompletedProcess:
-    """Run command on the server over SSH (server default shell is PowerShell)"""
+    """Run a bash command on the server over SSH"""
     return _subprocess_run([
-        "ssh", "-o", "StrictHostKeyChecking=no",
+        "ssh", "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=NUL",
         "-o", "ConnectTimeout=20",
         "-p", str(SERVER_PORT),
@@ -165,96 +165,84 @@ def step_build_backend() -> bool:
 
 
 # ======================== Deploy steps ========================
-def step_stop_service() -> bool:
-    """Stop service on server (release jar file lock)"""
-    print("\n[4/5] Stopping service on server...")
-    ps = (
-        f"powershell -NoProfile -Command "
-        f"\"Stop-ScheduledTask -TaskName {TASK_NAME} -ErrorAction SilentlyContinue; "
-        f"Stop-Process -Name java -Force -ErrorAction SilentlyContinue; "
-        f"Start-Sleep -Seconds 2; Write-Host STOPPED\""
-    )
-    r = ssh(ps)
-    if r.returncode != 0 and "STOPPED" not in r.stdout:
-        log(f"stop command issue: {r.stderr.strip()}", ok=False)
-        return False
-    log("service stopped")
-    return True
-
-
 def step_upload_and_verify(local_jar: Path) -> bool:
-    """Upload jar and verify SHA256 + jar integrity"""
-    print(f"\n[5/5] Uploading {JAR_NAME} ({local_jar.stat().st_size / 1024 / 1024:.1f} MB)...")
+    """Upload jar as .new, verify SHA256, then atomically replace (no file lock
+    issue on Linux - mv over a running jar is safe)"""
+    print(f"\n[4/5] Uploading {JAR_NAME} ({local_jar.stat().st_size / 1024 / 1024:.1f} MB)...")
 
     local_sha = sha256_of(local_jar)
+    remote_new = f"{SERVER_PATH}/{JAR_NAME}.new"
 
-    r = scp_upload(local_jar, f"{SERVER_PATH}/{JAR_NAME}")
+    r = scp_upload(local_jar, remote_new)
     if r.returncode != 0:
         log(f"scp upload failed: {r.stderr.strip()[-300:]}", ok=False)
         return False
     log("scp upload done")
 
-    # Compare SHA256 on server
-    ps = (
-        f"powershell -NoProfile -Command "
-        f"\"(Get-FileHash '{SERVER_PATH}\\{JAR_NAME}' -Algorithm SHA256).Hash\""
-    )
-    r = ssh(ps)
-    remote_sha = r.stdout.strip()
+    # Compare SHA256 on server (lowercase hex -> uppercase)
+    r = ssh(f"sha256sum {remote_new} | cut -d' ' -f1")
+    remote_sha = r.stdout.strip().upper()
     if remote_sha != local_sha:
         log(f"SHA256 mismatch! local={local_sha} server={remote_sha}", ok=False)
         return False
     log(f"SHA256 verified: {local_sha[:16]}...")
 
-    # Jar integrity check (TestApplication.class present)
-    ps = (
-        f"powershell -NoProfile -Command "
-        f"\"& '{JAR_EXE}' tf '{SERVER_PATH}\\{JAR_NAME}' | Select-String 'TestApplication.class' | Out-Null; "
-        f"if($LASTEXITCODE -ne 0){{ throw 'jar tf check failed' }}; Write-Host JAR_OK\""
-    )
-    r = ssh(ps)
-    if "JAR_OK" not in r.stdout:
-        log(f"jar integrity check failed: {r.stderr.strip()}", ok=False)
+    # Atomic replace + restart service
+    r = ssh(f"mv -f {remote_new} {SERVER_PATH}/{JAR_NAME} && echo MV_OK")
+    if "MV_OK" not in r.stdout:
+        log(f"mv failed: {r.stderr.strip()}", ok=False)
         return False
-    log("jar integrity verified (TestApplication.class)")
+    log("jar replaced atomically")
     return True
 
 
-def step_start_and_verify() -> bool:
-    """Start service and verify HTTP 200"""
-    print("\nStarting service and verifying...")
-    ps = f"powershell -NoProfile -Command \"Start-ScheduledTask -TaskName {TASK_NAME}; Write-Host STARTED\""
-    r = ssh(ps)
-    if "STARTED" not in r.stdout and r.returncode != 0:
-        log(f"start command issue: {r.stderr.strip()}", ok=False)
+def step_restart_and_verify() -> bool:
+    """Restart systemd service and verify HTTP 200 (server-local + public)"""
+    print("\n[5/5] Restarting service and verifying...")
+    r = ssh(f"sudo systemctl restart {SERVICE_NAME} && echo RESTART_OK")
+    if "RESTART_OK" not in r.stdout:
+        log(f"restart command issue: {r.stderr.strip()}", ok=False)
         return False
+    log("service restart requested")
 
-    # Wait for readiness (Spring Boot cold start ~10-20s)
+    # Wait for readiness (server-local check first - independent of security group)
+    ok_local = False
     for i in range(20):
         time.sleep(3)
-        try:
-            with urllib.request.urlopen(SITE_URL, timeout=10) as resp:
-                if resp.status == 200:
-                    log(f"service up: {SITE_URL} (HTTP 200)")
-                    return True
-        except Exception:
-            pass
+        r = ssh(f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost/ ")
+        if r.stdout.strip() == "200":
+            ok_local = True
+            log("service up (server-local HTTP 200)")
+            break
         if i % 4 == 3:
             print(f"    ...waiting for service ({i + 1}/20)")
 
-    log("service did not return 200 within 60s, check server manually", ok=False)
-    return False
+    if not ok_local:
+        log("service did not return 200 locally within 60s, check server manually", ok=False)
+        return False
+
+    # Public reachability (requires Alibaba Cloud security group to allow :80)
+    try:
+        with urllib.request.urlopen(SITE_URL, timeout=10) as resp:
+            if resp.status == 200:
+                log(f"public OK: {SITE_URL} (HTTP 200)")
+                return True
+    except Exception as e:
+        log(f"public check failed ({e}); server-local is OK, check security group :80", ok=False)
+        return True  # local is authoritative for deploy success; public needs security group
+
+    return True
 
 
 # ======================== Main ========================
 def main():
-    parser = argparse.ArgumentParser(description="Reserve_Web (TEST) local one-click deploy")
+    parser = argparse.ArgumentParser(description="Reverse_Web (TEST) local one-click deploy")
     parser.add_argument("--upload-only", action="store_true", help="upload already-built jar only (skip builds)")
     args = parser.parse_args()
 
     print("=" * 52)
-    print("  Reserve_Web (TEST) - local deploy")
-    print(f"  -> {SERVER_USER}@{SERVER_HOST}:{SERVER_PATH}")
+    print("  Reverse_Web (TEST) - local deploy")
+    print(f"  -> {SERVER_USER}@{SERVER_HOST}:{SERVER_PATH}  (systemd: {SERVICE_NAME})")
     print("=" * 52)
 
     if not Path(SSH_KEY).exists():
@@ -267,15 +255,14 @@ def main():
         if not local_jar.exists():
             log(f"jar missing: {local_jar}, run full deploy first", ok=False)
             sys.exit(1)
-        ok = step_stop_service() and step_upload_and_verify(local_jar) and step_start_and_verify()
+        ok = step_upload_and_verify(local_jar) and step_restart_and_verify()
     else:
         ok = (
             step_build_frontend()
             and step_copy_static()
             and step_build_backend()
-            and step_stop_service()
             and step_upload_and_verify(local_jar)
-            and step_start_and_verify()
+            and step_restart_and_verify()
         )
 
     print("\n" + "=" * 52)
