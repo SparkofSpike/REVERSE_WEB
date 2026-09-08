@@ -104,7 +104,7 @@ python ship.py --upload-only # skip builds, upload existing jar only
 
 The script builds the frontend, bundles `dist` into the backend jar, stops the
 service, uploads via scp, verifies SHA256 + jar integrity, then restarts and
-checks `http://111.229.241.95/` returns 200. Requirements: Node 20+, JDK 21,
+checks `http://8.133.234.22/` returns 200. Requirements: Node 20+, JDK 21,
 Maven, OpenSSH (key `~/.ssh/test_deploy`).
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) exists but is
