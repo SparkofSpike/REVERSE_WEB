@@ -1,28 +1,43 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const message = useMessage()
 const auth = useAuthStore()
 
-// Portal entry: signed-in users go straight to the battle system, guests are
-// routed through the login page first.
-function enter() {
+// TEST battle system entry: signed-in users go straight to the battle system,
+// guests are routed through the login page first.
+function enterTest() {
   router.push({ name: auth.isLoggedIn ? 'home' : 'login' })
+}
+
+// Placeholder module (King's Chess) — not implemented yet, nothing to route to.
+function enterKing() {
+  message.info('国王棋 · 开发中，敬请期待')
 }
 </script>
 
 <template>
   <div class="portal">
     <div class="portal-center">
-      <div class="portal-kicker">TABLE-TOP COMBAT TERMINAL</div>
-      <h1 class="portal-title">
-        TEST<span class="portal-title-cn">战斗辅助</span>
-      </h1>
-      <p class="portal-sub">赛博桌游战斗裁决终端</p>
-      <button class="enter-btn" type="button" @click="enter">
-        进入 TEST 战斗系统
-      </button>
+      <div class="portal-kicker">REVERSE PROJECT</div>
+      <h1 class="portal-title">Reverse_Web</h1>
+      <p class="portal-sub">Reverse 企划官方网站</p>
+
+      <div class="portal-actions">
+        <button class="entry-card" type="button" @click="enterTest">
+          <span class="entry-name">TEST 战斗系统</span>
+          <span class="entry-desc">赛博桌游战斗裁决终端</span>
+          <span class="entry-cta">进入 →</span>
+        </button>
+        <button class="entry-card coming" type="button" @click="enterKing">
+          <span class="entry-name">国王棋</span>
+          <span class="entry-desc">敬请期待</span>
+          <span class="entry-cta">即将上线</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -54,7 +69,7 @@ function enter() {
 
 .portal-center {
   text-align: center;
-  max-width: 640px;
+  max-width: 720px;
   animation: fade-up 0.5s ease both;
 }
 
@@ -67,9 +82,9 @@ function enter() {
 }
 
 .portal-title {
-  font-size: 72px;
+  font-size: 76px;
   font-weight: 800;
-  letter-spacing: 10px;
+  letter-spacing: 4px;
   line-height: 1;
   color: var(--accent);
   text-shadow:
@@ -77,48 +92,83 @@ function enter() {
     0 0 60px rgba(76, 194, 255, 0.18);
 }
 
-.portal-title-cn {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 4px;
-  color: var(--text);
-  text-shadow: none;
-  margin-left: 14px;
-}
-
 .portal-sub {
   margin-top: 16px;
   font-size: 15px;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
   color: var(--text-dim);
 }
 
-.enter-btn {
-  margin-top: 44px;
-  padding: 14px 48px;
-  font-size: 16px;
-  letter-spacing: 3px;
-  color: var(--accent);
-  background: rgba(76, 194, 255, 0.06);
+.portal-actions {
+  margin-top: 48px;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.entry-card {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 20px;
+  background: rgba(76, 194, 255, 0.05);
   border: 1px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 10px;
+  color: var(--text);
   cursor: pointer;
   transition: all 0.18s ease;
   box-shadow:
-    0 0 20px rgba(76, 194, 255, 0.18),
-    inset 0 0 14px rgba(76, 194, 255, 0.06);
+    0 0 20px rgba(76, 194, 255, 0.12),
+    inset 0 0 14px rgba(76, 194, 255, 0.04);
 }
 
-.enter-btn:hover {
-  color: #fff;
-  background: var(--accent-dim);
+.entry-card:hover {
+  background: rgba(76, 194, 255, 0.12);
   box-shadow:
-    0 0 34px rgba(76, 194, 255, 0.45),
-    inset 0 0 18px rgba(255, 255, 255, 0.12);
+    0 0 34px rgba(76, 194, 255, 0.35),
+    inset 0 0 18px rgba(76, 194, 255, 0.08);
+  transform: translateY(-2px);
 }
 
-.enter-btn:active {
-  transform: translateY(1px);
+.entry-name {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+
+.entry-desc {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+.entry-cta {
+  margin-top: 6px;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+/* placeholder module: dimmed, no interactive affordance */
+.entry-card.coming {
+  background: rgba(139, 150, 171, 0.04);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.entry-card.coming:hover {
+  background: rgba(139, 150, 171, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+.entry-card.coming .entry-name {
+  color: var(--text-dim);
 }
 
 @keyframes fade-up {
@@ -135,21 +185,24 @@ function enter() {
 /* ---------- mobile ---------- */
 @media (max-width: 768px) {
   .portal-title {
-    font-size: 44px;
-    letter-spacing: 6px;
-  }
-  .portal-title-cn {
-    font-size: 22px;
+    font-size: 46px;
     letter-spacing: 2px;
-    margin-left: 8px;
   }
   .portal-kicker {
     letter-spacing: 4px;
     font-size: 10px;
   }
-  .enter-btn {
-    padding: 13px 30px;
-    font-size: 14px;
+  .portal-sub {
+    letter-spacing: 2px;
+    font-size: 13px;
+  }
+  .portal-actions {
+    flex-direction: column;
+    align-items: center;
+    margin-top: 36px;
+  }
+  .entry-card {
+    width: min(300px, 100%);
   }
 }
 </style>

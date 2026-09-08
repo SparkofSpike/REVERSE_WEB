@@ -111,7 +111,7 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined
-  document.title = title ? `${title} - TEST 战斗辅助` : 'TEST 战斗辅助'
+  document.title = title ? `${title} - TEST 战斗辅助` : 'Reverse_Web'
 })
 
 export default router
