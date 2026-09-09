@@ -21,17 +21,40 @@ public final class RanzhongRules {
     public static final int MIN_PLAYERS = 2;
     public static final int MAX_PLAYERS = 4;
 
-    /** Score needed to win. TODO(client): confirm (50 is the working value). */
+    /** Score needed to win. Working value; client has not overridden it. */
     public static final int SCORE_TO_WIN = 50;
 
-    /** King lives; the King is returned to hand when eaten. TODO(client): confirm counter behavior. */
+    /**
+     * King lives. The King is returned to hand when eaten; when the player has
+     * no usable piece left the King returns to hand and loses one life;
+     * when the hand is completely empty (King out of lives / nothing to drop)
+     * the player is eliminated. Confirmed by the client, 2026-09-09.
+     */
     public static final int KING_LIVES = 5;
 
     /** King eats any piece for +3. */
     public static final int KING_EAT_SCORE = 3;
 
-    /** Queen owner scores when she is eaten. TODO(client): "rd12" typo — 8 vs 1d12. */
+    /**
+     * Queen owner scores when she is eaten — fixed 8 points.
+     * Confirmed by the client, 2026-09-09 (corrects the manual's ``rd12'' typo).
+     */
     public static final int QUEEN_EAT_SCORE = 8;
+
+    /**
+     * Per-round public refresh count range: each round spawns 1–5 public
+     * pieces across the four Fields (count random within the range).
+     * Confirmed by the client, 2026-09-09.
+     */
+    public static final int REFRESH_MIN_COUNT = 1;
+    public static final int REFRESH_MAX_COUNT = 5;
+
+    /**
+     * Special-effects window (Horse / Chariot / Knight / Strategist / Martyr):
+     * every player shares a unified action limit of 16 seconds, after which the
+     * window ends. Confirmed by the client, 2026-09-09.
+     */
+    public static final int SPECIAL_EFFECTS_TIME_LIMIT_SECONDS = 16;
 
     public static final int PROVISION_SCORE = 4;
     public static final int SOLDIER_SCORE = 2;
@@ -50,8 +73,10 @@ public final class RanzhongRules {
                     PieceKind.KNIGHT, 2);
 
     /**
-     * TODO(client): spawn weights for the four Fields' public refresh.
-     * Provisional equal-ish weights; confirm exact rates.
+     * Spawn weights for the four Fields' public refresh. The client delegated
+     * the exact rates to us (2026-09-09) and only fixed the per-round spawn
+     * count (REFRESH_MIN_COUNT..REFRESH_MAX_COUNT); these weights are our
+     * working default and should be tuned during M1 playtest.
      */
     public static final Map<PieceKind, Double> SPAWN_WEIGHTS =
             Map.of(
@@ -76,8 +101,9 @@ public final class RanzhongRules {
             case PROVISION -> new ScoreEvent(true, PROVISION_SCORE);
             case SOLDIER -> new ScoreEvent(true, SOLDIER_SCORE);
             case QUEEN -> new ScoreEvent(false, QUEEN_EAT_SCORE);
-            // TODO(client): HORSE / CHARIOT / KNIGHT / KING / MARTYR / STRATEGIST
-            // currently award no direct score; confirm with the client.
+            // HORSE / CHARIOT / KNIGHT award no direct score (their value is the
+            // special-effect trigger); KING's eat score is handled above;
+            // MARTYR / STRATEGIST are private and have no eat score.
             default -> new ScoreEvent(true, 0);
         };
     }
