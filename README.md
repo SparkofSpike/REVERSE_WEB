@@ -9,8 +9,10 @@ Currently published modules:
 
 - **TEST Combat System** (subpath `/test`): a cyberpunk tabletop battle
   adjudication terminal — live and playable.
-- **King's Chess** (entry stubbed as coming soon): under design; rules and
-  implementation notes live in [`docs/king-chess-design.md`](./docs/king-chess-design.md).
+- **King's Chess** (subpath `/chess`): the Ranzhong Dui rule set, playable as a
+  2–4 player hot-seat game. Design notes live in
+  [`docs/king-chess-design.md`](./docs/king-chess-design.md) and the frozen M1
+  contract in [`docs/king-chess-m1-contract.md`](./docs/king-chess-m1-contract.md).
 
 ---
 
@@ -100,8 +102,15 @@ central Court; each player works the Field facing them.
 Rule summary, adjudication design, open questions for the client and a
 milestone split live in [`docs/king-chess-design.md`](./docs/king-chess-design.md)
 (design-side only; the rules are distilled from the client's design manual).
+The frozen M1 implementation contract — REST surface, DTO field names, and the
+rule defaults chosen wherever the manual stays silent — is
+[`docs/king-chess-m1-contract.md`](./docs/king-chess-m1-contract.md).
 
-**Status**: design phase; the homepage entry is a stub with no functionality.
+**Status**: M1 (Ranzhong Dui, 2–4 player hot-seat) is playable at `/chess`.
+Every adjudicated value — d20 order, captures, scoring, King lives and the win
+check — is produced by the backend; the page only renders the views it is given.
+Online multiplayer (M2), extra rule sets (M3) and the Rack zone are not
+implemented.
 
 ---
 

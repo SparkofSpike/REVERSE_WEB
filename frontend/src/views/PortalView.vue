@@ -11,7 +11,7 @@ function enterTest() {
   router.push({ name: auth.isLoggedIn ? 'home' : 'login' })
 }
 
-// King's Chess entry: signed-in users land on the module skeleton page,
+// King's Chess entry: signed-in users land on the playable hot-seat page,
 // guests are routed through login first.
 function enterKing() {
   router.push({ name: auth.isLoggedIn ? 'chess' : 'login' })
@@ -33,7 +33,7 @@ function enterKing() {
         </button>
         <button class="entry-card" type="button" @click="enterKing">
           <span class="entry-name">国王棋</span>
-          <span class="entry-desc">岚中对 · 棋盘骨架预览</span>
+          <span class="entry-desc">岚中对 · 热座对局</span>
           <span class="entry-cta">进入 →</span>
         </button>
       </div>
