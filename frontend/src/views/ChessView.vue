@@ -1479,6 +1479,7 @@ onUnmounted(stopTimer)
 
 .player-row.out {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .player-dot {
