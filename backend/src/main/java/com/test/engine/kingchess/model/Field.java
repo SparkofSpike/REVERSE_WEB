@@ -6,7 +6,8 @@ import lombok.Getter;
 @Getter
 public class Field {
     private final Side side;
-    private final Piece[] cells = new Piece[4];
+    /** Cell count shares {@link Side#CELL_COUNT}, the same source the service's bounds check uses. */
+    private final Piece[] cells = new Piece[Side.CELL_COUNT];
 
     public Field(Side side) {
         this.side = side;

@@ -8,9 +8,10 @@ import java.util.Map;
 /**
  * Rule constants and scoring mapping for the Ranzhong Dui rule set of King's
  * Chess. All values that the client manual leaves fuzzy or open are gathered
- * here with a {@code TODO(client)} marker so a single change point drives the
- * whole engine; the rules themselves (same-cell order, recycling, win checks)
- * live in {@code KingResolver}.
+ * here with a {@code DEFAULT-n} marker pointing back at
+ * {@code docs/king-chess-m1-contract.md}; the rules themselves (same-cell
+ * order, capture destinations, win checks) live in {@code KingResolver} /
+ * {@code EffectResolver}.
  */
 public final class RanzhongRules {
 
@@ -25,14 +26,18 @@ public final class RanzhongRules {
     public static final int SCORE_TO_WIN = 50;
 
     /**
-     * King lives. The King is returned to hand when eaten; when the player has
-     * no usable piece left the King returns to hand and loses one life;
-     * when the hand is completely empty (King out of lives / nothing to drop)
-     * the player is eliminated. Confirmed by the client, 2026-09-09.
+     * King lives at the start of a game (contract §2.3).
+     * The King is returned to hand when eaten (burning one life); when the
+     * player has no usable piece left the King returns to hand and loses one
+     * life; when the hand is completely empty and no lives remain the player is
+     * eliminated (contract §2.4).
      */
-    public static final int KING_LIVES = 5;
+    public static final int STARTING_KING_LIVES = 5;
 
-    /** King eats any piece for +3. */
+    /** Alias kept for earlier callers. */
+    public static final int KING_LIVES = STARTING_KING_LIVES;
+
+    /** King eats any piece for a flat +3, overriding the victim's own value. */
     public static final int KING_EAT_SCORE = 3;
 
     /**
@@ -44,7 +49,9 @@ public final class RanzhongRules {
     /**
      * Per-round public refresh count range: each round spawns 1–5 public
      * pieces across the four Fields (count random within the range).
-     * Confirmed by the client, 2026-09-09.
+     * Confirmed by the client, 2026-09-09; contract §2.5-1 (its unnumbered
+     * {@code DEFAULT:} clause — NOT {@code DEFAULT-4}, which is where a captured
+     * public piece goes).
      */
     public static final int REFRESH_MIN_COUNT = 1;
     public static final int REFRESH_MAX_COUNT = 5;
@@ -52,12 +59,20 @@ public final class RanzhongRules {
     /**
      * Special-effects window (Horse / Chariot / Knight / Strategist / Martyr):
      * every player shares a unified action limit of 16 seconds, after which the
-     * window ends. Confirmed by the client, 2026-09-09.
+     * window ends. Contract §2.5-5 / §2.6 ({@code DEFAULT-9}: the backend only
+     * collects actions and settles once everyone has submitted).
+     *
+     * <p>规则值，计时由前端展示层实现 — the contract keeps the 16-second countdown in
+     * the presentation layer (contract §5, {@code DEFAULT-9}); the backend only collects
+     * actions and never drives the clock second by second.
      */
     public static final int SPECIAL_EFFECTS_TIME_LIMIT_SECONDS = 16;
 
     public static final int PROVISION_SCORE = 4;
     public static final int SOLDIER_SCORE = 2;
+
+    /** d20 sides used for the drop-order roll (contract §2.5-3). */
+    public static final int D20_SIDES = 20;
 
     /** Starting private hand. */
     public static final List<PieceKind> STARTING_PRIVATE_HAND =
@@ -86,6 +101,18 @@ public final class RanzhongRules {
                     PieceKind.CHARIOT, 0.10,
                     PieceKind.KNIGHT, 0.05);
 
+    /** Where a captured piece goes (contract §2.3, {@code DEFAULT-4}). */
+    public enum CaptureTarget {
+        /** Public Soldier / Horse / Chariot / Knight: the eater keeps the piece in hand. */
+        EATER_HAND,
+        /** Provision: scored by the eater and recycled to the central Court. */
+        COURT,
+        /** Eaten King: back to its owner's hand while lives remain. */
+        OWNER_HAND,
+        /** Any other private piece: permanently off the table. */
+        REMOVED
+    }
+
     /**
      * Score awarded when {@code eaterKind} eats {@code victimKind}.
      *
@@ -95,6 +122,7 @@ public final class RanzhongRules {
      */
     public static ScoreEvent eatScore(PieceKind eaterKind, PieceKind victimKind) {
         if (eaterKind == PieceKind.KING) {
+            // contract §2.3: the King eats anything for a flat +3, even a Provision.
             return new ScoreEvent(true, KING_EAT_SCORE);
         }
         return switch (victimKind) {
@@ -102,9 +130,24 @@ public final class RanzhongRules {
             case SOLDIER -> new ScoreEvent(true, SOLDIER_SCORE);
             case QUEEN -> new ScoreEvent(false, QUEEN_EAT_SCORE);
             // HORSE / CHARIOT / KNIGHT award no direct score (their value is the
-            // special-effect trigger); KING's eat score is handled above;
-            // MARTYR / STRATEGIST are private and have no eat score.
+            // special-effect trigger); eating a KING scores nothing (the owner
+            // simply burns a life); MARTYR / STRATEGIST are private and worth 0.
             default -> new ScoreEvent(true, 0);
+        };
+    }
+
+    /**
+     * Destination of a captured piece (contract §2.3, {@code DEFAULT-4}).
+     * The manual's blanket "eaten public pieces are recycled to the Court" is
+     * overridden for Soldier / Horse / Chariot / Knight, which the manual
+     * explicitly hands to the eater.
+     */
+    public static CaptureTarget captureTarget(PieceKind victimKind) {
+        return switch (victimKind) {
+            case SOLDIER, HORSE, CHARIOT, KNIGHT -> CaptureTarget.EATER_HAND;
+            case PROVISION -> CaptureTarget.COURT;
+            case KING -> CaptureTarget.OWNER_HAND;
+            default -> CaptureTarget.REMOVED;
         };
     }
 
