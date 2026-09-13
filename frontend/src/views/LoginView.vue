@@ -22,7 +22,7 @@ async function onSubmit() {
   loading.value = true
   try {
     const res = await login(username.value.trim(), password.value)
-    auth.setAuth(res.token, res.username)
+    auth.setAuth(res.token, res.username, res.role, res.nickname, res.avatarUrl)
     message.success(`欢迎回来，${res.username}`)
     router.push({ name: 'home' })
   } catch (e) {

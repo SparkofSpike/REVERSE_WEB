@@ -27,7 +27,7 @@ async function onSubmit() {
   loading.value = true
   try {
     const res = await register(username.value.trim(), password.value)
-    auth.setAuth(res.token, res.username)
+    auth.setAuth(res.token, res.username, res.role, res.nickname, res.avatarUrl)
     message.success(`注册成功，欢迎 ${res.username}`)
     router.push({ name: 'home' })
   } catch (e) {
