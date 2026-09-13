@@ -1,8 +1,8 @@
-package com.test.engine.service;
+package com.test.engine.kingchess.service;
 
-import com.test.engine.dto.kingchess.KingGameView;
-import com.test.engine.dto.kingchess.KingPlayerView;
-import com.test.engine.dto.kingchess.PieceView;
+import com.test.engine.kingchess.dto.KingGameView;
+import com.test.engine.kingchess.dto.KingPlayerView;
+import com.test.engine.kingchess.dto.PieceView;
 import com.test.engine.exception.BusinessException;
 import com.test.engine.kingchess.model.Deployment;
 import com.test.engine.kingchess.model.EffectAction;

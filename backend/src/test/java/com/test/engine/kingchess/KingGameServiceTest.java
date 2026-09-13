@@ -1,7 +1,7 @@
 package com.test.engine.kingchess;
 
-import com.test.engine.dto.kingchess.KingGameView;
-import com.test.engine.dto.kingchess.PieceView;
+import com.test.engine.kingchess.dto.KingGameView;
+import com.test.engine.kingchess.dto.PieceView;
 import com.test.engine.exception.BusinessException;
 import com.test.engine.kingchess.model.Board;
 import com.test.engine.kingchess.model.Deployment;
@@ -12,7 +12,7 @@ import com.test.engine.kingchess.model.Piece;
 import com.test.engine.kingchess.model.PieceKind;
 import com.test.engine.kingchess.model.Side;
 import com.test.engine.kingchess.spawn.PublicSpawner;
-import com.test.engine.service.KingGameService;
+import com.test.engine.kingchess.service.KingGameService;
 import com.test.engine.utils.DiceRoller;
 import org.junit.jupiter.api.Test;
 

@@ -1,4 +1,4 @@
-package com.test.engine.dto.kingchess;
+package com.test.engine.kingchess.dto;
 
 /**
  * Request body of {@code POST /api/kingchess/games} (contract §3.1).

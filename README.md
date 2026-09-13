@@ -112,6 +112,11 @@ check — is produced by the backend; the page only renders the views it is give
 Online multiplayer (M2), extra rule sets (M3) and the Rack zone are not
 implemented.
 
+The module is self-contained: its backend lives entirely under
+`com.test.engine.kingchess`, and its frontend slice (`views/ChessView.vue`,
+`components/KingNav.vue`, `api/kingchess.ts`, `types/kingchess.ts`) shares only
+the portal, auth store and `DiceRoller` with the TEST combat system.
+
 ---
 
 ## Credits
@@ -142,6 +147,8 @@ Reverse_Web/
 │       ├── service/      # business logic (combat, auth, build, pvp/pve, design, admin)
 │       ├── combat/       # battle state machine & adjudication (pure, unit-testable)
 │       ├── dto/          # request/response DTOs (incl. dto/combat views)
+│       ├── kingchess/    # King's Chess vertical slice: model / rules / resolve / spawn
+│       │                 # + service / controller / dto (self-contained module)
 │       ├── entity/       # JPA entities
 │       ├── repository/   # Spring Data repositories
 │       ├── security/     # JWT
@@ -150,11 +157,11 @@ Reverse_Web/
 ├── frontend/    # Vue 3 SPA (display + command forwarding only)
 │   └── src/
 │       ├── api/          # typed API clients per domain
-│       ├── components/   # AppNav
-│       ├── router/       # vue-router config (/ portal, /test/* module)
+│       ├── components/   # top bars: AppNav (TEST), KingNav (King's Chess)
+│       ├── router/       # vue-router config (/ portal, /test/* and /chess modules)
 │       ├── stores/       # Pinia (auth)
-│       ├── types/        # shared TS types
-│       └── views/        # pages: portal, auth, battle, pvp, builds, records, design, admin
+│       ├── types/        # shared TS types + types/kingchess.ts (module slice)
+│       └── views/        # pages: portal, auth, battle, pvp, builds, records, design, admin, chess
 ├── assets/      # client-supplied art (stage background, portraits, transitions)
 ├── docs/        # module design docs (e.g. king-chess-design.md)
 └── ship.py      # local one-click deploy (build, upload, verify, restart)
@@ -168,6 +175,7 @@ Reverse_Web/
 - `/test/*` — TEST Combat System (login required): `/test` war-room,
   `/test/battle/:id`, `/test/pvp`, `/test/builds`, `/test/records`,
   `/test/profile`, `/test/design`, `/test/admin/users`
+- `/chess` — King's Chess (login required); its own top bar, no TEST nav
 - Any other unknown path is redirected to `/` via the catch-all route
 
 ## Architecture Principles

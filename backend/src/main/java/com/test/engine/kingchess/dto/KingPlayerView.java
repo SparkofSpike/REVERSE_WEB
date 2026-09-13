@@ -1,4 +1,4 @@
-package com.test.engine.dto.kingchess;
+package com.test.engine.kingchess.dto;
 
 import java.util.List;
 

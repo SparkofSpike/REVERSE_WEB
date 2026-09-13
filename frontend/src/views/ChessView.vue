@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
-import AppNav from '@/components/AppNav.vue'
+import KingNav from '@/components/KingNav.vue'
 import { errorMessage } from '@/api/http'
 import {
   createGame,
@@ -20,7 +20,7 @@ import type {
   KingPieceKind,
   KingPieceView,
   KingSide
-} from '@/types'
+} from '@/types/kingchess'
 
 // 国王棋 · 岚中对 (hot-seat). Every adjudicated value (score, king lives,
 // captures, winner) is rendered straight from the backend KingGameView — the
@@ -602,7 +602,7 @@ onUnmounted(stopTimer)
 
 <template>
   <div class="page">
-    <AppNav />
+    <KingNav />
     <main class="container">
       <header class="header">
         <div>

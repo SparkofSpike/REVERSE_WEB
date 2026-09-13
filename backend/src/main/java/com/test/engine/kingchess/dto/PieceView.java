@@ -1,4 +1,4 @@
-package com.test.engine.dto.kingchess;
+package com.test.engine.kingchess.dto;
 
 /**
  * One piece on the table (contract §4).

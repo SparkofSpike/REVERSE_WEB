@@ -3,7 +3,7 @@ import type {
   KingGameView,
   KingSubmitDeploymentsRequest,
   KingSubmitEffectsRequest
-} from '@/types'
+} from '@/types/kingchess'
 
 /** Create a hot-seat game for 2..4 players (contract §3.1). */
 export function createGame(playerCount: number): Promise<KingGameView> {

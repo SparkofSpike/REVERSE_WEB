@@ -2,7 +2,9 @@
 
 - **状态**：已冻结（本轮开发的唯一契约来源）
 - **上游**：`docs/king-chess-design.md`（设计侧）＋《国王棋游玩手册》（甲方 PDF，本仓库根目录，未入库）
-- **下游**：`backend/.../kingchess/**`、`frontend/src/views/ChessView.vue`
+- **下游**：`backend/.../kingchess/**`（model / rules / resolve / spawn / service / controller / dto）、
+  `frontend/src/views/ChessView.vue`、`frontend/src/components/KingNav.vue`、
+  `frontend/src/api/kingchess.ts`、`frontend/src/types/kingchess.ts`
 - **铁律**：裁决只在后端。前端只发请求、只渲染视图，不得自行判定吃子 / 计分 / 胜负 / 随机。
 
 > 凡手册模糊之处，本文件给出**实现方默认**，逐条以 `DEFAULT:` 标注。开发时在对应代码处写注释指回本节编号。

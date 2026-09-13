@@ -1,16 +1,16 @@
-package com.test.engine.controller;
+package com.test.engine.kingchess.controller;
 
-import com.test.engine.dto.kingchess.CreateGameRequest;
-import com.test.engine.dto.kingchess.DeploymentsRequest;
-import com.test.engine.dto.kingchess.EffectActionsRequest;
-import com.test.engine.dto.kingchess.KingGameView;
+import com.test.engine.kingchess.dto.CreateGameRequest;
+import com.test.engine.kingchess.dto.DeploymentsRequest;
+import com.test.engine.kingchess.dto.EffectActionsRequest;
+import com.test.engine.kingchess.dto.KingGameView;
 import com.test.engine.exception.BusinessException;
 import com.test.engine.kingchess.model.Deployment;
 import com.test.engine.kingchess.model.EffectAction;
 import com.test.engine.kingchess.model.EffectType;
 import com.test.engine.kingchess.model.PieceKind;
 import com.test.engine.kingchess.model.Side;
-import com.test.engine.service.KingGameService;
+import com.test.engine.kingchess.service.KingGameService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
