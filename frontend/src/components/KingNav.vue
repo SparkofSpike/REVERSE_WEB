@@ -77,13 +77,43 @@ function logout() {
 
 <style scoped>
 .king-nav {
+  /* --- King's Chess art-pack palette ---------------------------------------
+     The module paints itself in the client's art style: paper-white cards,
+     thin ink outlines and flat earth tones, instead of the app's dark shell.
+     Re-pointing the shell variables here restyles every shared .panel below
+     without touching a single layout rule. */
+  --kc-paper: #f4f1e7;
+  --kc-card: #ffffff;
+  --kc-soft: #f8f6ef;
+  --kc-ink: #1b1b1b;
+  --kc-ink-dim: #7c7a6e;
+  --kc-gold: #b4b46c;
+  --kc-gold-light: #e4d878;
+  --kc-green: #487848;
+  --kc-clay: #cc906c;
+  --kc-taupe: #90786c;
+  --kc-slate: #6c6c6c;
+  --kc-danger: #a03a2e;
+  --bg: var(--kc-paper);
+  --bg-panel: var(--kc-card);
+  --bg-panel-2: var(--kc-soft);
+  --border: var(--kc-ink);
+  --text: var(--kc-ink);
+  --text-dim: var(--kc-ink-dim);
+  --accent: var(--kc-gold);
+  --accent-dim: #cfcf9f;
+  --danger: var(--kc-danger);
+  --ok: var(--kc-green);
+  --warn: var(--kc-clay);
+  /* see ChessView: `color` is inherited from body, not re-resolved here. */
+  color: var(--kc-ink);
   display: flex;
   align-items: center;
   gap: 24px;
   padding: 0 24px;
   height: 52px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
+  border-bottom: 1px solid var(--kc-ink);
+  background: var(--kc-card);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -178,8 +208,9 @@ function logout() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1e88e5, #0d47a1);
-  color: #fff;
+  background: var(--kc-gold-light);
+  color: var(--kc-ink);
+  border: 1px solid var(--kc-ink);
   font-weight: 700;
   font-size: 13px;
 }

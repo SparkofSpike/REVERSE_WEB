@@ -1081,8 +1081,39 @@ onUnmounted(stopTimer)
 
 <style scoped>
 .page {
+  /* --- King's Chess art-pack palette ---------------------------------------
+     The module paints itself in the client's art style: paper-white cards,
+     thin ink outlines and flat earth tones, instead of the app's dark shell.
+     Re-pointing the shell variables here restyles every shared .panel below
+     without touching a single layout rule. */
+  --kc-paper: #f4f1e7;
+  --kc-card: #ffffff;
+  --kc-soft: #f8f6ef;
+  --kc-ink: #1b1b1b;
+  --kc-ink-dim: #7c7a6e;
+  --kc-gold: #b4b46c;
+  --kc-gold-light: #e4d878;
+  --kc-green: #487848;
+  --kc-clay: #cc906c;
+  --kc-taupe: #90786c;
+  --kc-slate: #6c6c6c;
+  --kc-danger: #a03a2e;
+  --bg: var(--kc-paper);
+  --bg-panel: var(--kc-card);
+  --bg-panel-2: var(--kc-soft);
+  --border: var(--kc-ink);
+  --text: var(--kc-ink);
+  --text-dim: var(--kc-ink-dim);
+  --accent: var(--kc-gold);
+  --accent-dim: #cfcf9f;
+  --danger: var(--kc-danger);
+  --ok: var(--kc-green);
+  --warn: var(--kc-clay);
   min-height: 100%;
-  background: var(--bg);
+  background: var(--kc-paper);
+  /* body resolves `color` once at the root, so redefining --text here is
+     not enough: state the ink colour on the module root as well. */
+  color: var(--kc-ink);
 }
 
 .container {
@@ -1119,7 +1150,7 @@ onUnmounted(stopTimer)
   letter-spacing: 1px;
   color: var(--warn);
   border: 1px solid var(--warn);
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 3px 10px;
 }
 
@@ -1140,9 +1171,9 @@ onUnmounted(stopTimer)
 
 .error-banner {
   border: 1px solid var(--danger);
-  background: rgba(255, 93, 108, 0.1);
+  background: rgba(160, 58, 46, 0.1);
   color: var(--danger);
-  border-radius: 6px;
+  border-radius: 3px;
   padding: 10px 14px;
   font-size: 13px;
 }
@@ -1150,7 +1181,7 @@ onUnmounted(stopTimer)
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -1188,7 +1219,7 @@ onUnmounted(stopTimer)
   padding: 14px 0;
   background: var(--bg-panel-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 3px;
   color: var(--text-dim);
   font-size: 15px;
   letter-spacing: 2px;
@@ -1199,7 +1230,7 @@ onUnmounted(stopTimer)
 .count-btn.picked {
   color: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 18px rgba(76, 194, 255, 0.25);
+  box-shadow: 2px 2px 0 var(--kc-ink);
 }
 
 /* ---------- countdown ---------- */
@@ -1210,8 +1241,8 @@ onUnmounted(stopTimer)
   gap: 14px;
   padding: 12px 16px;
   border: 1px solid var(--warn);
-  border-radius: 8px;
-  background: rgba(255, 200, 87, 0.07);
+  border-radius: 3px;
+  background: #fdf7e4;
 }
 
 .countdown-num {
@@ -1229,9 +1260,9 @@ onUnmounted(stopTimer)
 .countdown-track {
   flex: 1;
   height: 8px;
-  border-radius: 4px;
-  background: #141a26;
-  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 2px;
+  background: #e6e2d3;
+  border: 1px solid var(--kc-ink);
   overflow: hidden;
 }
 
@@ -1273,10 +1304,10 @@ onUnmounted(stopTimer)
   align-items: center;
   padding: 24px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 4px;
   background:
-    linear-gradient(rgba(76, 194, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(76, 194, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(27, 27, 27, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27, 27, 27, 0.055) 1px, transparent 1px),
     var(--bg-panel);
   background-size: 28px 28px, 28px 28px, auto;
 }
@@ -1292,7 +1323,7 @@ onUnmounted(stopTimer)
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--bg-panel-2);
 }
 
@@ -1316,8 +1347,8 @@ onUnmounted(stopTimer)
   font-weight: 600;
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  background: rgba(11, 14, 20, 0.6);
+  border-radius: 2px;
+  background: var(--kc-card);
   cursor: default;
   padding: 2px;
   transition: all 0.15s ease;
@@ -1330,12 +1361,12 @@ onUnmounted(stopTimer)
 
 .cell.target {
   border-color: var(--accent);
-  background: rgba(76, 194, 255, 0.09);
+  background: rgba(180, 180, 108, 0.22);
 }
 
 .cell.pending {
   border: 1px dashed var(--accent);
-  background: rgba(76, 194, 255, 0.14);
+  background: rgba(228, 216, 120, 0.38);
 }
 
 .cell:disabled {
@@ -1368,16 +1399,16 @@ onUnmounted(stopTimer)
 
 /* owner colours */
 .seat-0 {
-  color: #4cc2ff;
+  color: #487848;
 }
 .seat-1 {
-  color: #ffc857;
+  color: #cc906c;
 }
 .seat-2 {
-  color: #5ddb8c;
+  color: #b4b46c;
 }
 .seat-3 {
-  color: #c58cff;
+  color: #90786c;
 }
 
 .cell.seat-0 .glyph,
@@ -1385,20 +1416,19 @@ onUnmounted(stopTimer)
 .cell.seat-2 .glyph,
 .cell.seat-3 .glyph {
   color: inherit;
-  text-shadow: 0 0 12px currentColor;
 }
 
 .cell.seat-0 {
-  border-color: rgba(76, 194, 255, 0.7);
+  border-color: #487848;
 }
 .cell.seat-1 {
-  border-color: rgba(255, 200, 87, 0.7);
+  border-color: #cc906c;
 }
 .cell.seat-2 {
-  border-color: rgba(93, 219, 140, 0.7);
+  border-color: #b4b46c;
 }
 .cell.seat-3 {
-  border-color: rgba(197, 140, 255, 0.7);
+  border-color: #90786c;
 }
 
 .arrow {
@@ -1416,8 +1446,8 @@ onUnmounted(stopTimer)
   justify-content: center;
   gap: 6px;
   border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: rgba(76, 194, 255, 0.08);
+  border-radius: 3px;
+  background: var(--kc-soft);
 }
 
 .court-label {
@@ -1498,7 +1528,7 @@ onUnmounted(stopTimer)
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--bg-panel-2);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -1507,7 +1537,7 @@ onUnmounted(stopTimer)
 
 .player-row.active {
   border-color: var(--accent);
-  box-shadow: 0 0 16px rgba(76, 194, 255, 0.18);
+  box-shadow: inset 0 0 0 2px var(--kc-gold);
 }
 
 .player-row.out {
@@ -1520,7 +1550,7 @@ onUnmounted(stopTimer)
   height: 10px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 10px currentColor;
+  border: 1px solid var(--kc-ink);
   display: inline-block;
 }
 
@@ -1539,19 +1569,19 @@ onUnmounted(stopTimer)
 
 .player-lives {
   letter-spacing: 1px;
-  color: #2b3348;
+  color: #cbc7b8;
 }
 
 .player-lives .lit {
   color: var(--danger);
-  text-shadow: 0 0 8px rgba(255, 93, 108, 0.7);
+  color: var(--kc-danger);
 }
 
 .tag {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 2px 6px;
 }
 
@@ -1586,7 +1616,7 @@ onUnmounted(stopTimer)
   padding: 8px 10px;
   background: var(--bg-panel-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   color: var(--text);
   font-size: 12px;
   cursor: pointer;
@@ -1596,7 +1626,7 @@ onUnmounted(stopTimer)
 .hand-chip.picked {
   border-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 0 14px rgba(76, 194, 255, 0.25);
+  box-shadow: 2px 2px 0 var(--kc-ink);
 }
 
 .hand-chip.spent {
@@ -1637,7 +1667,7 @@ onUnmounted(stopTimer)
   gap: 8px;
   padding: 6px 10px;
   border: 1px dashed var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   font-size: 12px;
 }
 
@@ -1646,7 +1676,7 @@ onUnmounted(stopTimer)
   margin-left: auto;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 2px;
   color: var(--text-dim);
   font-size: 11px;
   padding: 2px 8px;
@@ -1668,7 +1698,7 @@ onUnmounted(stopTimer)
   padding: 8px 14px;
   background: var(--bg-panel-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   color: var(--text);
   font-size: 13px;
   letter-spacing: 1px;
@@ -1689,7 +1719,7 @@ onUnmounted(stopTimer)
 .btn.primary {
   border-color: var(--accent);
   color: var(--accent);
-  box-shadow: 0 0 16px rgba(76, 194, 255, 0.16);
+  box-shadow: 2px 2px 0 var(--kc-ink);
 }
 
 .btn.warn {
@@ -1702,7 +1732,7 @@ onUnmounted(stopTimer)
   justify-content: space-between;
   padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--bg-panel-2);
   font-size: 12px;
 }
