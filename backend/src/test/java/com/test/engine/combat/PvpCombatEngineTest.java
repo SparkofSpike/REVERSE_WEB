@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -36,6 +37,45 @@ class PvpCombatEngineTest {
         state = engine.createPvpBattle("test-1",
                 List.of("warrior", "mage"), List.of("warrior", "priest"),
                 "host", "guest");
+    }
+
+    /**
+     * A pack may legally ship no initial perks (that is the designer's default),
+     * and the backend does not reject such a pack. The timeout handler has to
+     * skip the phase: the bare get(0) that used to sit there threw out of
+     * tickDeadlines, and a scheduled task that throws is cancelled for good -
+     * stalling timeout handling for every other battle on the server.
+     */
+    @Test
+    void deadlineSweeperSurvivesAPackWithoutInitialPerks() {
+        state.setInitialPerkOptions(List.of());
+        state.setDecisionDeadlineAt(System.currentTimeMillis() - 1);
+
+        assertThatCode(engine::tickDeadlines).doesNotThrowAnyException();
+
+        assertThat(state.bothInitialPerksPicked()).isTrue();
+        assertThat(state.getPhase()).isNotEqualTo(CombatPhase.INITIAL_PERK);
+    }
+
+    /**
+     * A decision with no actionType must be rejected <em>before</em> the round
+     * resolves: ActionType.valueOf(null) raises NPE, which used to escape as an
+     * unmapped 500 after the phase had already moved to EXECUTION - stranding
+     * the battle there forever.
+     */
+    @Test
+    void aDecisionWithoutActionTypeIsRejectedAndLeavesTheBattleInDecision() {
+        pickInitialPerks();
+        String actorId = state.alive(CombatSide.PLAYER).get(0).getId();
+
+        assertThatThrownBy(() -> engine.decideSide(state.getId(), CombatSide.PLAYER,
+                List.of(ActionDecision.base(actorId, null, null))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        // the battle is still playable afterwards
+        assertThatCode(() -> engine.decideSide(state.getId(), CombatSide.PLAYER, attackAll(CombatSide.PLAYER)))
+                .doesNotThrowAnyException();
     }
 
     private List<ActionDecision> attackAll(CombatSide side) {

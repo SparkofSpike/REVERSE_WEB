@@ -16,6 +16,8 @@ import com.test.engine.utils.DiceRoller;
 import com.test.engine.utils.DiceResult;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -38,6 +40,8 @@ import java.util.concurrent.TimeUnit;
  */
 @Service
 public class CombatEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(CombatEngine.class);
 
     private static final int DRAW_ENERGY_CAP = 10;
     /** Design doc default performance bonus: restore this much energy. */
@@ -88,7 +92,19 @@ public class CombatEngine {
 
     @PostConstruct
     void startDeadlineSweeper() {
-        deadlineSweeper.scheduleAtFixedRate(this::tickDeadlines, DEADLINE_TICK_MS, DEADLINE_TICK_MS, TimeUnit.MILLISECONDS);
+        // A scheduled task that throws is cancelled for good, so the sweep runs
+        // behind a guard: one broken battle must never stop every other battle's
+        // timeout handling (auto-submit, idle surrender, perk timeouts).
+        deadlineSweeper.scheduleAtFixedRate(this::sweepDeadlinesSafely,
+                DEADLINE_TICK_MS, DEADLINE_TICK_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void sweepDeadlinesSafely() {
+        try {
+            tickDeadlines();
+        } catch (RuntimeException e) {
+            log.error("deadline sweep failed; the sweeper keeps running", e);
+        }
     }
 
     @PreDestroy
@@ -473,7 +489,17 @@ public class CombatEngine {
 
     /** Picks the first initial perk option for a timed-out side. */
     private void autoPickInitialPerk(CombatState state, CombatSide side) {
-        Perk perk = state.getInitialPerkOptions().get(0);
+        List<Perk> options = state.getInitialPerkOptions();
+        if (options.isEmpty()) {
+            // A pack may ship no initial perks at all (the designer's default) and
+            // the backend does not reject such a pack. Skipping is the only sane
+            // timeout outcome - and the bare `.get(0)` that used to stand here
+            // threw out of tickDeadlines, cancelling the shared sweeper.
+            state.getInitialPerkSelected().put(side, true);
+            state.log(CombatEvent.of(0, "perk", sideLabel(state, side) + " 超时跳过初始词条。"));
+            return;
+        }
+        Perk perk = options.get(0);
         state.log(CombatEvent.of(0, "perk", sideLabel(state, side)
                 + " 超时自动选择初始词条: " + perk.getName() + " — " + perk.getDescription()));
         applyPerkEffect(perk, state, side);
@@ -619,6 +645,7 @@ public class CombatEngine {
             if (c == null || c.getSide() != side || c.isDead() || !decided.add(d.getCombatantId())) {
                 throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
             }
+            requireKnownAction(d);
         }
         if (!state.isPvp()) {
             state.setPendingDecisions(new ArrayList<>(decisions));
@@ -672,6 +699,7 @@ public class CombatEngine {
                     || !decided.add(d.getCombatantId())) {
                 throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
             }
+            requireKnownAction(d);
         }
         state.getPendingByUser().put(username, new ArrayList<>(decisions));
         state.getSubmittedByUser().put(username, true);
@@ -761,7 +789,15 @@ public class CombatEngine {
 
     /** PVE timeout: picks the first initial perk option for one player. */
     private void autoPickInitialPerkPve(CombatState state, String username) {
-        Perk perk = state.getInitialPerkOptions().get(0);
+        List<Perk> options = state.getInitialPerkOptions();
+        if (options.isEmpty()) {
+            // Same guard as autoPickInitialPerk: never let a perk-less pack take
+            // the sweeper down with it.
+            state.getInitialPerkSelectedByUser().put(username, true);
+            state.log(CombatEvent.of(0, "perk", username + " 超时跳过初始词条。"));
+            return;
+        }
+        Perk perk = options.get(0);
         state.log(CombatEvent.of(0, "perk", username
                 + " 超时自动选择初始词条: " + perk.getName() + " —" + perk.getDescription()));
         applyPerkEffectPve(perk, state, username);
@@ -1338,11 +1374,36 @@ public class CombatEngine {
         }
     }
 
+    /**
+     * Rejects a decision whose {@code actionType} is missing or is not a known
+     * {@link ActionType}. Validating here - before any phase change - means a
+     * malformed submission is a plain 400 and the battle stays in DECISION
+     * instead of being stranded in EXECUTION by a thrown NPE.
+     */
+    private static void requireKnownAction(ActionDecision decision) {
+        String raw = decision.getActionType();
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalArgumentException("decision is missing actionType");
+        }
+        // "SKILL" is ActionDecision's own marker for the skill path (see
+        // ActionDecision.isSkill) and deliberately is not an ActionType constant.
+        if (decision.isSkill()) {
+            return;
+        }
+        try {
+            ActionType.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unknown action: " + raw);
+        }
+    }
+
     private boolean executeBaseAction(CombatState state, Combatant actor, ActionDecision decision, DiceResult preRolled) {
         ActionType action;
         try {
             action = ActionType.valueOf(decision.getActionType());
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | NullPointerException e) {
+            // ActionType.valueOf(null) raises NPE rather than IllegalArgumentException;
+            // letting it escape produced an unmapped 500 in the middle of a round.
             throw new IllegalArgumentException("unknown action: " + decision.getActionType());
         }
         if (!actor.getBaseActions().contains(action)) {
