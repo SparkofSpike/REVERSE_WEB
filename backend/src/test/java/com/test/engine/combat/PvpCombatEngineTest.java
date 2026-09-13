@@ -78,6 +78,21 @@ class PvpCombatEngineTest {
                 .doesNotThrowAnyException();
     }
 
+    /**
+     * Drafts are auto-submitted by the sweeper when the window closes, so they
+     * have to be validated on the way in - a draft with no usable action type
+     * would otherwise blow up in the middle of resolution.
+     */
+    @Test
+    void aStoredDraftIsValidatedForActionTypeToo() {
+        pickInitialPerks();
+        String actorId = state.alive(CombatSide.PLAYER).get(0).getId();
+
+        assertThatThrownBy(() -> engine.saveDraft(state.getId(), "host",
+                List.of(ActionDecision.base(actorId, null, null))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private List<ActionDecision> attackAll(CombatSide side) {
         CombatSide foe = CombatState.opposite(side);
         String targetId = state.alive(foe).get(0).getId();

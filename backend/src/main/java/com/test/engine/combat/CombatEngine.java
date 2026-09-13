@@ -731,6 +731,10 @@ public class CombatEngine {
                 if (c == null || !username.equals(c.getOwnerUsername()) || c.isDead()) {
                     throw new IllegalArgumentException("invalid draft combatant: " + d.getCombatantId());
                 }
+                // Validate the action here too: a stored draft is auto-submitted
+                // later by the sweeper, where a throw would land mid-resolution
+                // and strand the battle.
+                requireKnownAction(d);
             }
             state.getDraftByUser().put(username, new ArrayList<>(decisions));
         }
@@ -748,7 +752,10 @@ public class CombatEngine {
         if (draft != null) {
             for (ActionDecision d : draft) {
                 Combatant c = state.find(d.getCombatantId());
-                if (c != null && !c.isDead() && username.equals(c.getOwnerUsername())) {
+                // Re-validate on replay: this runs from the deadline sweeper, so
+                // an unusable entry is dropped rather than thrown.
+                if (c != null && !c.isDead() && username.equals(c.getOwnerUsername())
+                        && hasKnownAction(d)) {
                     valid.add(d);
                 }
             }
@@ -842,6 +849,7 @@ public class CombatEngine {
                 throw new IllegalArgumentException(
                         "extra actions are base actions only (超限技能 enables skills)");
             }
+            requireKnownAction(d);
             batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
@@ -956,6 +964,7 @@ public class CombatEngine {
                 throw new IllegalArgumentException(
                         "extra actions are base actions only (超限技能 enables skills)");
             }
+            requireKnownAction(d);
             batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
@@ -1380,20 +1389,27 @@ public class CombatEngine {
      * malformed submission is a plain 400 and the battle stays in DECISION
      * instead of being stranded in EXECUTION by a thrown NPE.
      */
-    private static void requireKnownAction(ActionDecision decision) {
+    private static boolean hasKnownAction(ActionDecision decision) {
         String raw = decision.getActionType();
         if (raw == null || raw.isBlank()) {
-            throw new IllegalArgumentException("decision is missing actionType");
+            return false;
         }
         // "SKILL" is ActionDecision's own marker for the skill path (see
         // ActionDecision.isSkill) and deliberately is not an ActionType constant.
         if (decision.isSkill()) {
-            return;
+            return true;
         }
         try {
             ActionType.valueOf(raw);
+            return true;
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("unknown action: " + raw);
+            return false;
+        }
+    }
+
+    private static void requireKnownAction(ActionDecision decision) {
+        if (!hasKnownAction(decision)) {
+            throw new IllegalArgumentException("unknown action: " + decision.getActionType());
         }
     }
 
