@@ -41,3 +41,6 @@ AGENTS.md
 
 # Design docs (kept local, not tracked)
 *.pdf
+
+# King's Chess client art pack (local only, not for the public repo)
+frontend/public/assets/kingchess/

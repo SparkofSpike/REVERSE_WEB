@@ -117,6 +117,15 @@ The module is self-contained: its backend lives entirely under
 `components/KingNav.vue`, `api/kingchess.ts`, `types/kingchess.ts`) shares only
 the portal, auth store and `DiceRoller` with the TEST combat system.
 
+**Art pack**: the client's piece art lives under
+`frontend/public/assets/kingchess/` — `icon/` holds the 456px framed plates used
+in the central court, `piece/` the 2160px transparent sculptures used on the
+four fields and on the hand chips. That directory is **git-ignored** (delivered
+locally, copied into `dist/` at build time), so a fresh clone renders the
+built-in glyphs; `frontend/src/kingchess/art.ts` resolves each kind at runtime
+and falls back per piece, which is also what covers `CHARIOT` — the one kind
+no art was delivered for.
+
 ---
 
 ## Credits

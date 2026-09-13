@@ -10,6 +10,7 @@ import {
   submitDeployments,
   submitEffects
 } from '@/api/kingchess'
+import { kingArt, preloadKingArt } from '@/kingchess/art'
 import type {
   KingCourtKind,
   KingDeploymentRequest,
@@ -88,6 +89,10 @@ const EFFECT_LABEL: Record<KingEffectType, string> = {
   STRATEGIST_RECALL: '谋士收回'
 }
 
+// Optional client art pack (git-ignored; may be absent in a fresh clone).
+// Every lookup falls back to the built-in glyph when a file is missing.
+preloadKingArt()
+
 /** Effects round countdown shown at the top of the page (contract §5-4). */
 const EFFECT_SECONDS = 16
 
@@ -115,6 +120,8 @@ let timer: number | null = null
 interface CellView {
   side: KingSide
   index: number
+  /** Decoded art URL for the piece on this cell, or null to fall back to `glyph`. */
+  art: string | null
   glyph: string
   label: string
   ownerSeat: number | null
@@ -166,6 +173,7 @@ const courtRows = computed(() =>
     kind,
     label: PIECE_LABEL[kind],
     glyph: PIECE_GLYPH[kind],
+    icon: kingArt(kind, 'icon'),
     count: game.value ? game.value.court[kind] : 0
   }))
 )
@@ -180,11 +188,14 @@ const board = computed<Record<KingSide, CellView[]>>(() => {
       const pendingKind =
         draft.value.find((item) => item.side === side && item.cellIndex === index)?.pieceKind ?? null
       const pending = pendingKind !== null
+      // One resolved kind drives both the art lookup and the glyph fallback.
+      const kind = pendingKind ?? piece?.kind ?? null
       return {
         side,
         index,
-        glyph: pendingKind ? PIECE_GLYPH[pendingKind] : piece ? PIECE_GLYPH[piece.kind] : '',
-        label: pendingKind ? `待落子 ${PIECE_LABEL[pendingKind]}` : piece ? PIECE_LABEL[piece.kind] : '',
+        art: kind ? kingArt(kind, 'piece') : null,
+        glyph: kind ? PIECE_GLYPH[kind] : '',
+        label: kind ? (pending ? `待落子 ${PIECE_LABEL[kind]}` : PIECE_LABEL[kind]) : '',
         ownerSeat: pending ? activeSeat.value : piece?.ownerSeat ?? null,
         pending,
         target: placing && !pending && piece === null && selectedKind.value !== null,
@@ -207,6 +218,7 @@ const handRemaining = computed(() => {
     kind,
     label: PIECE_LABEL[kind],
     glyph: PIECE_GLYPH[kind],
+    art: kingArt(kind, 'piece'),
     count: Math.max(0, counts.get(kind) ?? 0)
   }))
 })
@@ -723,7 +735,8 @@ onUnmounted(stopTimer)
                     :disabled="!cell.clickable"
                     @click="onCellClick(cell)"
                   >
-                    <span v-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
+                    <img v-if="cell.art" class="cell-art" :src="cell.art" :alt="cell.label" />
+                    <span v-else-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
                     <span v-else class="cell-no">{{ cell.index + 1 }}</span>
                     <span v-if="cell.label" class="cell-tag">{{ cell.label }}</span>
                   </button>
@@ -748,7 +761,8 @@ onUnmounted(stopTimer)
                     :disabled="!cell.clickable"
                     @click="onCellClick(cell)"
                   >
-                    <span v-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
+                    <img v-if="cell.art" class="cell-art" :src="cell.art" :alt="cell.label" />
+                    <span v-else-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
                     <span v-else class="cell-no">{{ cell.index + 1 }}</span>
                     <span v-if="cell.label" class="cell-tag">{{ cell.label }}</span>
                   </button>
@@ -759,7 +773,8 @@ onUnmounted(stopTimer)
                   <span class="court-sub dim">剩余公棋</span>
                   <ul class="court-list">
                     <li v-for="row in courtRows" :key="row.kind">
-                      <span class="court-glyph">{{ row.glyph }}</span>
+                      <img v-if="row.icon" class="court-icon" :src="row.icon" :alt="row.label" />
+                      <span v-else class="court-glyph">{{ row.glyph }}</span>
                       <span class="court-name">{{ row.label }}</span>
                       <b>{{ row.count }}</b>
                     </li>
@@ -782,7 +797,8 @@ onUnmounted(stopTimer)
                     :disabled="!cell.clickable"
                     @click="onCellClick(cell)"
                   >
-                    <span v-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
+                    <img v-if="cell.art" class="cell-art" :src="cell.art" :alt="cell.label" />
+                    <span v-else-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
                     <span v-else class="cell-no">{{ cell.index + 1 }}</span>
                     <span v-if="cell.label" class="cell-tag">{{ cell.label }}</span>
                   </button>
@@ -807,7 +823,8 @@ onUnmounted(stopTimer)
                     :disabled="!cell.clickable"
                     @click="onCellClick(cell)"
                   >
-                    <span v-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
+                    <img v-if="cell.art" class="cell-art" :src="cell.art" :alt="cell.label" />
+                    <span v-else-if="cell.glyph" class="glyph">{{ cell.glyph }}</span>
                     <span v-else class="cell-no">{{ cell.index + 1 }}</span>
                     <span v-if="cell.label" class="cell-tag">{{ cell.label }}</span>
                   </button>
@@ -881,7 +898,8 @@ onUnmounted(stopTimer)
                   :disabled="entry.count === 0"
                   @click="pickKind(entry.kind)"
                 >
-                  <span class="chip-glyph">{{ entry.glyph }}</span>
+                  <img v-if="entry.art" class="chip-art" :src="entry.art" :alt="entry.label" />
+                  <span v-else class="chip-glyph">{{ entry.glyph }}</span>
                   <span class="chip-name">{{ entry.label }}</span>
                   <span class="chip-count">×{{ entry.count }}</span>
                 </button>
@@ -1324,6 +1342,13 @@ onUnmounted(stopTimer)
   opacity: 1;
 }
 
+.cell-art {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 .glyph {
   font-size: 24px;
   line-height: 1;
@@ -1427,6 +1452,14 @@ onUnmounted(stopTimer)
 .court-list b {
   margin-left: auto;
   color: var(--accent);
+}
+
+.court-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 3px;
+  flex: none;
 }
 
 .court-glyph {
@@ -1569,6 +1602,13 @@ onUnmounted(stopTimer)
 .hand-chip.spent {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.chip-art {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex: none;
 }
 
 .chip-glyph {
