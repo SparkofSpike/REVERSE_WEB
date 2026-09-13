@@ -75,7 +75,9 @@ public class KingGameService {
 
     /**
      * Live domain state behind a session id, exposed for tests and diagnostics.
-     * The API layer always speaks in {@link KingGameView}s.
+     * The API layer always speaks in {@link KingGameView}s, so this accessor is
+     * deliberately not locked - the returned object is live and callers must not
+     * mutate it from another thread. All mutating entry points are synchronized.
      */
     public KingGame liveState(String gameId) {
         return require(gameId);
