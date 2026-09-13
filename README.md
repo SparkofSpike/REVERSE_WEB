@@ -230,7 +230,7 @@ npm run dev
 ## Testing
 
 ```bash
-# Backend: 20 test classes / 175 tests (combat, dice, auth, PVP/PVE, build, card pack)
+# Backend: 26 test classes / 273 tests (combat, dice, auth, PVP/PVE, build, card pack, King's Chess)
 cd backend
 mvn test
 
@@ -249,10 +249,12 @@ python ship.py               # full deploy: build frontend+backend, upload, veri
 python ship.py --upload-only # skip builds, upload existing jar only
 ```
 
-The script builds the frontend, bundles `dist` into the backend jar, stops the
-service, uploads via scp, verifies SHA256 + jar integrity, then restarts and
-checks `http://8.133.234.22/` returns 200. Requirements: Node 20+, JDK 21,
-Maven, OpenSSH (key `~/.ssh/test_deploy`).
+The script builds the frontend, bundles `dist` into the backend jar, uploads it
+as `{jar}.new` over scp, verifies the server-side SHA256 matches the local one,
+replaces the jar atomically with `mv -f` (no service stop is needed on Linux -
+an open jar is not locked), then restarts the systemd unit and checks it answers
+200 both on `localhost` and on `http://8.133.234.22/`. Requirements: Node 20+,
+JDK 21, Maven, OpenSSH (key `~/.ssh/alibaba_deploy`).
 
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) exists but is
 deprecated: cross-border 50MB scp uploads corrupt the jar and chunked upload

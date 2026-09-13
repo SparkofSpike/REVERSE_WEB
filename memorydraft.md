@@ -28,7 +28,7 @@
 
 ## Verification
 
-- Backend: `mvn test` passed with 175 tests, 0 failures, 0 errors.
+- Backend: `mvn test` passed with 273 tests, 0 failures, 0 errors.
 - PVP targeted verification: 12 tests passed.
 - Frontend: `npm run build` passed, including vue-tsc and Vite production build.
 - `git diff --check` passed.
