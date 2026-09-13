@@ -230,7 +230,7 @@ npm run dev
 ## Testing
 
 ```bash
-# Backend: 26 test classes / 273 tests (combat, dice, auth, PVP/PVE, build, card pack, King's Chess)
+# Backend: 26 test classes / 274 tests (combat, dice, auth, PVP/PVE, build, card pack, King's Chess)
 cd backend
 mvn test
 
