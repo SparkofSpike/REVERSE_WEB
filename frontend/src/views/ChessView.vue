@@ -1109,7 +1109,9 @@ onUnmounted(stopTimer)
   --danger: var(--kc-danger);
   --ok: var(--kc-green);
   --warn: var(--kc-clay);
-  min-height: 100%;
+  /* 100% would resolve against Naive's provider div, whose height is auto, so
+     the module must size itself against the viewport instead. */
+  min-height: 100vh;
   background: var(--kc-paper);
   /* body resolves `color` once at the root, so redefining --text here is
      not enough: state the ink colour on the module root as well. */
