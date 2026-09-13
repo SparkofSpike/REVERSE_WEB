@@ -52,7 +52,7 @@ public class KingGameService {
     }
 
     /** Contract §3.1 — creates a session for 2..4 hot-seat players (DEFAULT-1). */
-    public KingGameView create(int playerCount) {
+    public synchronized KingGameView create(int playerCount) {
         if (playerCount < RanzhongRules.MIN_PLAYERS || playerCount > RanzhongRules.MAX_PLAYERS) {
             throw new BusinessException("玩家数量必须在 " + RanzhongRules.MIN_PLAYERS + "-"
                     + RanzhongRules.MAX_PLAYERS + " 之间");
@@ -69,7 +69,7 @@ public class KingGameService {
     }
 
     /** Contract §3.2 — reads a session. */
-    public KingGameView get(String gameId) {
+    public synchronized KingGameView get(String gameId) {
         return toView(require(gameId));
     }
 
@@ -82,7 +82,7 @@ public class KingGameService {
     }
 
     /** Contract §3.3 — submits (覆盖式) one seat's deployments for the round. */
-    public KingGameView deploy(String gameId, int seat, List<Deployment> deployments) {
+    public synchronized KingGameView deploy(String gameId, int seat, List<Deployment> deployments) {
         KingGame game = require(gameId);
         requirePhase(game, GamePhase.PLACING, "提交部署");
         requireSeat(game, seat);
@@ -121,7 +121,7 @@ public class KingGameService {
     }
 
     /** Contract §3.4 — rolls d20 for everyone and settles the drop phase. */
-    public KingGameView resolve(String gameId) {
+    public synchronized KingGameView resolve(String gameId) {
         KingGame game = require(gameId);
         requirePhase(game, GamePhase.PLACING, "结算本轮");
         List<Integer> activeSeats = game.activeSeats();
@@ -149,7 +149,7 @@ public class KingGameService {
      * correct and resubmit (the submission is 覆盖式). The settlement itself runs
      * against a snapshot of the active seats and of the pending actions.
      */
-    public KingGameView submitEffects(String gameId, int seat, List<EffectAction> actions) {
+    public synchronized KingGameView submitEffects(String gameId, int seat, List<EffectAction> actions) {
         KingGame game = require(gameId);
         requirePhase(game, GamePhase.EFFECTS, "提交特殊效果动作");
         requireSeat(game, seat);
@@ -177,7 +177,7 @@ public class KingGameService {
     }
 
     /** Contract §3.6 — refreshes public pieces, checks "no usable piece", round++ → PLACING. */
-    public KingGameView nextRound(String gameId) {
+    public synchronized KingGameView nextRound(String gameId) {
         KingGame game = require(gameId);
         requirePhase(game, GamePhase.ROUND_END, "进入下一轮");
 
@@ -211,7 +211,7 @@ public class KingGameService {
 
     // ===================== view mapping =====================
 
-    public KingGameView toView(KingGame game) {
+    public synchronized KingGameView toView(KingGame game) {
         Map<String, List<PieceView>> fields = new LinkedHashMap<>();
         for (Side side : Side.values()) {
             List<PieceView> cells = new ArrayList<>();
