@@ -16,7 +16,11 @@ spring:
     show-sql: false
   h2:
     console:
-      enabled: true
+      # Off by default: the console is a full database client sitting behind the
+      # same security chain as the API. Local debugging can re-enable it with
+      # --spring.h2.console.enabled=true together with app.h2-console-enabled=true
+      # (the latter is what SecurityConfig actually checks before permitting it).
+      enabled: false
       path: /h2-console
   servlet:
     multipart:
