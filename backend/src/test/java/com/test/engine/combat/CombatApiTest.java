@@ -2,6 +2,8 @@ package com.test.engine.combat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.test.engine.dto.combat.CombatView;
+import com.test.engine.service.CombatService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -32,6 +34,28 @@ class CombatApiTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private CombatEngine engine;
+
+    @Autowired
+    private CombatService combatService;
+
+    /**
+     * Fog of war: the guest side stores a draft of its OWN decisions, so the
+     * response has to be rendered from the caller's side. It used to hardcode
+     * the PLAYER view, handing the host's hand and draw energy to the opponent.
+     */
+    @Test
+    void draftNeverRendersTheOwnersHandToTheEnemySide() {
+        CombatState battle = engine.createPvpBattle("test-1",
+                List.of("warrior"), List.of("mage"), "host-draft", "guest-draft");
+
+        CombatView guestView = combatService.saveDraft("guest-draft", battle.getId(), List.of());
+
+        assertThat(guestView.getMySide()).isEqualTo("ENEMY");
+        assertThat(guestView.getPlayerHand()).isEqualTo(battle.sideHand(CombatSide.ENEMY));
+    }
 
     private String registerAndToken(String username) throws Exception {
         String response = mockMvc.perform(post("/api/auth/register")

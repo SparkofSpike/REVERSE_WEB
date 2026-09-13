@@ -139,9 +139,12 @@ public class CombatService {
      * a human). PVE only; solo/PVP ignore drafts.
      */
     public CombatView saveDraft(String username, String battleId, List<ActionDecision> decisions) {
-        sideOf(engine.getBattle(battleId), username);
+        CombatState battle = engine.getBattle(battleId);
+        // Render from the caller's own side. Hardcoding PLAYER here handed the
+        // owner's hand and draw energy to the ENEMY side of a PVP battle.
+        CombatSide side = sideOf(battle, username);
         CombatState state = engine.saveDraft(battleId, username, decisions);
-        return toView(state, CombatSide.PLAYER, username);
+        return toView(state, side, username);
     }
 
     /** The side controlled by the requesting user (owner=PLAYER, guest=ENEMY). */
