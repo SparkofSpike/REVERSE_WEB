@@ -81,13 +81,13 @@ const router = createRouter({
       component: () => import('@/views/AdminUsersView.vue'),
       meta: { title: '权限管理', requiresOp: true }
     },
-    // King's Chess — module under design. Skeleton board only for now; the
-    // route is login-gated like the TEST module.
+    // King's Chess — its own module. The route is login-gated like /test/*,
+    // but it renders its own top bar and browser-title suffix.
     {
       path: '/chess',
       name: 'chess',
       component: () => import('@/views/ChessView.vue'),
-      meta: { title: '国王棋' }
+      meta: { title: '国王棋', suffix: '岚中对' }
     },
     {
       path: '/:pathMatch(.*)*',
@@ -119,7 +119,9 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined
-  document.title = title ? `${title} - TEST 战斗辅助` : 'Reverse_Web'
+  // Every module keeps its own browser-title suffix; TEST is only the default.
+  const suffix = (to.meta.suffix as string | undefined) ?? 'TEST 战斗辅助'
+  document.title = title ? `${title} - ${suffix}` : 'Reverse_Web'
 })
 
 export default router
