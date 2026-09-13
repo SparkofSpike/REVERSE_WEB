@@ -32,6 +32,40 @@ class CombatEngineTest {
                 new PuppetAi(dice), null);
     }
 
+    /**
+     * A pack may ship no initial perks at all (that is the designer's default).
+     * With nothing to choose, the battle must start round 1 instead of sitting in
+     * INITIAL_PERK forever - solo battles are not covered by the deadline sweeper,
+     * so nothing would ever move them on.
+     */
+    @Test
+    void aPackWithoutInitialPerksStartsTheBattleDirectly() {
+        CombatState state = engine.createDummyBattle("empty-perks", List.of("warrior"), "tester");
+
+        assertThat(state.getInitialPerkOptions()).isEmpty();
+        assertThat(state.getPhase()).isNotEqualTo(CombatPhase.INITIAL_PERK);
+        assertThat(state.getRound()).isEqualTo(1);
+    }
+
+    /**
+     * A SKILL decision naming a skill the actor does not have used to blow up
+     * inside executeSkill - after the phase had moved to EXECUTION - and strand
+     * the battle there. It now fails validation before anything changes.
+     */
+    @Test
+    void aSkillDecisionWithAnUnknownSkillIdIsRejected() {
+        CombatState state = engine.createDummyBattle("test-1", List.of("warrior"), "tester");
+        engine.selectInitialPerk(state.getId(), state.getInitialPerkOptions().get(0).getId());
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+        String actorId = state.alive(CombatSide.PLAYER).get(0).getId();
+
+        assertThatThrownBy(() -> engine.decide(state.getId(),
+                List.of(ActionDecision.skill(actorId, "no-such-skill", null))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(state.getPhase()).isEqualTo(CombatPhase.DECISION);
+    }
+
     @Test
     void fullDummyBattleRunsToCompletion() {
         CombatState state = engine.createDummyBattle("test-1",

@@ -155,6 +155,12 @@ public class CombatEngine {
         effectExecutor.drawCards(state.alive(CombatSide.PLAYER).get(0), state, INITIAL_HAND_SIZE);
 
         state.setInitialPerkOptions(new ArrayList<>(pack.getInitialPerks()));
+        if (state.getInitialPerkOptions().isEmpty()) {
+            // A pack may ship no initial perks at all. With nothing to choose the
+            // battle would sit in INITIAL_PERK forever - and solo battles are not
+            // covered by the deadline sweeper - so start round 1 right away.
+            startRound(state);
+        }
         state.log(CombatEvent.of(0, "setup", "战斗开始！玩家部署 "
                 + state.alive(CombatSide.PLAYER).size() + " 名角色对阵训练木桩。"));
         // reap expired finished battles whenever a new one is created
@@ -214,6 +220,12 @@ public class CombatEngine {
         }
 
         state.setInitialPerkOptions(new ArrayList<>(pack.getInitialPerks()));
+        if (state.getInitialPerkOptions().isEmpty()) {
+            // A pack may ship no initial perks at all. With nothing to choose the
+            // battle would sit in INITIAL_PERK forever - and solo battles are not
+            // covered by the deadline sweeper - so start round 1 right away.
+            startRound(state);
+        }
         state.log(CombatEvent.of(0, "setup", "PVP 战斗开始！" + hostUsername + " 部署 "
                 + hostCharacterIds.size() + " 名角色对阵 " + guestUsername + " 的 "
                 + guestCharacterIds.size() + " 名角色。"));
@@ -282,6 +294,12 @@ public class CombatEngine {
         }
 
         state.setInitialPerkOptions(new ArrayList<>(pack.getInitialPerks()));
+        if (state.getInitialPerkOptions().isEmpty()) {
+            // A pack may ship no initial perks at all. With nothing to choose the
+            // battle would sit in INITIAL_PERK forever - and solo battles are not
+            // covered by the deadline sweeper - so start round 1 right away.
+            startRound(state);
+        }
         int total = charactersByUser.values().stream().mapToInt(List::size).sum();
         state.log(CombatEvent.of(0, "setup", "PVE 战斗开始！" + charactersByUser.size() + " 名玩家部署 "
                 + total + " 名角色对抗 " + enemyIds.size() + " 名敌人。"));
@@ -363,98 +381,109 @@ public class CombatEngine {
             if (deadline == null || now < deadline) {
                 continue;
             }
-            boolean progressed = false;
-            if (state.getPhase() == CombatPhase.DECISION) {
-                if (state.isPve()) {
-                    if (state.isExtraActionRound()) {
-                        // close the shared window for players that did not finish
-                        for (String username : state.playerUsers()) {
-                            if (!state.extraDoneBy(username)) {
-                                state.getExtraDoneByUser().put(username, true);
-                            }
-                        }
-                        finishExtraRoundPve(state);
-                        progressed = true;
-                    } else if (!state.allSubmitted()) {
-                        for (String username : state.playerUsers()) {
-                            if (!state.submittedBy(username)) {
-                                autoSubmitPveDecisions(state, username);
-                            }
-                        }
-                        if (state.allSubmitted()) {
-                            state.log(CombatEvent.of(state.getRound(), "decision", "决策超时，进入速度裁定。"));
-                            resolveRound(state);
-                        }
-                        progressed = true;
-                    }
-                } else if (state.isExtraActionRound()) {
-                    CombatSide active = state.getExtraRoundSide();
-                    if (active != null && !state.extraFinished(active)) {
-                        finishExtraRound(state, active);
-                        progressed = true;
-                    }
-                } else if (!state.bothSubmitted()) {
-                    for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
-                        if (!state.submitted(side)) {
-                            autoSubmitDecisions(state, side);
+            try {
+                tickExpiredBattle(state, now);
+            } catch (RuntimeException e) {
+                // Isolate each battle: one that always throws must not starve the
+                // battles queued behind it, every single tick.
+                log.error("deadline sweep failed for battle " + state.getId(), e);
+            }
+        }
+    }
+
+    /** Timeout handling for a single battle whose deadline has passed. */
+    private void tickExpiredBattle(CombatState state, long now) {
+        boolean progressed = false;
+        if (state.getPhase() == CombatPhase.DECISION) {
+            if (state.isPve()) {
+                if (state.isExtraActionRound()) {
+                    // close the shared window for players that did not finish
+                    for (String username : state.playerUsers()) {
+                        if (!state.extraDoneBy(username)) {
+                            state.getExtraDoneByUser().put(username, true);
                         }
                     }
-                    if (state.bothSubmitted()) {
+                    finishExtraRoundPve(state);
+                    progressed = true;
+                } else if (!state.allSubmitted()) {
+                    for (String username : state.playerUsers()) {
+                        if (!state.submittedBy(username)) {
+                            autoSubmitPveDecisions(state, username);
+                        }
+                    }
+                    if (state.allSubmitted()) {
                         state.log(CombatEvent.of(state.getRound(), "decision", "决策超时，进入速度裁定。"));
                         resolveRound(state);
                     }
                     progressed = true;
                 }
-            } else if (state.getPhase() == CombatPhase.SPECIAL_PERK
-                    && !(state.isPve() ? state.allSpecialPerksPicked() : state.bothSpecialPerksPicked())) {
-                if (state.isPve()) {
-                    for (String username : state.playerUsers()) {
-                        if (!state.specialPerkPickedBy(username)) {
-                            autoPickPerkPve(state, username);
-                        }
-                    }
-                    if (state.allSpecialPerksPicked()) {
-                        finishSpecialPerkRound(state);
-                    }
-                } else {
-                    for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
-                        if (!state.specialPerkPicked(side)) {
-                            autoPickPerk(state, side);
-                        }
-                    }
-                    if (state.bothSpecialPerksPicked()) {
-                        finishSpecialPerkRound(state);
+            } else if (state.isExtraActionRound()) {
+                CombatSide active = state.getExtraRoundSide();
+                if (active != null && !state.extraFinished(active)) {
+                    finishExtraRound(state, active);
+                    progressed = true;
+                }
+            } else if (!state.bothSubmitted()) {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (!state.submitted(side)) {
+                        autoSubmitDecisions(state, side);
                     }
                 }
-                progressed = true;
-            } else if (state.getPhase() == CombatPhase.INITIAL_PERK
-                    && !(state.isPve() ? state.allInitialPerksPicked() : state.bothInitialPerksPicked())) {
-                if (state.isPve()) {
-                    for (String username : state.playerUsers()) {
-                        if (!state.initialPerkPickedBy(username)) {
-                            autoPickInitialPerkPve(state, username);
-                        }
-                    }
-                    if (state.allInitialPerksPicked()) {
-                        state.setInitialPerkOptions(List.of());
-                        startRound(state);
-                    }
-                } else {
-                    for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
-                        if (!state.initialPerkPicked(side)) {
-                            autoPickInitialPerk(state, side);
-                        }
-                    }
-                    if (state.bothInitialPerksPicked()) {
-                        state.setInitialPerkOptions(List.of());
-                        startRound(state);
-                    }
+                if (state.bothSubmitted()) {
+                    state.log(CombatEvent.of(state.getRound(), "decision", "决策超时，进入速度裁定。"));
+                    resolveRound(state);
                 }
                 progressed = true;
             }
-            if (progressed) {
-                notifyPvp(state.getId());
+        } else if (state.getPhase() == CombatPhase.SPECIAL_PERK
+                && !(state.isPve() ? state.allSpecialPerksPicked() : state.bothSpecialPerksPicked())) {
+            if (state.isPve()) {
+                for (String username : state.playerUsers()) {
+                    if (!state.specialPerkPickedBy(username)) {
+                        autoPickPerkPve(state, username);
+                    }
+                }
+                if (state.allSpecialPerksPicked()) {
+                    finishSpecialPerkRound(state);
+                }
+            } else {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (!state.specialPerkPicked(side)) {
+                        autoPickPerk(state, side);
+                    }
+                }
+                if (state.bothSpecialPerksPicked()) {
+                    finishSpecialPerkRound(state);
+                }
             }
+            progressed = true;
+        } else if (state.getPhase() == CombatPhase.INITIAL_PERK
+                && !(state.isPve() ? state.allInitialPerksPicked() : state.bothInitialPerksPicked())) {
+            if (state.isPve()) {
+                for (String username : state.playerUsers()) {
+                    if (!state.initialPerkPickedBy(username)) {
+                        autoPickInitialPerkPve(state, username);
+                    }
+                }
+                if (state.allInitialPerksPicked()) {
+                    state.setInitialPerkOptions(List.of());
+                    startRound(state);
+                }
+            } else {
+                for (CombatSide side : List.of(CombatSide.PLAYER, CombatSide.ENEMY)) {
+                    if (!state.initialPerkPicked(side)) {
+                        autoPickInitialPerk(state, side);
+                    }
+                }
+                if (state.bothInitialPerksPicked()) {
+                    state.setInitialPerkOptions(List.of());
+                    startRound(state);
+                }
+            }
+            progressed = true;
+        }
+        if (progressed) {
+            notifyPvp(state.getId());
         }
     }
 
@@ -646,6 +675,7 @@ public class CombatEngine {
                 throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
             }
             requireKnownAction(d);
+            requireKnownSkill(c, d);
         }
         if (!state.isPvp()) {
             state.setPendingDecisions(new ArrayList<>(decisions));
@@ -700,6 +730,7 @@ public class CombatEngine {
                 throw new IllegalArgumentException("invalid decision combatant: " + d.getCombatantId());
             }
             requireKnownAction(d);
+            requireKnownSkill(c, d);
         }
         state.getPendingByUser().put(username, new ArrayList<>(decisions));
         state.getSubmittedByUser().put(username, true);
@@ -735,6 +766,7 @@ public class CombatEngine {
                 // later by the sweeper, where a throw would land mid-resolution
                 // and strand the battle.
                 requireKnownAction(d);
+            requireKnownSkill(c, d);
             }
             state.getDraftByUser().put(username, new ArrayList<>(decisions));
         }
@@ -850,6 +882,7 @@ public class CombatEngine {
                         "extra actions are base actions only (超限技能 enables skills)");
             }
             requireKnownAction(d);
+            requireKnownSkill(c, d);
             batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
@@ -965,6 +998,7 @@ public class CombatEngine {
                         "extra actions are base actions only (超限技能 enables skills)");
             }
             requireKnownAction(d);
+            requireKnownSkill(c, d);
             batchSpend.put(d.getCombatantId(), claimed + 1);
         }
         state.setPendingDecisions(new ArrayList<>(decisions));
@@ -1404,6 +1438,20 @@ public class CombatEngine {
             return true;
         } catch (IllegalArgumentException e) {
             return false;
+        }
+    }
+
+    /**
+     * Rejects a SKILL decision that names a skill the actor does not actually
+     * have. executeSkill throws on an unknown id from inside the execution
+     * phase, which strands the battle exactly the way a bad actionType did.
+     */
+    private static void requireKnownSkill(Combatant actor, ActionDecision decision) {
+        if (!decision.isSkill()) {
+            return;
+        }
+        if (decision.getSkillId() == null || actor.findSkill(decision.getSkillId()) == null) {
+            throw new IllegalArgumentException("unknown skill: " + decision.getSkillId());
         }
     }
 
